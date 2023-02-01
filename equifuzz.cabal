@@ -1,0 +1,24 @@
+cabal-version:      3.4
+name:               equifuzz
+version:            0.1.0.0
+-- synopsis:
+-- description:
+license:            GPL-3.0-only
+license-file:       LICENSE
+author:             Michalis Pardalos
+maintainer:         me@mpardalos.com
+category:           Testing
+build-type:         Simple
+
+common warnings
+    ghc-options: -Wall
+
+executable equifuzz
+    import:           warnings
+    main-is:          Main.hs
+    -- other-modules:
+    -- other-extensions:
+    build-depends:    base ^>=4.16.4.0
+                    , libverismith
+    hs-source-dirs:   app
+    default-language: GHC2021
