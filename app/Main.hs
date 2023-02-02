@@ -3,6 +3,7 @@ module Main where
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
+import GHC.IO.Encoding
 import Hedgehog.Gen qualified as Hog
 import Verismith.Generate (randomMod)
 import Verismith.Verilog
@@ -17,6 +18,8 @@ boxed title =
 
 main :: IO ()
 main = do
+  setLocaleEncoding utf8
+
   m :: ModDecl () <- Hog.sample (randomMod 2 4)
   T.putStrLn
     . boxed "Example"
