@@ -21,6 +21,7 @@ executable equifuzz
     build-depends:    base ^>=4.16.4.0
                     , libverismith
                     , text
+                    , hedgehog
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions: OverloadedStrings
