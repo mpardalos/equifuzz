@@ -22,6 +22,12 @@ executable equifuzz
                     , libverismith
                     , text
                     , hedgehog
+                    , shelly
+                    , optics
     hs-source-dirs:   app
     default-language: GHC2021
-    default-extensions: OverloadedStrings
+    default-extensions:
+        OverloadedStrings
+        OverloadedRecordDot
+        NoFieldSelectors
+        OverloadedLabels
