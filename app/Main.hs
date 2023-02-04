@@ -50,6 +50,11 @@ data Experiment = Experiment
     setupDir :: FilePath
   }
 
+data ExperimentResult = ExperimentResult
+  { proofFound :: Bool,
+    fullOutput :: Text
+  }
+
 makeFieldLabelsNoPrefix ''Experiment
 
 vcfHost :: Text
@@ -58,7 +63,7 @@ vcfHost = "ee-mill3"
 sshCommand :: Text -> Text
 sshCommand dir = [i|cd #{dir} && vcf -fmode DPV -f compare.tcl|]
 
-runVCFormal :: Experiment -> IO ()
+runVCFormal :: Experiment -> IO ExperimentResult
 runVCFormal (Experiment mod1 mod2 dir) = Sh.shelly $ do
   Sh.echo "Generating experiment"
   let file1 = mod1.id.getIdentifier <> ".v"
@@ -71,20 +76,21 @@ runVCFormal (Experiment mod1 mod2 dir) = Sh.shelly $ do
   Sh.echo "Copying files"
   void $ Sh.run "scp" ["-r", T.pack dir, vcfHost <> ":"]
   Sh.echo "Running experiment"
-  output <- Sh.silently $ Sh.run "ssh" [vcfHost, sshCommand (T.pack dir)]
-  Sh.echo $
-    output
-      & T.lines
-      & dropWhile (not . ("listproof" `T.isPrefixOf`))
-      & T.unlines
-      & boxed "Results"
-  return ()
+  fullOutput <- Sh.silently $ Sh.run "ssh" [vcfHost, sshCommand (T.pack dir)]
+  let logFile = dir </> ("output.log" :: FilePath)
+  Sh.echo ("Writing full output to " <> T.pack logFile)
+  Sh.writefile logFile fullOutput
+  let proofFound =
+        fullOutput
+          & T.lines
+          & any ("Status for proof \"proof\": SUCCESSFUL" `T.isInfixOf`)
+  return ExperimentResult {proofFound, fullOutput}
 
 boxed :: Text -> Text -> Text
 boxed title =
   T.unlines
-    . (["┌───" <> title <> "───"] <>)
-    . (<> ["└──────"])
+    . (["╭───" <> title <> "───"] <>)
+    . (<> ["╰──────"])
     . map ("│ " <>)
     . T.lines
 
@@ -92,8 +98,11 @@ main :: IO ()
 main = do
   setLocaleEncoding utf8
   m <- Hog.sample (randomMod 2 4)
-  runVCFormal $
+  result <- runVCFormal $
     Experiment
       (m & #id .~ Identifier "mod1")
       (m & #id .~ Identifier "mod2")
       "vcf_fuzz"
+  if result.proofFound
+    then putStrLn "Proof found. Modules are equivalent"
+    else putStrLn "No proof found. Modules are non-equivalent"
