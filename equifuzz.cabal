@@ -16,7 +16,7 @@ common warnings
 executable equifuzz
     import:           warnings
     main-is:          Main.hs
-    -- other-modules:
+    other-modules: Transform
     -- other-extensions:
     build-depends:    base ==4.16.*
                     , libverismith
@@ -25,6 +25,7 @@ executable equifuzz
                     , shelly
                     , optics
                     , string-interpolate
+                    , uniplate
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions:
