@@ -1,3 +1,5 @@
 /dist-newstyle/
 /.direnv/
 /vcf_fuzz/
+/vcf_fuzz_equiv/
+/vcf_fuzz_nequiv/

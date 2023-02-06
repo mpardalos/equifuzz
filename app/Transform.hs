@@ -12,12 +12,15 @@ module Transform
     or0,
     possibly,
     anywherePossibly,
+    or1,
+    invertCondition,
   )
 where
 
 import Data.Generics.Uniplate.Data (Biplate, transformBiM)
 import Hedgehog (Gen)
 import Hedgehog.Gen qualified as Hog
+import Hedgehog.Range qualified as Range
 import Verismith.Verilog
 
 data SemanticsPreserving
@@ -40,17 +43,21 @@ applySPTransformation = applyAnyTransformation
 applyNSPTransformation :: Transformation 'NSP f -> f
 applyNSPTransformation = applyAnyTransformation
 
-possibly :: (a -> a) -> (a -> Gen a)
-possibly f a = do
-  shouldApply <- Hog.bool
+possibly :: Double -> (a -> a) -> (a -> Gen a)
+possibly chance f a = do
+  shouldApply <- (< chance) <$> Hog.realFloat (Range.constant 0 1)
   return $
     if shouldApply
       then f a
       else a
 
--- | Make a transformation apply anywhere in the AST with a 50-50 chance
-anywherePossibly :: Biplate from to => Transformation p (to -> to) -> Transformation p (from -> Gen from)
-anywherePossibly = fmap (transformBiM . possibly)
+-- | Make a transformation apply anywhere in the AST with the specified chance (0 to 1)
+anywherePossibly ::
+  Biplate from to =>
+  Double ->
+  Transformation p (to -> to) ->
+  Transformation p (from -> Gen from)
+anywherePossibly chance = fmap (transformBiM . possibly chance)
 
 doubleInvertCondition :: Transformation 'SP (Expr -> Expr)
 doubleInvertCondition = Transformation $ \case
@@ -59,3 +66,11 @@ doubleInvertCondition = Transformation $ \case
 
 or0 :: Transformation 'SP (Expr -> Expr)
 or0 = Transformation $ \e -> BinOp e BinOr (Number 0)
+
+invertCondition :: Transformation 'NSP (Expr -> Expr)
+invertCondition = Transformation $ \case
+  (Cond e t f) -> Cond (UnOp UnNot e) t f
+  e -> e
+
+or1 :: Transformation 'NSP (Expr -> Expr)
+or1 = Transformation $ \e -> BinOp e BinOr (Number 1)

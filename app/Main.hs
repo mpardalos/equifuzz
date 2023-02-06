@@ -9,7 +9,6 @@ module Main where
 import Control.Monad (void)
 import Data.Data (Data)
 import Data.Foldable (foldrM)
-import Data.Generics.Uniplate.Data (transformBiM)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -20,7 +19,7 @@ import Hedgehog.Range qualified as Hog
 import Optics
 import Shelly ((</>))
 import Shelly qualified as Sh
-import Transform (applySPTransformation, doubleInvertCondition, or0, possibly)
+import Transform (anywherePossibly, applyNSPTransformation, applySPTransformation, doubleInvertCondition, invertCondition, or0, or1, possibly)
 import Verismith.Generate (randomMod)
 import Verismith.Verilog
 
@@ -108,21 +107,36 @@ randomizeSP val = do
   transformations <-
     Hog.list (Hog.linear 1 10)
       . Hog.element
-      . map (fmap (transformBiM . possibly))
+      . map (anywherePossibly 0.5)
       $ [doubleInvertCondition, or0]
   foldrM applySPTransformation val transformations
+
+-- | Pick some random semantics-preserving transformations and apply them
+randomizeNSP :: Data a => a -> Gen a
+randomizeNSP val = do
+  transformations <-
+    Hog.list (Hog.linear 1 10)
+      . Hog.element
+      -- TODO: Find a way to make sure that at least one applies. Maybe annotations?
+      . map (anywherePossibly 0.2)
+      $ [invertCondition, or1]
+  foldrM applyNSPTransformation val transformations
 
 main :: IO ()
 main = do
   setLocaleEncoding utf8
-  m1 :: ModDecl () <- Hog.sample (randomMod 2 4)
-  m2 <- Hog.sample (randomizeSP m1)
-  result <-
-    runVCFormal $
-      Experiment
-        (m1 & #id .~ Identifier "mod1")
-        (m2 & #id .~ Identifier "mod2")
-        "vcf_fuzz"
-  if result.proofFound
-    then putStrLn "Proof found. Modules are equivalent"
-    else putStrLn "No proof found. Modules are non-equivalent"
+  m1 :: ModDecl () <- Hog.sample (randomMod 2 4) <&> (#id .~ Identifier "mod1")
+  m2 <- Hog.sample (randomizeSP m1) <&> (#id .~ Identifier "mod2")
+  m3 <- Hog.sample (randomizeNSP m1) <&> (#id .~ Identifier "mod2")
+
+  equivResult <- runVCFormal (Experiment m1 m2 "vcf_fuzz_equiv")
+  if equivResult.proofFound
+    then putStrLn "Proof found. Equivalent modules are equivalent"
+    else putStrLn "ERROR | No proof found. Equivalent modules are non-equivalent"
+
+  putStrLn "---------------"
+
+  nonEquivResult <- runVCFormal (Experiment m1 m3 "vcf_fuzz_nequiv")
+  if nonEquivResult.proofFound
+    then putStrLn "ERROR | Proof found. Non-equivalent modules are equivalent"
+    else putStrLn "No proof found. Non-equivalent modules are non-equivalent"
