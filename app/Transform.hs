@@ -4,16 +4,21 @@
 {-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
 
 module Transform
-  ( Transformation (),
+  ( -- * Transformation datatype
+    Transformation (),
     applyAnyTransformation,
     applyNSPTransformation,
     applySPTransformation,
-    doubleInvertCondition,
-    or0,
+
+    -- * Combinators for Transformation
     possibly,
     anywherePossibly,
+
+    -- * Transformations
+    or0,
     or1,
     invertCondition,
+    doubleInvertCondition,
   )
 where
 
