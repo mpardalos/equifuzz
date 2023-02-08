@@ -64,18 +64,18 @@ anywherePossibly ::
   Transformation p (from -> Gen from)
 anywherePossibly chance = fmap (transformBiM . possibly chance)
 
-doubleInvertCondition :: Transformation 'SP (Expr -> Expr)
+doubleInvertCondition :: Transformation 'SP (Expr () -> Expr ())
 doubleInvertCondition = Transformation $ \case
-  (Cond e t f) -> Cond (UnOp UnNot (UnOp UnNot e)) t f
+  (Cond () e t f) -> Cond () (UnOp () UnNot (UnOp () UnNot e)) t f
   e -> e
 
-or0 :: Transformation 'SP (Expr -> Expr)
-or0 = Transformation $ \e -> BinOp e BinOr (Number 0)
+or0 :: Transformation 'SP (Expr () -> Expr ())
+or0 = Transformation $ \e -> BinOp () e BinOr 0
 
-invertCondition :: Transformation 'NSP (Expr -> Expr)
+invertCondition :: Transformation 'NSP (Expr () -> Expr ())
 invertCondition = Transformation $ \case
-  (Cond e t f) -> Cond (UnOp UnNot e) t f
+  (Cond () e t f) -> Cond () (UnOp () UnNot e) t f
   e -> e
 
-or1 :: Transformation 'NSP (Expr -> Expr)
-or1 = Transformation $ \e -> BinOp e BinOr (Number 1)
+or1 :: Transformation 'NSP (Expr () -> Expr ())
+or1 = Transformation $ \e -> BinOp () e BinOr 1
