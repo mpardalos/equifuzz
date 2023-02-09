@@ -19,10 +19,13 @@ module Transform
     or1,
     invertCondition,
     doubleInvertCondition,
+    exprTransformsSP,
+    exprTransformsNSP,
+    somewhere,
   )
 where
 
-import Data.Generics.Uniplate.Data (Biplate, transformBiM)
+import Data.Generics.Uniplate.Data (Biplate, contextsBi, transformBiM)
 import Hedgehog (Gen)
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Range
@@ -64,6 +67,15 @@ anywherePossibly ::
   Transformation p (from -> Gen from)
 anywherePossibly chance = fmap (transformBiM . possibly chance)
 
+-- | Make a transformation apply in one random place in the AST
+somewhere ::
+  Biplate from to =>
+  Transformation p (to -> to) ->
+  Transformation p (from -> Gen from)
+somewhere = fmap $ \trans ast -> do
+  (expr, replaceExpr) <- Hog.element (contextsBi ast)
+  return (replaceExpr (trans expr))
+
 doubleInvertCondition :: Transformation 'SP (Expr () -> Expr ())
 doubleInvertCondition = Transformation $ \case
   (Cond () e t f) -> Cond () (UnOp () UnNot (UnOp () UnNot e)) t f
@@ -72,6 +84,20 @@ doubleInvertCondition = Transformation $ \case
 or0 :: Transformation 'SP (Expr () -> Expr ())
 or0 = Transformation $ \e -> BinOp () e BinOr 0
 
+and1 :: Transformation 'SP (Expr () -> Expr ())
+and1 = Transformation $ \e -> BinOp () e BinAnd 1
+
+xor0 :: Transformation 'SP (Expr () -> Expr ())
+xor0 = Transformation $ \e -> BinOp () e BinXor 0
+
+exprTransformsSP :: [Transformation 'SP (Expr () -> Expr ())]
+exprTransformsSP =
+  [ doubleInvertCondition,
+    or0,
+    and1,
+    xor0
+  ]
+
 invertCondition :: Transformation 'NSP (Expr () -> Expr ())
 invertCondition = Transformation $ \case
   (Cond () e t f) -> Cond () (UnOp () UnNot e) t f
@@ -79,3 +105,6 @@ invertCondition = Transformation $ \case
 
 or1 :: Transformation 'NSP (Expr () -> Expr ())
 or1 = Transformation $ \e -> BinOp () e BinOr 1
+
+exprTransformsNSP :: [Transformation 'NSP (Expr () -> Expr ())]
+exprTransformsNSP = [invertCondition, or1]

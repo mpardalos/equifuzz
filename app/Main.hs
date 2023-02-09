@@ -163,19 +163,14 @@ randomizeSP val = do
     Hog.list (Hog.linear 1 10)
       . Hog.element
       . map (anywherePossibly 0.5)
-      $ [doubleInvertCondition, or0]
+      $ exprTransformsSP
   foldrM applySPTransformation val transformations
 
 -- | Pick some random semantics-preserving transformations and apply them
 randomizeNSP :: Data a => a -> Gen a
 randomizeNSP val = do
-  transformations <-
-    Hog.list (Hog.linear 1 10)
-      . Hog.element
-      -- TODO: Find a way to make sure that at least one applies. Maybe annotations?
-      . map (anywherePossibly 0.2)
-      $ [invertCondition, or1]
-  foldrM applyNSPTransformation val transformations
+  transformation <- Hog.element exprTransformsNSP
+  applyNSPTransformation (somewhere transformation) val
 
 main :: IO ()
 main = do
