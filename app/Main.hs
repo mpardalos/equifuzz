@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -19,8 +20,8 @@ import Hedgehog.Range qualified as Hog
 import Optics
 import Shelly ((</>))
 import Shelly qualified as Sh
-import Transform (anywherePossibly, applyNSPTransformation, applySPTransformation, doubleInvertCondition, invertCondition, or0, or1, possibly)
-import Verismith.Generate (randomMod)
+import Transform (anywherePossibly, applyNSPTransformation, applySPTransformation, exprTransformsNSP, exprTransformsSP, somewhere)
+import Verismith.Generate as Generate (ConfProperty (..), Config (..), ProbExpr (..), ProbMod (..), ProbModItem (..), ProbStatement (..), Probability (..), randomMod)
 import Verismith.Verilog
 
 data Experiment = Experiment
@@ -100,6 +101,60 @@ boxed title =
     . (<> ["╰──────"])
     . map ("│ " <>)
     . T.lines
+
+genConfig :: Generate.Config
+genConfig =
+  Config
+    { probability =
+        Probability
+          { modItem =
+              ProbModItem
+                { assign = 2,
+                  seqAlways = 0,
+                  combAlways = 1,
+                  inst = 0
+                },
+            stmnt =
+              ProbStatement
+                { block = 0,
+                  nonBlock = 3,
+                  cond = 1,
+                  for = 0
+                },
+            expr =
+              ProbExpr
+                { num = 1,
+                  id = 5,
+                  rangeSelect = 5,
+                  unOp = 5,
+                  binOp = 5,
+                  cond = 5,
+                  concat = 3,
+                  str = 0,
+                  signed = 1,
+                  unsigned = 5
+                },
+            mod =
+              ProbMod
+                { dropOutput = 0,
+                  keepOutput = 1
+                }
+          },
+      property =
+        ConfProperty
+          { size = 50,
+            seed = Nothing,
+            stmntDepth = 3,
+            modDepth = 2,
+            maxModules = 5,
+            sampleMethod = "random",
+            sampleSize = 10,
+            combine = False,
+            nonDeterminism = 0,
+            determinism = 1,
+            defaultYosys = Nothing
+          }
+    }
 
 -- | Pick some random semantics-preserving transformations and apply them
 randomizeSP :: Data a => a -> Gen a
