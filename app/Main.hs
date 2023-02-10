@@ -20,13 +20,34 @@ import Hedgehog.Range qualified as Hog
 import Optics
 import Shelly ((</>))
 import Shelly qualified as Sh
-import Transform (anywherePossibly, applyNSPTransformation, applySPTransformation, exprTransformsNSP, exprTransformsSP, somewhere)
-import Verismith.Generate as Generate (ConfProperty (..), Config (..), ProbExpr (..), ProbMod (..), ProbModItem (..), ProbStatement (..), Probability (..), randomMod)
+import Transform
+  ( AnnTransform,
+    annotateForTransformations,
+    anywherePossibly,
+    applyNSPTransformation,
+    applySPTransformation,
+    exprTransformsNSP,
+    exprTransformsSP,
+    somewhereReachable,
+  )
+import Verismith.Generate as Generate
+  ( ConfProperty (..),
+    Config (..),
+    ProbExpr (..),
+    ProbMod (..),
+    ProbModItem (..),
+    ProbStatement (..),
+    Probability (..),
+    randomMod,
+  )
 import Verismith.Verilog
+import Verismith.Verilog.AST (Annotation (..))
 
-data Experiment = Experiment
-  { module1 :: ModDecl (),
-    module2 :: ModDecl (),
+data Experiment = forall ann1 ann2.
+  (Show (AnnModDecl ann1), Show (AnnModDecl ann2)) =>
+  Experiment
+  { module1 :: ModDecl ann1,
+    module2 :: ModDecl ann2,
     setupDir :: FilePath
   }
 
@@ -93,6 +114,16 @@ runVCFormal (Experiment mod1 mod2 dir) = Sh.shelly $ do
 
     sshCommand :: Text
     sshCommand = [i|cd #{dir} && vcf -fmode DPV -f compare.tcl|]
+
+saveExperiment :: Experiment -> IO ()
+saveExperiment (Experiment mod1 mod2 dir) = Sh.shelly $ do
+  Sh.echo "Generating experiment"
+  let file1 = mod1.id.getIdentifier <> ".v"
+  let file2 = mod2.id.getIdentifier <> ".v"
+
+  Sh.mkdir dir
+  Sh.writefile (dir </> file1) (genSource mod1)
+  Sh.writefile (dir </> file2) (genSource mod2)
 
 boxed :: Text -> Text -> Text
 boxed title =
@@ -167,17 +198,17 @@ randomizeSP val = do
   foldrM applySPTransformation val transformations
 
 -- | Pick some random semantics-preserving transformations and apply them
-randomizeNSP :: Data a => a -> Gen a
+randomizeNSP :: Data (ast AnnTransform) => ast AnnTransform -> Gen (ast AnnTransform)
 randomizeNSP val = do
   transformation <- Hog.element exprTransformsNSP
-  applyNSPTransformation (somewhere transformation) val
+  applyNSPTransformation (somewhereReachable transformation) val
 
 main :: IO ()
 main = do
   setLocaleEncoding utf8
   m1 :: ModDecl () <- Hog.sample (randomMod 2 4) <&> (#id .~ Identifier "mod1")
   m2 <- Hog.sample (randomizeSP m1) <&> (#id .~ Identifier "mod2")
-  m3 <- Hog.sample (randomizeNSP m1) <&> (#id .~ Identifier "mod2")
+  m3 <- Hog.sample (randomizeNSP (annotateForTransformations m1)) <&> (#id .~ Identifier "mod2")
 
   equivResult <- runVCFormal (Experiment m1 m2 "vcf_fuzz_equiv")
   if equivResult.proofFound

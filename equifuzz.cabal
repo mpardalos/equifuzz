@@ -26,6 +26,7 @@ executable equifuzz
                     , optics
                     , string-interpolate
                     , uniplate
+                    , recursion-schemes
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions:
