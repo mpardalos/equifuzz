@@ -17,6 +17,7 @@ executable equifuzz
     import:           warnings
     main-is:          Main.hs
     other-modules: Transform
+                 , Experiments
     -- other-extensions:
     build-depends:    base ==4.16.*
                     , libverismith
