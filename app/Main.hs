@@ -184,22 +184,6 @@ genConfig =
           }
     }
 
--- | Pick some random semantics-preserving transformations and apply them
-randomizeSP :: Data a => a -> Gen a
-randomizeSP val = do
-  transformations <-
-    Hog.list (Hog.linear 1 10)
-      . Hog.element
-      . map (anywherePossibly 0.5)
-      $ exprTransformsSP
-  foldrM applySPTransformation val transformations
-
--- | Pick some random semantics-preserving transformations and apply them
-randomizeNSP :: Data (ast AnnTransform) => ast AnnTransform -> Gen (ast AnnTransform)
-randomizeNSP val = do
-  transformation <- Hog.element exprTransformsNSP
-  applyNSPTransformation (somewhereReachable transformation) val
-
 main :: IO ()
 main = do
   setLocaleEncoding utf8

@@ -18,6 +18,8 @@ module Transform
     -- * Combinators for Transformation
     possibly,
     anywherePossibly,
+    randomizeSP,
+    randomizeNSP,
 
     -- * Transformations
     or0,
@@ -39,6 +41,7 @@ import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Range
 import Verismith.Verilog
 import Verismith.Verilog.AST (Annotated (setDefaultAnnotations), Annotation (..), Default (def))
+import Data.Foldable (foldrM)
 
 data SemanticsPreserving
   = -- | Semantics-Preserving
@@ -176,3 +179,19 @@ or1 = Transformation $ \e -> Just $ BinOp e.annotation e BinOr (Number e.annotat
 
 exprTransformsNSP :: [Transformation 'NSP (Expr AnnTransform -> Maybe (Expr AnnTransform))]
 exprTransformsNSP = [invertCondition, or1]
+
+-- | Pick some random semantics-preserving transformations and apply them
+randomizeSP :: Data a => a -> Gen a
+randomizeSP val = do
+  transformations <-
+    Hog.list (Range.linear 1 10)
+      . Hog.element
+      . map (anywherePossibly 0.5)
+      $ exprTransformsSP
+  foldrM applySPTransformation val transformations
+
+-- | Pick some random semantics-preserving transformations and apply them
+randomizeNSP :: Data (ast AnnTransform) => ast AnnTransform -> Gen (ast AnnTransform)
+randomizeNSP val = do
+  transformation <- Hog.element exprTransformsNSP
+  applyNSPTransformation (somewhereReachable transformation) val
