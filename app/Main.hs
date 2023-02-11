@@ -1,125 +1,114 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Main where
 
-import Control.Monad (forever)
+import Brick qualified as B
+import Brick.BChan qualified as B
+import Brick.Widgets.Border qualified as B
+import Brick.Widgets.Border.Style qualified as B
+import Brick.Widgets.Center qualified as B
+import Brick.Widgets.Dialog qualified as B
+import Control.Concurrent (forkFinally, newEmptyMVar)
+import Control.Exception (Exception)
+import Control.Monad (void)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.UUID.V4 qualified as UUID
 import Experiments
-import GHC.IO.Encoding
-import Hedgehog.Gen qualified as Hog
+import GHC.Generics (Generic)
+import Graphics.Vty qualified as Vty
 import Optics
-import Shelly qualified as Sh
-import Transform
-  ( annotateForTransformations,
-    randomizeNSP,
-    randomizeSP,
-  )
-import Verismith.Generate as Generate
-  ( ConfProperty (..),
-    Config (..),
-    ProbExpr (..),
-    ProbMod (..),
-    ProbModItem (..),
-    ProbStatement (..),
-    Probability (..),
-    randomMod, proceduralIO, proceduralSrcIO,
-  )
-import Verismith.Verilog
-import Verismith.Verilog.AST (mainModule, topModuleId)
 
-boxed :: Text -> Text -> Text
-boxed title =
-  T.unlines
-    . (["╭───" <> title <> "───"] <>)
-    . (<> ["╰──────"])
-    . map ("│ " <>)
-    . T.lines
+data EndExperiment = EndExperiment
+  deriving (Show)
 
-genConfig :: Generate.Config
-genConfig =
-  Config
-    { probability =
-        Probability
-          { modItem =
-              ProbModItem
-                { assign = 2,
-                  seqAlways = 0,
-                  combAlways = 1,
-                  inst = 0
-                },
-            stmnt =
-              ProbStatement
-                { block = 0,
-                  nonBlock = 3,
-                  cond = 1,
-                  for = 0
-                },
-            expr =
-              ProbExpr
-                { num = 1,
-                  id = 5,
-                  rangeSelect = 5,
-                  unOp = 5,
-                  binOp = 5,
-                  cond = 5,
-                  concat = 3,
-                  str = 0,
-                  signed = 1,
-                  unsigned = 5
-                },
-            mod =
-              ProbMod
-                { dropOutput = 0,
-                  keepOutput = 1
-                }
-          },
-      property =
-        ConfProperty
-          { size = 50,
-            seed = Nothing,
-            stmntDepth = 3,
-            modDepth = 2,
-            maxModules = 5,
-            sampleMethod = "random",
-            sampleSize = 10,
-            combine = False,
-            nonDeterminism = 0,
-            determinism = 1,
-            defaultYosys = Nothing
-          }
-    }
+instance Exception EndExperiment
+
+data AppState
+  = StGenerating
+  | StRunning
+  | StWait {continueDialog :: B.Dialog Bool Text}
+  deriving (Generic)
+
+makePrismLabels ''AppState
+
+data AppEvent
+  = ExperimentProgress ExperimentProgress
+  | ExperimentEnded
+
+mkContinueDialog :: B.Dialog Bool Text
+mkContinueDialog =
+  B.dialog
+    (Just (B.txt label))
+    (Just ("No", [("No", "No", False), ("Yes", "Yes", True)]))
+    (T.length label + 6)
+  where
+    label = "Run another experiment?"
+
+appDraw :: AppState -> B.Widget Text
+appDraw StWait {continueDialog} = B.renderDialog continueDialog (B.hCenter (B.txt "you sure?"))
+appDraw _ =
+  B.border
+    . B.padLeftRight 3
+    . B.padTopBottom 1
+    . B.str
+    $ "Running"
+
+appHandleEvent :: B.BrickEvent Text AppEvent -> B.EventM Text AppState ()
+appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar 'q') _)) = B.halt
+appHandleEvent (B.AppEvent (ExperimentProgress Generating)) = B.put StGenerating
+appHandleEvent (B.AppEvent (ExperimentProgress Running)) = B.put StRunning
+appHandleEvent (B.AppEvent (ExperimentProgress (Completed (ExperimentResult _ _)))) = B.put (StWait mkContinueDialog)
+appHandleEvent (B.VtyEvent e) =
+  B.get >>= \case
+    StWait {continueDialog} -> do
+      continueDialog' <- B.nestEventM' continueDialog (B.handleDialogEvent e)
+      B.put (StWait continueDialog')
+      case (B.dialogSelection continueDialog', e) of
+        (Just (_, True), Vty.EvKey Vty.KEnter []) -> pure () -- TODO: Signal experiment thread to continue
+        (Just (_, False), Vty.EvKey Vty.KEnter []) -> B.halt
+        _ -> pure ()
+    _ -> pure ()
+appHandleEvent _ = pure ()
 
 main :: IO ()
 main = do
-  setLocaleEncoding utf8
-  forever $ do
-    m1 <- proceduralSrcIO "mod1" genConfig
+  runSignal <- newEmptyMVar @()
+  eventChan <- B.newBChan 10
 
-    -- putStrLn "---------------"
-    -- m2 <- Hog.sample (randomizeSP m1) <&> (#id .~ Identifier "mod2")
-    -- equivResult <- runVCFormal (Experiment m1 m2 "vcf_fuzz_equiv")
-    -- if equivResult.proofFound
-    --   then putStrLn "Proof found. Equivalent modules are equivalent"
-    --   else do
-    --     uuid <- UUID.nextRandom
-    --     putStrLn ("ERROR | No proof found. Equivalent modules are non-equivalent. Saving experiment as " <> show uuid)
-    --     Sh.shelly $ do
-    --       Sh.mkdir_p "potential_bugs/false_negatives/"
-    --       Sh.cp_r "vcf_fuzz_equiv" ("potential_bugs/false_negatives/" <> show uuid)
+  -- Start experiment running thread
+  void $
+    forkFinally
+      (B.writeBChan eventChan (ExperimentProgress (Completed ExperimentResult {})))
+      -- ( experimentLoop mkPositiveExperiment runVCFormal $ \progress -> do
+      --     B.writeBChan eventChan (ExperimentProgress progress)
+      --     when (isCompleted progress) (takeMVar runSignal)
+      -- )
+      (const (B.writeBChan eventChan ExperimentEnded))
 
-    putStrLn "---------------"
-    m3 <- Hog.sample (randomizeNSP (annotateForTransformations m1)) <&> (topModuleId .~ Identifier "mod2")
-    nonEquivResult <- runVCFormal (Experiment m1 m3 "vcf_fuzz_nequiv")
-    if not (nonEquivResult.proofFound)
-      then putStrLn "No proof found. Non-equivalent modules are non-equivalent"
-      else do
-        uuid <- UUID.nextRandom
-        putStrLn ("ERROR | Proof found. Non-equivalent modules are equivalent. Saving experiment as " <> show uuid)
-        Sh.shelly $ do
-          Sh.mkdir_p "potential_bugs/false_positives/"
-          Sh.cp_r "vcf_fuzz_nequiv" ("potential_bugs/false_positives/" <> show uuid)
+  -- UI/main thread
+  let buildVty = Vty.mkVty Vty.defaultConfig
+  initialVty <- buildVty
+  void $
+    B.customMain @Text
+      initialVty
+      buildVty
+      (Just eventChan)
+      B.App
+        { appDraw = \s -> [B.withBorderStyle B.unicodeRounded $ B.center $ appDraw s],
+          appChooseCursor = B.neverShowCursor,
+          appAttrMap =
+            const
+              ( B.attrMap
+                  Vty.defAttr
+                  [ (B.buttonSelectedAttr, Vty.defAttr `Vty.withStyle` Vty.standout)
+                  ]
+              ),
+          appHandleEvent,
+          appStartEvent = pure ()
+        }
+      StGenerating

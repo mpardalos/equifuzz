@@ -1,60 +1,94 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Experiments where
 
-import Control.Monad (void)
+import Control.Monad (forever, void, when)
+import Data.Data (Data)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Optics (makeFieldLabelsNoPrefix, (&), (^.))
+import Data.UUID (UUID)
+import Data.UUID qualified as UUID
+import Data.UUID.V4 qualified as UUID
+import GHC.Generics (Generic)
+import Hedgehog.Gen qualified as Hog
+import Optics (makeFieldLabelsNoPrefix, (&), (.~), (<&>))
 import Shelly ((</>))
 import Shelly qualified as Sh
-import Verismith.Verilog (SourceInfo(..), genSource)
-import Verismith.Verilog.AST (Annotation (..), Identifier (..), ModDecl (..))
+import Transform
+  ( annotateForTransformations,
+    randomizeNSP,
+  )
+import Verismith.Generate as Generate
+  ( ConfProperty (..),
+    Config (..),
+    ProbExpr (..),
+    ProbMod (..),
+    ProbModItem (..),
+    ProbStatement (..),
+    Probability (..),
+    proceduralSrcIO,
+  )
+import Verismith.Verilog (SourceInfo (..), genSource)
+import Verismith.Verilog.AST (Annotation (..), Identifier (..), topModuleId)
 
 data Experiment = forall ann1 ann2.
   (Show (AnnModDecl ann1), Show (AnnModDecl ann2)) =>
   Experiment
   { design1 :: SourceInfo ann1,
     design2 :: SourceInfo ann2,
-    setupDir :: FilePath
+    uuid :: UUID,
+    -- | True if we expect the modules to be equivalent, False if we expect them not to be
+    expectedResult :: Bool
   }
-
-makeFieldLabelsNoPrefix ''Experiment
 
 data ExperimentResult = ExperimentResult
   { proofFound :: Bool,
     fullOutput :: Text
   }
+  deriving (Show, Eq, Generic, Data)
 
 makeFieldLabelsNoPrefix ''ExperimentResult
 
-runVCFormal :: Experiment -> IO ExperimentResult
-runVCFormal (Experiment design1 design2 dir) = Sh.shelly $ do
-  Sh.echo "Generating experiment"
+data ExperimentProgress
+  = Generating
+  | Running
+  | Completed ExperimentResult
+  deriving (Show, Eq, Generic, Data)
 
-  Sh.mkdir dir
+type ProgressNotify = ExperimentProgress -> IO ()
+
+isCompleted :: ExperimentProgress -> Bool
+isCompleted Completed {} = True
+isCompleted _ = False
+
+experimentSetupDir :: Text
+experimentSetupDir = "current"
+
+runVCFormal :: Experiment -> IO ExperimentResult
+runVCFormal Experiment {design1, design2} = Sh.shelly . Sh.silently $ do
+  dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript "design1.v" design1.top "design2.v" design2.top)
   Sh.writefile (dir </> ("design1.v" :: Text)) (genSource design1)
   Sh.writefile (dir </> ("design2.v" :: Text)) (genSource design2)
-  Sh.echo "Copying files"
-  void $ Sh.run "scp" ["-r", T.pack dir, vcfHost <> ":"]
-  Sh.echo "Running experiment"
+  void $ Sh.run "scp" ["-r", dir, vcfHost <> ":" <> remoteDir]
+
   fullOutput <- Sh.silently $ Sh.run "ssh" [vcfHost, sshCommand]
-  let logFile = dir </> ("output.log" :: FilePath)
-  Sh.echo ("Writing full output to " <> T.pack logFile)
-  Sh.writefile logFile fullOutput
   let proofFound =
         fullOutput
           & T.lines
           & any ("Status for proof \"proof\": SUCCESSFUL" `T.isInfixOf`)
+
   return ExperimentResult {proofFound, fullOutput}
   where
+    remoteDir :: Text
+    remoteDir = "equifuzz_vcf_experiment/"
     compareScript :: Text -> Text -> Text -> Text -> Text
     compareScript file1 top1 file2 top2 =
       [__i|
@@ -85,11 +119,85 @@ runVCFormal (Experiment design1 design2 dir) = Sh.shelly $ do
     vcfHost = "ee-mill3"
 
     sshCommand :: Text
-    sshCommand = [i|cd #{dir} && vcf -fmode DPV -f compare.tcl|]
+    sshCommand = [i|cd #{remoteDir} && vcf -fmode DPV -f compare.tcl|]
 
 saveExperiment :: Experiment -> IO ()
-saveExperiment (Experiment mod1 mod2 dir) = Sh.shelly $ do
-  Sh.echo "Generating experiment"
-  Sh.mkdir dir
-  Sh.writefile (dir </> ("design1.v" :: FilePath)) (genSource mod1)
-  Sh.writefile (dir </> ("design2.v" :: FilePath)) (genSource mod2)
+saveExperiment Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
+  let dir = "experiments/" <> UUID.toString uuid
+
+  Sh.mkdir_p dir
+  Sh.writefile (dir </> ("design1.v" :: Text)) (genSource design1)
+  Sh.writefile (dir </> ("design2.v" :: Text)) (genSource design2)
+
+genConfig :: Config
+genConfig =
+  Config
+    { probability =
+        Probability
+          { modItem =
+              ProbModItem
+                { assign = 2,
+                  seqAlways = 0,
+                  combAlways = 1,
+                  inst = 0
+                },
+            stmnt =
+              ProbStatement
+                { block = 0,
+                  nonBlock = 3,
+                  cond = 1,
+                  for = 0
+                },
+            expr =
+              ProbExpr
+                { num = 1,
+                  id = 5,
+                  rangeSelect = 5,
+                  unOp = 5,
+                  binOp = 5,
+                  cond = 5,
+                  concat = 3,
+                  str = 0,
+                  signed = 1,
+                  unsigned = 5
+                },
+            mod =
+              ProbMod
+                { dropOutput = 0,
+                  keepOutput = 1
+                }
+          },
+      property =
+        ConfProperty
+          { size = 50,
+            seed = Nothing,
+            stmntDepth = 3,
+            modDepth = 2,
+            maxModules = 5,
+            sampleMethod = "random",
+            sampleSize = 10,
+            combine = False,
+            nonDeterminism = 0,
+            determinism = 1,
+            defaultYosys = Nothing
+          }
+    }
+
+mkNegativeExperiment :: IO Experiment
+mkNegativeExperiment = do
+  design1 <- proceduralSrcIO "mod1" genConfig
+  design2 <- Hog.sample (randomizeNSP (annotateForTransformations design1)) <&> (topModuleId .~ Identifier "mod2")
+  uuid <- UUID.nextRandom
+  return Experiment {expectedResult = True, ..}
+
+experimentLoop :: IO Experiment -> (Experiment -> IO ExperimentResult) -> ProgressNotify -> IO ()
+experimentLoop generator runner progress = forever $ do
+  progress Generating
+  experiment <- generator
+
+  progress Running
+  result <- runner experiment
+  when (result.proofFound /= experiment.expectedResult) $
+    saveExperiment experiment
+
+  progress (Completed result)
