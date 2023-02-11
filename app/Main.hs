@@ -63,13 +63,10 @@ makeFieldLabelsNoPrefix ''ExperimentResult
 runVCFormal :: Experiment -> IO ExperimentResult
 runVCFormal (Experiment mod1 mod2 dir) = Sh.shelly $ do
   Sh.echo "Generating experiment"
-  let file1 = mod1.id.getIdentifier <> ".v"
-  let file2 = mod2.id.getIdentifier <> ".v"
 
   Sh.mkdir dir
-  Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript file1 mod1.id file2 mod2.id)
-  Sh.writefile (dir </> file1) (genSource mod1)
-  Sh.writefile (dir </> file2) (genSource mod2)
+  Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript "modules.v" mod1.id mod2.id)
+  Sh.writefile (dir </> ("modules.v" :: Text)) (genSource mod1 <> "\n\n" <> genSource mod2)
   Sh.echo "Copying files"
   void $ Sh.run "scp" ["-r", T.pack dir, vcfHost <> ":"]
   Sh.echo "Running experiment"
@@ -83,18 +80,18 @@ runVCFormal (Experiment mod1 mod2 dir) = Sh.shelly $ do
           & any ("Status for proof \"proof\": SUCCESSFUL" `T.isInfixOf`)
   return ExperimentResult {proofFound, fullOutput}
   where
-    compareScript :: Text -> Identifier -> Text -> Identifier -> Text
-    compareScript specfile spectop implfile impltop =
+    compareScript :: Text -> Identifier -> Identifier -> Text
+    compareScript srcfile spectop impltop =
       [__i|
                 set_custom_solve_script "orch_multipliers"
                 set_user_assumes_lemmas_procedure "miter"
 
                 create_design -name spec -top #{spectop ^. #getIdentifier} -lang mx
-                vcs -sverilog #{specfile}
+                vcs -sverilog #{srcfile}
                 compile_design spec
 
                 create_design -name impl -top #{impltop^. #getIdentifier} -lang mx
-                vcs -sverilog #{implfile}
+                vcs -sverilog #{srcfile}
                 compile_design impl
 
                 proc miter {} {
