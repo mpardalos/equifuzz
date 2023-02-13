@@ -16,15 +16,16 @@ import Brick.Widgets.Center qualified as B
 import Brick.Widgets.Dialog qualified as B
 import Brick.Widgets.List qualified as B
 import Control.Monad (void)
+import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromJust)
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.UUID (UUID)
 import Experiments
-import GHC.Records (HasField)
 import Graphics.Vty qualified as Vty
 import Optics
 import Optics.State.Operators ((%=))
+import Verismith.Verilog (genSource)
 
 instance LabelOptic "name" A_Lens (B.GenericList n t e) (B.GenericList n t e) n n where
   labelOptic = lensVL B.listNameL
@@ -99,18 +100,25 @@ appDraw st =
     ]
   where
     renderSelection :: (Experiment, Maybe ExperimentResult) -> B.Widget WidgetID
-    renderSelection (experiment, mResult) =
+    renderSelection (experiment@Experiment {design1, design2}, mResult) =
       B.padBottom B.Max
         . B.vBox
-        $ [ B.str (show experiment.uuid),
-            B.hBorder,
-            B.str ("Expected result: " <> if experiment.expectedResult then "Equivalent" else "Non-equivalent")
-          ]
-          <> case mResult of
-            Nothing -> []
-            Just result ->
-              [ B.str ("Actual result:   " <> if result.proofFound then "Equivalent" else "Non-equivalent")
-              ]
+        $ let start =
+                [ B.str (show experiment.uuid),
+                  B.hBorder,
+                  B.str ("Expected result: " <> if experiment.expectedResult then "Equivalent" else "Non-equivalent")
+                ]
+              resultStuff = case mResult of
+                Just result ->
+                  [ B.str ("Actual result:   " <> if result.proofFound then "Equivalent" else "Non-equivalent"),
+                    B.padTop (B.Pad 1) (B.hBorder B.<+> B.str "Full Output" B.<+> B.hBorder),
+                    B.txtWrap result.fullOutput
+                  ]
+                Nothing ->
+                  [ B.padTop (B.Pad 1) (B.hBorder B.<+> B.str "Designs" B.<+> B.hBorder),
+                    B.txtWrap (genSource design1) B.<+> B.vBorder B.<+> B.txtWrap (genSource design2)
+                  ]
+           in start ++ resultStuff
 
     renderList :: Is k A_Getter => String -> Optic' k NoIx a UUID -> B.GenericList WidgetID Seq a -> B.Widget WidgetID
     renderList title uuid list =
