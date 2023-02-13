@@ -21,6 +21,7 @@ import Hedgehog.Gen qualified as Hog
 import Optics (makeFieldLabelsNoPrefix, (&), (.~), (<&>))
 import Shelly ((</>))
 import Shelly qualified as Sh
+import Text.Printf (printf)
 import Transform
   ( annotateForTransformations,
     randomizeNSP,
@@ -41,26 +42,41 @@ import Verismith.Verilog.AST (Annotation (..), Identifier (..), topModuleId)
 data Experiment = forall ann1 ann2.
   (Show (AnnModDecl ann1), Show (AnnModDecl ann2)) =>
   Experiment
-  { design1 :: SourceInfo ann1,
-    design2 :: SourceInfo ann2,
-    uuid :: UUID,
+  { uuid :: UUID,
     -- | True if we expect the modules to be equivalent, False if we expect them not to be
-    expectedResult :: Bool
+    expectedResult :: Bool,
+    design1 :: SourceInfo ann1,
+    design2 :: SourceInfo ann2
   }
+
+makeFieldLabelsNoPrefix ''Experiment
+
+instance Show Experiment where
+  show e =
+    printf
+      "Experiment { uuid=\"%s\", expectedResult = \"%s\", design1 = ..., design2 = ... }"
+      (show e.uuid)
+      (show e.expectedResult)
+
+instance Eq Experiment where
+  e1 == e2 = e1.uuid == e2.uuid
+
+instance Ord Experiment where
+  compare e1 e2 = compare e1.uuid e2.uuid
 
 data ExperimentResult = ExperimentResult
   { proofFound :: Bool,
-    fullOutput :: Text
+    fullOutput :: Text,
+    uuid :: UUID
   }
   deriving (Show, Eq, Generic, Data)
 
 makeFieldLabelsNoPrefix ''ExperimentResult
 
 data ExperimentProgress
-  = Generating
-  | Running
+  = Began Experiment
   | Completed ExperimentResult
-  deriving (Show, Eq, Generic, Data)
+  deriving (Show)
 
 type ProgressNotify = ExperimentProgress -> IO ()
 
@@ -72,7 +88,7 @@ experimentSetupDir :: Text
 experimentSetupDir = "current"
 
 runVCFormal :: Experiment -> IO ExperimentResult
-runVCFormal Experiment {design1, design2} = Sh.shelly . Sh.silently $ do
+runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript "design1.v" design1.top "design2.v" design2.top)
   Sh.writefile (dir </> ("design1.v" :: Text)) (genSource design1)
@@ -85,7 +101,7 @@ runVCFormal Experiment {design1, design2} = Sh.shelly . Sh.silently $ do
           & T.lines
           & any ("Status for proof \"proof\": SUCCESSFUL" `T.isInfixOf`)
 
-  return ExperimentResult {proofFound, fullOutput}
+  return ExperimentResult {proofFound, fullOutput, uuid}
   where
     remoteDir :: Text
     remoteDir = "equifuzz_vcf_experiment/"
@@ -192,10 +208,9 @@ mkNegativeExperiment = do
 
 experimentLoop :: IO Experiment -> (Experiment -> IO ExperimentResult) -> ProgressNotify -> IO ()
 experimentLoop generator runner progress = forever $ do
-  progress Generating
   experiment <- generator
 
-  progress Running
+  progress (Began experiment)
   result <- runner experiment
   when (result.proofFound /= experiment.expectedResult) $
     saveExperiment experiment
