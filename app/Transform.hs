@@ -24,6 +24,7 @@ module Transform
     -- * Transformations
     or0,
     or1,
+    flipCondBranches,
     invertCondition,
     doubleInvertCondition,
     exprTransformsSP,
@@ -169,6 +170,11 @@ exprTransformsSP =
     xor0
   ]
 
+flipCondBranches :: Transformation 'NSP (Expr ann -> Maybe (Expr ann))
+flipCondBranches = Transformation $ \case
+  (Cond ann c t f) -> Just $ Cond ann c f t
+  _ -> Nothing
+
 invertCondition :: Transformation 'NSP (Expr ann -> Maybe (Expr ann))
 invertCondition = Transformation $ \case
   (Cond ann e t f) -> Just $ Cond ann (UnOp ann UnNot e) t f
@@ -178,7 +184,7 @@ or1 :: Annotation ann => Transformation 'NSP (Expr ann -> Maybe (Expr ann))
 or1 = Transformation $ \e -> Just $ BinOp e.annotation e BinOr (Number e.annotation 1)
 
 exprTransformsNSP :: [Transformation 'NSP (Expr AnnTransform -> Maybe (Expr AnnTransform))]
-exprTransformsNSP = [invertCondition, or1]
+exprTransformsNSP = [flipCondBranches, invertCondition, or1]
 
 -- | Pick some random semantics-preserving transformations and apply them
 randomizeSP :: Data a => a -> Gen a
