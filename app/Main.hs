@@ -30,7 +30,7 @@ import Verismith.Generate as Generate
     randomMod, proceduralIO, proceduralSrcIO,
   )
 import Verismith.Verilog
-import Verismith.Verilog.AST (mainModule)
+import Verismith.Verilog.AST (mainModule, topModuleId)
 
 boxed :: Text -> Text -> Text
 boxed title =
@@ -113,8 +113,7 @@ main = do
     --       Sh.cp_r "vcf_fuzz_equiv" ("potential_bugs/false_negatives/" <> show uuid)
 
     putStrLn "---------------"
-
-    m3 <- Hog.sample (randomizeNSP (annotateForTransformations m1)) <&> (mainModule % #id .~ Identifier "mod2")
+    m3 <- Hog.sample (randomizeNSP (annotateForTransformations m1)) <&> (topModuleId .~ Identifier "mod2")
     nonEquivResult <- runVCFormal (Experiment m1 m3 "vcf_fuzz_nequiv")
     if not (nonEquivResult.proofFound)
       then putStrLn "No proof found. Non-equivalent modules are non-equivalent"
