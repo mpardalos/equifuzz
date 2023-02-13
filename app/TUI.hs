@@ -140,6 +140,7 @@ appDraw st =
 
 appHandleEvent :: B.BrickEvent WidgetID AppEvent -> B.EventM WidgetID AppState ()
 appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar 'q') _)) = B.halt
+appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar 'r') _)) = liftIO . Vty.refresh =<< B.getVtyHandle
 appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar '\t') [])) = #focusedElementId %= cycleNext
 appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar '\t') [Vty.MShift])) = #focusedElementId %= cyclePrevious
 appHandleEvent (B.VtyEvent ev) =
