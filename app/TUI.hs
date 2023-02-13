@@ -135,13 +135,13 @@ appHandleEvent (B.VtyEvent ev) =
     RunningList -> B.zoom (toLensVL #running) (B.handleListEvent ev)
     InterestingList -> B.zoom (toLensVL #interesting) (B.handleListEvent ev)
     UninterestingList -> B.zoom (toLensVL #uninteresting) (B.handleListEvent ev)
-appHandleEvent (B.AppEvent (Began experiment)) = #running % #elements %= (Seq.|> experiment)
+appHandleEvent (B.AppEvent (Began experiment)) = #running % #elements %= (experiment Seq.<|)
 appHandleEvent (B.AppEvent (Completed result)) = do
   experimentIdx <- use (#running % #elements) <&> fromJust . Seq.findIndexL ((== result.uuid) . view #uuid)
   experiment <- use (#running % #elements) <&> (`Seq.index` experimentIdx)
   if result.proofFound == experiment.expectedResult
-    then #uninteresting % #elements %= (Seq.|> result)
-    else #interesting % #elements %= (Seq.|> result)
+    then #uninteresting % #elements %= ((experiment, result) Seq.<|)
+    else #interesting % #elements %= ((experiment, result) Seq.<|)
   #running % #elements %= Seq.deleteAt experimentIdx
 appHandleEvent _ = pure ()
 
