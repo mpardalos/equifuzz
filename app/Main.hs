@@ -5,14 +5,19 @@
 
 module Main where
 
+import Control.Monad (forever)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.UUID.V4 qualified as UUID
+import Experiments
 import GHC.IO.Encoding
 import Hedgehog.Gen qualified as Hog
 import Optics
-import Experiments
+import Shelly qualified as Sh
 import Transform
-  ( annotateForTransformations, randomizeSP, randomizeNSP,
+  ( annotateForTransformations,
+    randomizeNSP,
+    randomizeSP,
   )
 import Verismith.Generate as Generate
   ( ConfProperty (..),
@@ -22,9 +27,10 @@ import Verismith.Generate as Generate
     ProbModItem (..),
     ProbStatement (..),
     Probability (..),
-    randomMod,
+    randomMod, proceduralIO, proceduralSrcIO,
   )
 import Verismith.Verilog
+import Verismith.Verilog.AST (mainModule)
 
 boxed :: Text -> Text -> Text
 boxed title =
@@ -91,18 +97,30 @@ genConfig =
 main :: IO ()
 main = do
   setLocaleEncoding utf8
-  m1 :: ModDecl () <- Hog.sample (randomMod 2 4) <&> (#id .~ Identifier "mod1")
-  m2 <- Hog.sample (randomizeSP m1) <&> (#id .~ Identifier "mod2")
-  m3 <- Hog.sample (randomizeNSP (annotateForTransformations m1)) <&> (#id .~ Identifier "mod2")
+  forever $ do
+    m1 <- proceduralSrcIO "mod1" genConfig
 
-  equivResult <- runVCFormal (Experiment m1 m2 "vcf_fuzz_equiv")
-  if equivResult.proofFound
-    then putStrLn "Proof found. Equivalent modules are equivalent"
-    else putStrLn "ERROR | No proof found. Equivalent modules are non-equivalent"
+    -- putStrLn "---------------"
+    -- m2 <- Hog.sample (randomizeSP m1) <&> (#id .~ Identifier "mod2")
+    -- equivResult <- runVCFormal (Experiment m1 m2 "vcf_fuzz_equiv")
+    -- if equivResult.proofFound
+    --   then putStrLn "Proof found. Equivalent modules are equivalent"
+    --   else do
+    --     uuid <- UUID.nextRandom
+    --     putStrLn ("ERROR | No proof found. Equivalent modules are non-equivalent. Saving experiment as " <> show uuid)
+    --     Sh.shelly $ do
+    --       Sh.mkdir_p "potential_bugs/false_negatives/"
+    --       Sh.cp_r "vcf_fuzz_equiv" ("potential_bugs/false_negatives/" <> show uuid)
 
-  putStrLn "---------------"
+    putStrLn "---------------"
 
-  nonEquivResult <- runVCFormal (Experiment m1 m3 "vcf_fuzz_nequiv")
-  if nonEquivResult.proofFound
-    then putStrLn "ERROR | Proof found. Non-equivalent modules are equivalent"
-    else putStrLn "No proof found. Non-equivalent modules are non-equivalent"
+    m3 <- Hog.sample (randomizeNSP (annotateForTransformations m1)) <&> (mainModule % #id .~ Identifier "mod2")
+    nonEquivResult <- runVCFormal (Experiment m1 m3 "vcf_fuzz_nequiv")
+    if not (nonEquivResult.proofFound)
+      then putStrLn "No proof found. Non-equivalent modules are non-equivalent"
+      else do
+        uuid <- UUID.nextRandom
+        putStrLn ("ERROR | Proof found. Non-equivalent modules are equivalent. Saving experiment as " <> show uuid)
+        Sh.shelly $ do
+          Sh.mkdir_p "potential_bugs/false_positives/"
+          Sh.cp_r "vcf_fuzz_nequiv" ("potential_bugs/false_positives/" <> show uuid)
