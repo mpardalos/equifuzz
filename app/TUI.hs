@@ -34,9 +34,9 @@ instance LabelOptic "elements" A_Lens (B.GenericList n t e) (B.GenericList n t e
 
 instance
   (B.Splittable t, Traversable t, Semigroup (t e)) =>
-  LabelOptic "selectedElement" A_Traversal (B.GenericList n t e) (B.GenericList n t e) e e
+  LabelOptic "selectedElement" An_AffineTraversal (B.GenericList n t e) (B.GenericList n t e) e e
   where
-  labelOptic = traversalVL B.listSelectedElementL
+  labelOptic = singular $ traversalVL B.listSelectedElementL
 
 data WidgetID
   = RunningList
@@ -56,12 +56,24 @@ cyclePrevious x
 
 data AppState = AppState
   { running :: B.GenericList WidgetID Seq Experiment,
-    interesting :: B.GenericList WidgetID Seq ExperimentResult,
-    uninteresting :: B.GenericList WidgetID Seq ExperimentResult,
+    interesting :: B.GenericList WidgetID Seq (Experiment, ExperimentResult),
+    uninteresting :: B.GenericList WidgetID Seq (Experiment, ExperimentResult),
     focusedElementId :: WidgetID
   }
 
 makeFieldLabelsNoPrefix ''AppState
+
+selectedItem :: AffineFold AppState (Experiment, Maybe ExperimentResult)
+selectedItem = afolding $ \st -> case st.focusedElementId of
+  RunningList -> do
+    experiment <- st.running ^? #selectedElement
+    return (experiment, Nothing)
+  InterestingList -> do
+    (experiment, result) <- st.interesting ^? #selectedElement
+    return (experiment, Just result)
+  UninterestingList -> do
+    (experiment, result) <- st.uninteresting ^? #selectedElement
+    return (experiment, Just result)
 
 initialAppState :: AppState
 initialAppState =
@@ -74,15 +86,34 @@ initialAppState =
 
 appDraw :: AppState -> B.Widget WidgetID
 appDraw st =
-  B.vBox
-    [ renderList "Running" st.running,
-      renderList "Interesting" st.interesting,
-      renderList "Uninteresting" st.uninteresting
+  B.hBox
+    [ B.hLimit 42 $
+        B.vBox
+          [ renderList "Running" #uuid st.running,
+            renderList "Interesting" (_2 % #uuid) st.interesting,
+            renderList "Uninteresting" (_2 % #uuid) st.uninteresting
+          ],
+      B.border $ case st ^? selectedItem of
+        Just item -> renderSelection item
+        Nothing -> B.padBottom B.Max $ B.vBox [B.str " ", B.hBorder]
     ]
   where
+    renderSelection :: (Experiment, Maybe ExperimentResult) -> B.Widget WidgetID
+    renderSelection (experiment, mResult) =
+      B.padBottom B.Max
+        . B.vBox
+        $ [ B.str (show experiment.uuid),
+            B.hBorder,
+            B.str ("Expected result: " <> if experiment.expectedResult then "Equivalent" else "Non-equivalent")
+          ]
+          <> case mResult of
+            Nothing -> []
+            Just result ->
+              [ B.str ("Actual result:   " <> if result.proofFound then "Equivalent" else "Non-equivalent")
+              ]
 
-    renderList :: HasField "uuid" a UUID => String -> B.GenericList WidgetID Seq a -> B.Widget WidgetID
-    renderList title list =
+    renderList :: Is k A_Getter => String -> Optic' k NoIx a UUID -> B.GenericList WidgetID Seq a -> B.Widget WidgetID
+    renderList title uuid list =
       let listFocused = list ^. #name == st.focusedElementId
        in B.border
             . B.vBox
@@ -90,7 +121,7 @@ appDraw st =
                   (B.str title),
                 B.hBorder,
                 B.renderList
-                  (\selected it -> B.str ((if listFocused && selected then "→ " else "  ") <> show it.uuid))
+                  (\selected it -> B.str ((if listFocused && selected then "→ " else "  ") <> show (it ^. uuid)))
                   (list ^. #name == st.focusedElementId)
                   list
               ]
