@@ -6,7 +6,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module TUI (runTUI) where
+module TUI (runTUI, AppEvent(..)) where
 
 import Brick qualified as B
 import Brick.BChan qualified as B
@@ -24,7 +24,7 @@ import Data.UUID (UUID)
 import Experiments
 import Graphics.Vty qualified as Vty
 import Optics
-import Optics.State.Operators ((%=))
+import Optics.State.Operators ((%=), (.=))
 import Verismith.Verilog (genSource)
 
 instance LabelOptic "name" A_Lens (B.GenericList n t e) (B.GenericList n t e) n n where
@@ -44,6 +44,10 @@ data WidgetID
   | InterestingList
   | UninterestingList
   deriving (Eq, Ord, Show, Enum, Bounded)
+
+data AppEvent
+  = ExperimentProgress ExperimentProgress
+  | ExperimentThreadCrashed
 
 cycleNext :: (Enum a, Bounded a, Eq a) => a -> a
 cycleNext x
@@ -134,7 +138,7 @@ appDraw st =
                   list
               ]
 
-appHandleEvent :: B.BrickEvent WidgetID ExperimentProgress -> B.EventM WidgetID AppState ()
+appHandleEvent :: B.BrickEvent WidgetID AppEvent -> B.EventM WidgetID AppState ()
 appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar 'q') _)) = B.halt
 appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar '\t') [])) = #focusedElementId %= cycleNext
 appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar '\t') [Vty.MShift])) = #focusedElementId %= cyclePrevious
@@ -143,8 +147,11 @@ appHandleEvent (B.VtyEvent ev) =
     RunningList -> B.zoom (toLensVL #running) (B.handleListEvent ev)
     InterestingList -> B.zoom (toLensVL #interesting) (B.handleListEvent ev)
     UninterestingList -> B.zoom (toLensVL #uninteresting) (B.handleListEvent ev)
-appHandleEvent (B.AppEvent (Began experiment)) = #running % #elements %= (experiment Seq.<|)
-appHandleEvent (B.AppEvent (Completed result)) = do
+appHandleEvent (B.AppEvent ExperimentThreadCrashed) =
+  #running % #elements .= Seq.empty
+appHandleEvent (B.AppEvent (ExperimentProgress (Began experiment))) =
+  #running % #elements %= (experiment Seq.<|)
+appHandleEvent (B.AppEvent (ExperimentProgress (Completed result))) = do
   experimentIdx <- use (#running % #elements) <&> fromJust . Seq.findIndexL ((== result.uuid) . view #uuid)
   experiment <- use (#running % #elements) <&> (`Seq.index` experimentIdx)
   if result.proofFound == experiment.expectedResult
@@ -153,7 +160,7 @@ appHandleEvent (B.AppEvent (Completed result)) = do
   #running % #elements %= Seq.deleteAt experimentIdx
 appHandleEvent _ = pure ()
 
-runTUI :: B.BChan ExperimentProgress -> IO ()
+runTUI :: B.BChan AppEvent -> IO ()
 runTUI eventChan = do
   let buildVty = Vty.mkVty Vty.defaultConfig
   initialVty <- buildVty

@@ -4,14 +4,17 @@ import Brick.BChan qualified as B
 import Control.Concurrent (forkFinally)
 import Control.Monad (void)
 import Experiments
-import TUI (runTUI)
+import TUI (AppEvent (..), runTUI)
 
-experimentThread :: B.BChan ExperimentProgress -> IO ()
+experimentThread :: B.BChan AppEvent -> IO ()
 experimentThread eventChan =
   void $
     forkFinally
-      (experimentLoop mkNegativeExperiment runVCFormal (B.writeBChan eventChan))
-      (const $ experimentThread eventChan)
+      (experimentLoop mkNegativeExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
+      ( const $ do
+          B.writeBChan eventChan ExperimentThreadCrashed
+          experimentThread eventChan
+      )
 
 main :: IO ()
 main = do
