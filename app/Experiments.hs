@@ -137,9 +137,9 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     sshCommand :: Text
     sshCommand = [i|cd #{remoteDir} && vcf -fmode DPV -f compare.tcl|]
 
-saveExperiment :: Experiment -> IO ()
-saveExperiment Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
-  let dir = "experiments/" <> UUID.toString uuid
+saveExperiment :: String -> Experiment -> IO ()
+saveExperiment category Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
+  let dir = "experiments/" <> category <> "/" <> UUID.toString uuid
 
   Sh.mkdir_p dir
   Sh.writefile (dir </> ("design1.v" :: Text)) (genSource design1)
@@ -212,7 +212,9 @@ experimentLoop generator runner progress = forever $ do
 
   progress (Began experiment)
   result <- runner experiment
-  when (result.proofFound /= experiment.expectedResult) $
-    saveExperiment experiment
+  case (experiment.expectedResult, result.proofFound) of
+    (True, False) -> saveExperiment "false-negatives" experiment
+    (False, True) -> saveExperiment "false-positives" experiment
+    _ -> pure ()
 
   progress (Completed result)
