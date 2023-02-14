@@ -8,7 +8,7 @@
 
 module Experiments where
 
-import Control.Monad (forever, void, when)
+import Control.Monad (forever, void)
 import Data.Data (Data)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
@@ -84,16 +84,14 @@ isCompleted :: ExperimentProgress -> Bool
 isCompleted Completed {} = True
 isCompleted _ = False
 
-experimentSetupDir :: Text
-experimentSetupDir = "current"
-
 runVCFormal :: Experiment -> IO ExperimentResult
 runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript "design1.v" design1.top "design2.v" design2.top)
   Sh.writefile (dir </> ("design1.v" :: Text)) (genSource design1)
   Sh.writefile (dir </> ("design2.v" :: Text)) (genSource design2)
-  void $ Sh.run "scp" ["-r", dir, vcfHost <> ":" <> remoteDir]
+  void $ Sh.bash "ssh" [vcfHost, "mkdir -p " <> remoteDir]
+  void $ Sh.bash "scp" ["-r", dir <> "/*", vcfHost <> ":" <> remoteDir]
 
   fullOutput <- Sh.silently $ Sh.run "ssh" [vcfHost, sshCommand]
   let proofFound =
@@ -103,9 +101,11 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
 
   return ExperimentResult {proofFound, fullOutput, uuid}
   where
-    -- It is important here that this DOES NOT have a trailing slash. This is how scp expects the path
     remoteDir :: Text
     remoteDir = "equifuzz_vcf_experiment"
+
+    sshCommand :: Text
+    sshCommand = [i|cd #{remoteDir} && pwd && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl|]
 
     compareScript :: Text -> Text -> Text -> Text -> Text
     compareScript file1 top1 file2 top2 =
@@ -135,9 +135,6 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
 
     vcfHost :: Text
     vcfHost = "ee-mill3"
-
-    sshCommand :: Text
-    sshCommand = [i|cd #{remoteDir} && pwd && ls -ltr && vcf -fmode DPV -f compare.tcl|]
 
 saveExperiment :: String -> Experiment -> ExperimentResult -> IO ()
 saveExperiment category Experiment {design1, design2, uuid, expectedResult} ExperimentResult {fullOutput, proofFound} = Sh.shelly . Sh.silently $ do
