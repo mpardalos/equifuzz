@@ -151,16 +151,16 @@ appHandleEvent (B.VtyEvent ev) =
     InterestingList -> B.zoom (toLensVL #interesting) (B.handleListEvent ev)
     UninterestingList -> B.zoom (toLensVL #uninteresting) (B.handleListEvent ev)
 appHandleEvent (B.AppEvent ExperimentThreadCrashed) =
-  #running % #elements .= Seq.empty
+  #running %= B.listClear
 appHandleEvent (B.AppEvent (ExperimentProgress (Began experiment))) = do
   diff <- liftIO $ getDiff experiment
-  #running % #elements %= (ExperimentInfo experiment Nothing diff Seq.<|)
+  #running %= B.listInsert 0 (ExperimentInfo experiment Nothing diff)
 appHandleEvent (B.AppEvent (ExperimentProgress (Completed result))) = do
   experimentIdx <- use (#running % #elements) <&> fromJust . Seq.findIndexL ((== result.uuid) . view (#experiment % #uuid))
   experimentInfo <- use (#running % #elements) <&> (`Seq.index` experimentIdx)
   if result.proofFound == experimentInfo.experiment.expectedResult
-    then #uninteresting % #elements %= (experimentInfo {result = Just result} Seq.<|)
-    else #interesting % #elements %= (experimentInfo {result = Just result} Seq.<|)
+    then #uninteresting %= B.listInsert 0 (experimentInfo {result = Just result})
+    else #interesting %= B.listInsert 0 (experimentInfo {result = Just result})
   #running % #elements %= Seq.deleteAt experimentIdx
 appHandleEvent _ = pure ()
 
