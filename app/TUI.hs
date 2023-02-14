@@ -104,32 +104,36 @@ appDraw st =
             renderList "Interesting" st.interesting,
             renderList "Uninteresting" st.uninteresting
           ],
-      B.borderWithLabel (B.str "Experiment") $ case st ^? selectedItem of
+      case st ^? selectedItem of
         Just item -> renderSelection item
         Nothing -> B.padBottom B.Max $ B.vBox [B.strWrap " "]
     ]
   where
     renderSelection :: ExperimentInfo -> B.Widget WidgetID
-    renderSelection (ExperimentInfo experiment@Experiment {design1, design2} mResult mDiff) =
-      B.padBottom B.Max
-        . B.vBox
-        $ let start =
-                [ B.str ("UUID:            " <> show experiment.uuid),
-                  B.str ("Expected result: " <> if experiment.expectedResult then "Equivalent" else "Non-equivalent")
-                ]
-              resultStuff = case mResult of
-                Just result ->
-                  [B.str ("Actual result:   " <> if result.proofFound then "Equivalent" else "Non-equivalent")]
-                Nothing -> []
-              diffDisplay = case mDiff of
-                Just diff ->
-                  [ B.vBox
-                      [ B.padTop (B.Pad 1) (B.hBorder B.<+> B.str " Diff " B.<+> B.hBorder),
-                        B.txtWrap diff
-                      ]
-                  ]
-                Nothing -> []
-           in start ++ resultStuff ++ diffDisplay
+    renderSelection (ExperimentInfo experiment mResult mDiff) =
+      let start =
+            B.vBox
+              [ B.str ("UUID:            " <> show experiment.uuid),
+                B.str ("Expected result: " <> if experiment.expectedResult then "Equivalent" else "Non-equivalent")
+              ]
+          resultStuff = case mResult of
+            Just result -> B.str ("Actual result:   " <> if result.proofFound then "Equivalent" else "Non-equivalent")
+            Nothing -> B.emptyWidget
+          diffDisplay =
+            maybe
+              B.emptyWidget
+              (B.borderWithLabel (B.str " Diff ") . B.txtWrap)
+              mDiff
+          outputDisplay =
+            maybe
+              B.emptyWidget
+              (B.borderWithLabel (B.str " Output ") . B.cropTopTo 50 . B.txtWrap . view #fullOutput)
+              mResult
+       in B.padBottom B.Max . B.vBox $
+            [ B.border $ B.padRight B.Max $ start B.<=> resultStuff,
+              diffDisplay,
+              outputDisplay
+            ]
 
     renderList :: String -> B.GenericList WidgetID Seq ExperimentInfo -> B.Widget WidgetID
     renderList title list =
