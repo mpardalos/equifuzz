@@ -204,7 +204,7 @@ mkNegativeExperiment = do
   design1 <- proceduralSrcIO "mod1" genConfig
   design2 <- Hog.sample (randomizeNSP (annotateForTransformations design1)) <&> (topModuleId .~ Identifier "mod2")
   uuid <- UUID.nextRandom
-  return Experiment {expectedResult = True, ..}
+  return Experiment {expectedResult = False, ..}
 
 experimentLoop :: IO Experiment -> (Experiment -> IO ExperimentResult) -> ProgressNotify -> IO ()
 experimentLoop generator runner progress = forever $ do
