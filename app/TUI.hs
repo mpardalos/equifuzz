@@ -25,7 +25,7 @@ import Data.Text qualified as T
 import Experiments
 import Graphics.Vty qualified as Vty
 import Optics
-import Optics.State.Operators ((%=), (.=))
+import Optics.State.Operators ((%=))
 import Shelly qualified as Sh
 import Verismith.Verilog (genSource)
 
@@ -41,11 +41,16 @@ instance
   where
   labelOptic = singular $ traversalVL B.listSelectedElementL
 
-data WidgetID
+data ListID
   = RunningList
   | InterestingList
   | UninterestingList
   deriving (Eq, Ord, Show, Enum, Bounded)
+
+data WidgetID
+  = ListID ListID
+  | OutputViewport
+  deriving (Eq, Ord, Show)
 
 data AppEvent
   = ExperimentProgress ExperimentProgress
@@ -74,25 +79,31 @@ data AppState = AppState
   { running :: B.GenericList WidgetID Seq ExperimentInfo,
     interesting :: B.GenericList WidgetID Seq ExperimentInfo,
     uninteresting :: B.GenericList WidgetID Seq ExperimentInfo,
-    focusedElementId :: WidgetID
+    focusedListId :: ListID
   }
   deriving (Show)
 
 makeFieldLabelsNoPrefix ''AppState
 
+focusedList :: Getter AppState (B.GenericList WidgetID Seq ExperimentInfo)
+focusedList =
+  to
+    ( \st -> case st.focusedListId of
+        RunningList -> st.running
+        InterestingList -> st.interesting
+        UninterestingList -> st.uninteresting
+    )
+
 selectedItem :: AffineFold AppState ExperimentInfo
-selectedItem = afolding $ \st -> case st.focusedElementId of
-  RunningList -> st.running ^? #selectedElement
-  InterestingList -> st.interesting ^? #selectedElement
-  UninterestingList -> st.uninteresting ^? #selectedElement
+selectedItem = focusedList % #selectedElement
 
 initialAppState :: AppState
 initialAppState =
   AppState
-    { running = B.list RunningList Seq.empty 1,
-      interesting = B.list InterestingList Seq.empty 1,
-      uninteresting = B.list UninterestingList Seq.empty 1,
-      focusedElementId = RunningList
+    { running = B.list (ListID RunningList) Seq.empty 1,
+      interesting = B.list (ListID InterestingList) Seq.empty 1,
+      uninteresting = B.list (ListID UninterestingList) Seq.empty 1,
+      focusedListId = RunningList
     }
 
 appDraw :: AppState -> B.Widget WidgetID
@@ -122,12 +133,19 @@ appDraw st =
           diffDisplay =
             maybe
               B.emptyWidget
-              (B.borderWithLabel (B.str " Diff ") . B.txtWrap)
+              ( B.borderWithLabel (B.str " Diff ")
+                  . B.txtWrap
+              )
               mDiff
           outputDisplay =
             maybe
               B.emptyWidget
-              (B.borderWithLabel (B.str " Output ") . B.cropTopTo 50 . B.txtWrap . view #fullOutput)
+              ( B.borderWithLabel (B.str " Output ")
+                  . B.withVScrollBars B.OnRight
+                  . B.viewport OutputViewport B.Vertical
+                  . B.txtWrap
+                  . view #fullOutput
+              )
               mResult
        in B.padBottom B.Max . B.vBox $
             [ B.border $ B.padRight B.Max $ start B.<=> resultStuff,
@@ -137,21 +155,23 @@ appDraw st =
 
     renderList :: String -> B.GenericList WidgetID Seq ExperimentInfo -> B.Widget WidgetID
     renderList title list =
-      let listFocused = list ^. #name == st.focusedElementId
+      let listFocused = list ^. #name == ListID st.focusedListId
        in B.borderWithLabel ((if listFocused then B.withAttr (B.attrName "selected") else id) (B.str title)) $
             B.renderList
               (\selected it -> B.str ((if listFocused && selected then "→ " else "  ") <> show it.experiment.uuid))
-              (list ^. #name == st.focusedElementId)
+              (list ^. #name == ListID st.focusedListId)
               list
 
 appHandleEvent :: B.BrickEvent WidgetID AppEvent -> B.EventM WidgetID AppState ()
 appHandleEvent (B.VtyEvent ev) = case ev of
   (Vty.EvKey (Vty.KChar 'q') _) -> B.halt
   (Vty.EvKey (Vty.KChar 'r') _) -> liftIO . Vty.refresh =<< B.getVtyHandle
-  (Vty.EvKey (Vty.KChar '\t') []) -> #focusedElementId %= cycleNext
-  (Vty.EvKey Vty.KBackTab []) -> #focusedElementId %= cyclePrevious
+  (Vty.EvKey (Vty.KChar '\t') []) -> #focusedListId %= cycleNext
+  (Vty.EvKey Vty.KBackTab []) -> #focusedListId %= cyclePrevious
+  (Vty.EvKey Vty.KPageUp []) -> B.vScrollPage (B.viewportScroll OutputViewport) B.Up
+  (Vty.EvKey Vty.KPageDown []) -> B.vScrollPage (B.viewportScroll OutputViewport) B.Down
   _ ->
-    use #focusedElementId >>= \case
+    use #focusedListId >>= \case
       RunningList -> B.zoom (toLensVL #running) (B.handleListEvent ev)
       InterestingList -> B.zoom (toLensVL #interesting) (B.handleListEvent ev)
       UninterestingList -> B.zoom (toLensVL #uninteresting) (B.handleListEvent ev)
