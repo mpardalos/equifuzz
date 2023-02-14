@@ -137,15 +137,22 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     vcfHost = "ee-mill3"
 
     sshCommand :: Text
-    sshCommand = [i|cd #{remoteDir} && vcf -fmode DPV -f compare.tcl|]
+    sshCommand = [i|cd #{remoteDir} && pwd && ls -ltr && vcf -fmode DPV -f compare.tcl|]
 
-saveExperiment :: String -> Experiment -> IO ()
-saveExperiment category Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
+saveExperiment :: String -> Experiment -> ExperimentResult -> IO ()
+saveExperiment category Experiment {design1, design2, uuid, expectedResult} ExperimentResult {fullOutput, proofFound} = Sh.shelly . Sh.silently $ do
   let dir = "experiments/" <> category <> "/" <> UUID.toString uuid
+  let info :: Text =
+        [__i|
+            Expected equivalence: #{show expectedResult}
+            Found equivalence:    #{show proofFound}
+            |]
 
   Sh.mkdir_p dir
   Sh.writefile (dir </> ("design1.v" :: Text)) (genSource design1)
   Sh.writefile (dir </> ("design2.v" :: Text)) (genSource design2)
+  Sh.writefile (dir </> ("full_output.txt" :: Text)) fullOutput
+  Sh.writefile (dir </> ("info.txt" :: Text)) info
 
 genConfig :: Config
 genConfig =
@@ -215,8 +222,8 @@ experimentLoop generator runner progress = forever $ do
   progress (Began experiment)
   result <- runner experiment
   case (experiment.expectedResult, result.proofFound) of
-    (True, False) -> saveExperiment "false-negatives" experiment
-    (False, True) -> saveExperiment "false-positives" experiment
+    (True, False) -> saveExperiment "false-negatives" experiment result
+    (False, True) -> saveExperiment "false-positives" experiment result
     _ -> pure ()
 
   progress (Completed result)
