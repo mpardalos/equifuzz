@@ -6,7 +6,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module TUI (runTUI, AppEvent(..)) where
+module TUI (runTUI, AppEvent (..)) where
 
 import Brick qualified as B
 import Brick.BChan qualified as B
@@ -17,14 +17,16 @@ import Brick.Widgets.Dialog qualified as B
 import Brick.Widgets.List qualified as B
 import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isJust)
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
-import Data.UUID (UUID)
+import Data.Text (Text)
+import Data.Text qualified as T
 import Experiments
 import Graphics.Vty qualified as Vty
 import Optics
 import Optics.State.Operators ((%=), (.=))
+import Shelly qualified as Sh
 import Verismith.Verilog (genSource)
 
 instance LabelOptic "name" A_Lens (B.GenericList n t e) (B.GenericList n t e) n n where
@@ -59,26 +61,30 @@ cyclePrevious x
   | x == minBound = maxBound
   | otherwise = pred x
 
+data ExperimentInfo = ExperimentInfo
+  { experiment :: Experiment,
+    result :: Maybe ExperimentResult,
+    modulesDiff :: Maybe Text
+  }
+  deriving (Show)
+
+makeFieldLabelsNoPrefix ''ExperimentInfo
+
 data AppState = AppState
-  { running :: B.GenericList WidgetID Seq Experiment,
-    interesting :: B.GenericList WidgetID Seq (Experiment, ExperimentResult),
-    uninteresting :: B.GenericList WidgetID Seq (Experiment, ExperimentResult),
+  { running :: B.GenericList WidgetID Seq ExperimentInfo,
+    interesting :: B.GenericList WidgetID Seq ExperimentInfo,
+    uninteresting :: B.GenericList WidgetID Seq ExperimentInfo,
     focusedElementId :: WidgetID
   }
+  deriving (Show)
 
 makeFieldLabelsNoPrefix ''AppState
 
-selectedItem :: AffineFold AppState (Experiment, Maybe ExperimentResult)
+selectedItem :: AffineFold AppState ExperimentInfo
 selectedItem = afolding $ \st -> case st.focusedElementId of
-  RunningList -> do
-    experiment <- st.running ^? #selectedElement
-    return (experiment, Nothing)
-  InterestingList -> do
-    (experiment, result) <- st.interesting ^? #selectedElement
-    return (experiment, Just result)
-  UninterestingList -> do
-    (experiment, result) <- st.uninteresting ^? #selectedElement
-    return (experiment, Just result)
+  RunningList -> st.running ^? #selectedElement
+  InterestingList -> st.interesting ^? #selectedElement
+  UninterestingList -> st.uninteresting ^? #selectedElement
 
 initialAppState :: AppState
 initialAppState =
@@ -94,55 +100,51 @@ appDraw st =
   B.hBox
     [ B.hLimit 42 $
         B.vBox
-          [ renderList "Running" #uuid st.running,
-            renderList "Interesting" (_2 % #uuid) st.interesting,
-            renderList "Uninteresting" (_2 % #uuid) st.uninteresting
+          [ renderList "Running" st.running,
+            renderList "Interesting" st.interesting,
+            renderList "Uninteresting" st.uninteresting
           ],
-      B.border $ case st ^? selectedItem of
+      B.borderWithLabel (B.str "Experiment") $ case st ^? selectedItem of
         Just item -> renderSelection item
-        Nothing -> B.padBottom B.Max $ B.vBox [B.str " ", B.hBorder]
+        Nothing -> B.padBottom B.Max $ B.vBox [B.strWrap " "]
     ]
   where
-    renderSelection :: (Experiment, Maybe ExperimentResult) -> B.Widget WidgetID
-    renderSelection (experiment@Experiment {design1, design2}, mResult) =
+    renderSelection :: ExperimentInfo -> B.Widget WidgetID
+    renderSelection (ExperimentInfo experiment@Experiment {design1, design2} mResult mDiff) =
       B.padBottom B.Max
         . B.vBox
         $ let start =
-                [ B.str (show experiment.uuid),
-                  B.hBorder,
+                [ B.str ("UUID:            " <> show experiment.uuid),
                   B.str ("Expected result: " <> if experiment.expectedResult then "Equivalent" else "Non-equivalent")
                 ]
               resultStuff = case mResult of
                 Just result ->
-                  [ B.str ("Actual result:   " <> if result.proofFound then "Equivalent" else "Non-equivalent"),
-                    B.padTop (B.Pad 1) (B.hBorder B.<+> B.str "Full Output" B.<+> B.hBorder),
-                    B.txtWrap result.fullOutput
+                  [B.str ("Actual result:   " <> if result.proofFound then "Equivalent" else "Non-equivalent")]
+                Nothing -> []
+              diffDisplay = case mDiff of
+                Just diff ->
+                  [ B.vBox
+                      [ B.padTop (B.Pad 1) (B.hBorder B.<+> B.str " Diff " B.<+> B.hBorder),
+                        B.txtWrap diff
+                      ]
                   ]
-                Nothing ->
-                  [ B.padTop (B.Pad 1) (B.hBorder B.<+> B.str "Designs" B.<+> B.hBorder),
-                    B.txtWrap (genSource design1) B.<+> B.vBorder B.<+> B.txtWrap (genSource design2)
-                  ]
-           in start ++ resultStuff
+                Nothing -> []
+           in start ++ resultStuff ++ diffDisplay
 
-    renderList :: Is k A_Getter => String -> Optic' k NoIx a UUID -> B.GenericList WidgetID Seq a -> B.Widget WidgetID
-    renderList title uuid list =
+    renderList :: String -> B.GenericList WidgetID Seq ExperimentInfo -> B.Widget WidgetID
+    renderList title list =
       let listFocused = list ^. #name == st.focusedElementId
-       in B.border
-            . B.vBox
-            $ [ (if listFocused then B.withAttr (B.attrName "selected") else id)
-                  (B.str title),
-                B.hBorder,
-                B.renderList
-                  (\selected it -> B.str ((if listFocused && selected then "→ " else "  ") <> show (it ^. uuid)))
-                  (list ^. #name == st.focusedElementId)
-                  list
-              ]
+       in B.borderWithLabel ((if listFocused then B.withAttr (B.attrName "selected") else id) (B.str title)) $
+            B.renderList
+              (\selected it -> B.str ((if listFocused && selected then "→ " else "  ") <> show it.experiment.uuid))
+              (list ^. #name == st.focusedElementId)
+              list
 
 appHandleEvent :: B.BrickEvent WidgetID AppEvent -> B.EventM WidgetID AppState ()
 appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar 'q') _)) = B.halt
 appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar 'r') _)) = liftIO . Vty.refresh =<< B.getVtyHandle
 appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar '\t') [])) = #focusedElementId %= cycleNext
-appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar '\t') [Vty.MShift])) = #focusedElementId %= cyclePrevious
+appHandleEvent (B.VtyEvent (Vty.EvKey Vty.KBackTab [])) = #focusedElementId %= cyclePrevious
 appHandleEvent (B.VtyEvent ev) =
   use #focusedElementId >>= \case
     RunningList -> B.zoom (toLensVL #running) (B.handleListEvent ev)
@@ -150,16 +152,35 @@ appHandleEvent (B.VtyEvent ev) =
     UninterestingList -> B.zoom (toLensVL #uninteresting) (B.handleListEvent ev)
 appHandleEvent (B.AppEvent ExperimentThreadCrashed) =
   #running % #elements .= Seq.empty
-appHandleEvent (B.AppEvent (ExperimentProgress (Began experiment))) =
-  #running % #elements %= (experiment Seq.<|)
+appHandleEvent (B.AppEvent (ExperimentProgress (Began experiment))) = do
+  diff <- liftIO $ getDiff experiment
+  #running % #elements %= (ExperimentInfo experiment Nothing diff Seq.<|)
 appHandleEvent (B.AppEvent (ExperimentProgress (Completed result))) = do
-  experimentIdx <- use (#running % #elements) <&> fromJust . Seq.findIndexL ((== result.uuid) . view #uuid)
-  experiment <- use (#running % #elements) <&> (`Seq.index` experimentIdx)
-  if result.proofFound == experiment.expectedResult
-    then #uninteresting % #elements %= ((experiment, result) Seq.<|)
-    else #interesting % #elements %= ((experiment, result) Seq.<|)
+  experimentIdx <- use (#running % #elements) <&> fromJust . Seq.findIndexL ((== result.uuid) . view (#experiment % #uuid))
+  experimentInfo <- use (#running % #elements) <&> (`Seq.index` experimentIdx)
+  if result.proofFound == experimentInfo.experiment.expectedResult
+    then #uninteresting % #elements %= (experimentInfo {result = Just result} Seq.<|)
+    else #interesting % #elements %= (experimentInfo {result = Just result} Seq.<|)
   #running % #elements %= Seq.deleteAt experimentIdx
 appHandleEvent _ = pure ()
+
+-- | Run the experiment's modules through a text diff
+getDiff :: Experiment -> IO (Maybe Text)
+getDiff Experiment {design1, design2} = do
+  let designTxt1 = genSource design1
+      designTxt2 = genSource design2
+  Sh.shelly . Sh.silently $ do
+    diffExists <- isJust <$> Sh.which "diff"
+    if diffExists
+      then do
+        tmpdir <- T.strip <$> Sh.run "mktemp" ["-d"]
+        let path1 = tmpdir Sh.</> ("design1.v" :: FilePath)
+        let path2 = tmpdir Sh.</> ("design2.v" :: FilePath)
+        Sh.writefile path1 designTxt1
+        Sh.writefile path2 designTxt2
+        Sh.errExit False $
+          Just <$> Sh.run "diff" [T.pack path1, T.pack path2]
+      else return Nothing
 
 runTUI :: B.BChan AppEvent -> IO ()
 runTUI eventChan = do
