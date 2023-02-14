@@ -141,28 +141,30 @@ appDraw st =
               list
 
 appHandleEvent :: B.BrickEvent WidgetID AppEvent -> B.EventM WidgetID AppState ()
-appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar 'q') _)) = B.halt
-appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar 'r') _)) = liftIO . Vty.refresh =<< B.getVtyHandle
-appHandleEvent (B.VtyEvent (Vty.EvKey (Vty.KChar '\t') [])) = #focusedElementId %= cycleNext
-appHandleEvent (B.VtyEvent (Vty.EvKey Vty.KBackTab [])) = #focusedElementId %= cyclePrevious
-appHandleEvent (B.VtyEvent ev) =
-  use #focusedElementId >>= \case
-    RunningList -> B.zoom (toLensVL #running) (B.handleListEvent ev)
-    InterestingList -> B.zoom (toLensVL #interesting) (B.handleListEvent ev)
-    UninterestingList -> B.zoom (toLensVL #uninteresting) (B.handleListEvent ev)
-appHandleEvent (B.AppEvent ExperimentThreadCrashed) =
-  #running %= B.listClear
-appHandleEvent (B.AppEvent (ExperimentProgress (Began experiment))) = do
-  diff <- liftIO $ getDiff experiment
-  #running %= B.listInsert 0 (ExperimentInfo experiment Nothing diff)
-appHandleEvent (B.AppEvent (ExperimentProgress (Completed result))) = do
-  experimentIdx <- use (#running % #elements) <&> fromJust . Seq.findIndexL ((== result.uuid) . view (#experiment % #uuid))
-  experimentInfo <- use (#running % #elements) <&> (`Seq.index` experimentIdx)
-  if result.proofFound == experimentInfo.experiment.expectedResult
-    then #uninteresting %= B.listInsert 0 (experimentInfo {result = Just result})
-    else #interesting %= B.listInsert 0 (experimentInfo {result = Just result})
-  #running % #elements %= Seq.deleteAt experimentIdx
-appHandleEvent _ = pure ()
+appHandleEvent (B.VtyEvent ev) = case ev of
+  (Vty.EvKey (Vty.KChar 'q') _) -> B.halt
+  (Vty.EvKey (Vty.KChar 'r') _) -> liftIO . Vty.refresh =<< B.getVtyHandle
+  (Vty.EvKey (Vty.KChar '\t') []) -> #focusedElementId %= cycleNext
+  (Vty.EvKey Vty.KBackTab []) -> #focusedElementId %= cyclePrevious
+  _ ->
+    use #focusedElementId >>= \case
+      RunningList -> B.zoom (toLensVL #running) (B.handleListEvent ev)
+      InterestingList -> B.zoom (toLensVL #interesting) (B.handleListEvent ev)
+      UninterestingList -> B.zoom (toLensVL #uninteresting) (B.handleListEvent ev)
+appHandleEvent (B.AppEvent ev) = case ev of
+  ExperimentThreadCrashed -> #running %= B.listClear
+  (ExperimentProgress (Began experiment)) -> do
+    diff <- liftIO $ getDiff experiment
+    #running %= B.listInsert 0 (ExperimentInfo experiment Nothing diff)
+  (ExperimentProgress (Completed result)) -> do
+    experimentIdx <- use (#running % #elements) <&> fromJust . Seq.findIndexL ((== result.uuid) . view (#experiment % #uuid))
+    experimentInfo <- use (#running % #elements) <&> (`Seq.index` experimentIdx)
+    if result.proofFound == experimentInfo.experiment.expectedResult
+      then #uninteresting %= B.listInsert 0 (experimentInfo {result = Just result})
+      else #interesting %= B.listInsert 0 (experimentInfo {result = Just result})
+    #running % #elements %= Seq.deleteAt experimentIdx
+appHandleEvent B.MouseDown {} = pure ()
+appHandleEvent B.MouseUp {} = pure ()
 
 -- | Run the experiment's modules through a text diff
 getDiff :: Experiment -> IO (Maybe Text)
