@@ -103,8 +103,10 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
 
   return ExperimentResult {proofFound, fullOutput, uuid}
   where
+    -- It is important here that this DOES NOT have a trailing slash. This is how scp expects the path
     remoteDir :: Text
-    remoteDir = "equifuzz_vcf_experiment/"
+    remoteDir = "equifuzz_vcf_experiment"
+
     compareScript :: Text -> Text -> Text -> Text -> Text
     compareScript file1 top1 file2 top2 =
       [__i|
