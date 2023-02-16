@@ -1,4 +1,4 @@
-cabal-version:      3.4
+cabal-version:      2.4
 name:               equifuzz
 version:            0.1.0.0
 -- synopsis:
@@ -12,7 +12,6 @@ build-type:         Simple
 
 executable equifuzz
     ghc-options: -Wall -threaded
-    import:           warnings
     main-is:          Main.hs
     other-modules: Transform
                  , Experiments
@@ -28,8 +27,8 @@ executable equifuzz
                     , uniplate
                     , recursion-schemes
                     , uuid
-                    , brick == 1.6
-                    , vty == 5.38
+                    , brick
+                    , vty
                     , containers
     hs-source-dirs:   app
     default-language: GHC2021
