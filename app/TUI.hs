@@ -154,11 +154,12 @@ appDraw st =
     renderList :: String -> B.GenericList WidgetID Seq ExperimentInfo -> B.Widget WidgetID
     renderList title list =
       let listFocused = list ^. #name == ListID st.focusedListId
-       in B.borderWithLabel ((if listFocused then B.withAttr (B.attrName "selected") else id) (B.str title)) $
-            B.renderList
-              (\selected it -> B.str ((if listFocused && selected then "→ " else "  ") <> show it.experiment.uuid))
-              (list ^. #name == ListID st.focusedListId)
-              list
+          headerText = B.str (title <> " (" <> show (length (list ^. #elements)) <> ")")
+          setHeaderAttr = if listFocused then B.withAttr (B.attrName "selected") else id
+          itemMarker itemSelected = if listFocused && itemSelected then "→ " else "  "
+          renderItem selected item = B.str (itemMarker selected <> show item.experiment.uuid)
+       in B.borderWithLabel (setHeaderAttr headerText) $
+            B.renderList renderItem listFocused list
 
 appHandleEvent :: B.BrickEvent WidgetID AppEvent -> B.EventM WidgetID AppState ()
 appHandleEvent (B.VtyEvent ev) = case ev of
