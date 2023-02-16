@@ -2,28 +2,25 @@ module Main where
 
 import Brick.BChan qualified as B
 import Control.Concurrent (forkFinally)
-import Control.Monad (void)
+import Control.Monad (replicateM_, void)
 import Data.Text.IO qualified as T
 import Experiments
 import System.Environment (getArgs, getProgName)
 import TUI (AppEvent (..), runTUI)
-import Verismith.Verilog (genSource)
 import Text.Printf (printf)
+import Verismith.Verilog (genSource)
 
 experimentThread :: B.BChan AppEvent -> IO ()
 experimentThread eventChan =
   void $
     forkFinally
       (experimentLoop mkNegativeExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
-      ( const $ do
-          B.writeBChan eventChan ExperimentThreadCrashed
-          experimentThread eventChan
-      )
+      (const $ experimentThread eventChan)
 
 tuiMain :: IO ()
 tuiMain = do
-  eventChan <- B.newBChan 10
-  experimentThread eventChan
+  eventChan <- B.newBChan 20
+  replicateM_ 10 $ experimentThread eventChan
   runTUI eventChan
 
 genMain :: IO ()

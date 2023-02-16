@@ -52,9 +52,7 @@ data WidgetID
   | OutputViewport
   deriving (Eq, Ord, Show)
 
-data AppEvent
-  = ExperimentProgress ExperimentProgress
-  | ExperimentThreadCrashed
+data AppEvent = ExperimentProgress ExperimentProgress
 
 cycleNext :: (Enum a, Bounded a, Eq a) => a -> a
 cycleNext x
@@ -176,7 +174,6 @@ appHandleEvent (B.VtyEvent ev) = case ev of
       InterestingList -> B.zoom (toLensVL #interesting) (B.handleListEvent ev)
       UninterestingList -> B.zoom (toLensVL #uninteresting) (B.handleListEvent ev)
 appHandleEvent (B.AppEvent ev) = case ev of
-  ExperimentThreadCrashed -> #running %= B.listClear
   (ExperimentProgress (Began experiment)) -> do
     diff <- liftIO $ getDiff experiment
     #running %= B.listInsert 0 (ExperimentInfo experiment Nothing diff)
@@ -186,7 +183,12 @@ appHandleEvent (B.AppEvent ev) = case ev of
     if result.proofFound == experimentInfo.experiment.expectedResult
       then #uninteresting %= B.listInsert 0 (experimentInfo {result = Just result})
       else #interesting %= B.listInsert 0 (experimentInfo {result = Just result})
-    #running % #elements %= Seq.deleteAt experimentIdx
+    #running %= B.listRemove experimentIdx
+  (ExperimentProgress (Aborted experiment)) -> do
+    runningExperiments <- use (#running % #elements)
+    case Seq.findIndexL ((== experiment.uuid) . view (#experiment % #uuid)) runningExperiments of
+      Just idx -> #running %= B.listRemove idx
+      Nothing -> pure ()
 appHandleEvent B.MouseDown {} = pure ()
 appHandleEvent B.MouseUp {} = pure ()
 

@@ -8,7 +8,8 @@
 
 module Experiments where
 
-import Control.Monad (forever, void)
+import Control.Exception (SomeException, try)
+import Control.Monad (forM_, forever, void)
 import Data.Data (Data)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
@@ -75,6 +76,7 @@ makeFieldLabelsNoPrefix ''ExperimentResult
 
 data ExperimentProgress
   = Began Experiment
+  | Aborted Experiment
   | Completed ExperimentResult
   deriving (Show)
 
@@ -90,8 +92,8 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
   Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript "design1.v" design1.top "design2.v" design2.top)
   Sh.writefile (dir </> ("design1.v" :: Text)) (genSource design1)
   Sh.writefile (dir </> ("design2.v" :: Text)) (genSource design2)
-  void $ Sh.bash "ssh" [vcfHost, "mkdir -p " <> remoteDir]
-  void $ Sh.bash "scp" ["-r", dir <> "/*", vcfHost <> ":" <> remoteDir]
+  void $ Sh.bash "ssh" [vcfHost, "mkdir -p " <> remoteDir <> "/"]
+  void $ Sh.bash "scp" ["-r", dir <> "/*", vcfHost <> ":" <> remoteDir <> "/" <> T.pack (show uuid)]
 
   fullOutput <- Sh.silently $ Sh.run "ssh" [vcfHost, sshCommand]
   let proofFound =
@@ -105,7 +107,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     remoteDir = "equifuzz_vcf_experiment"
 
     sshCommand :: Text
-    sshCommand = [i|cd #{remoteDir} && pwd && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl|]
+    sshCommand = [i|cd #{remoteDir<>"/"<>T.pack (show uuid)} && ( pwd > ~/out ) && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl|]
 
     compareScript :: Text -> Text -> Text -> Text -> Text
     compareScript file1 top1 file2 top2 =
@@ -217,10 +219,13 @@ experimentLoop generator runner progress = forever $ do
   experiment <- generator
 
   progress (Began experiment)
-  result <- runner experiment
-  case (experiment.expectedResult, result.proofFound) of
-    (True, False) -> saveExperiment "false-negatives" experiment result
-    (False, True) -> saveExperiment "false-positives" experiment result
-    _ -> pure ()
+  runResult <- try @SomeException $ runner experiment
+  case runResult of
+    Left _ -> progress (Aborted experiment)
+    Right result -> do
+      case (experiment.expectedResult, result.proofFound) of
+        (True, False) -> saveExperiment "false-negatives" experiment result
+        (False, True) -> saveExperiment "false-positives" experiment result
+        _ -> pure ()
 
-  progress (Completed result)
+      progress (Completed result)
