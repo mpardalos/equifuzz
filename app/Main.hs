@@ -14,7 +14,7 @@ experimentThread :: B.BChan AppEvent -> IO ()
 experimentThread eventChan =
   void $
     forkFinally
-      (experimentLoop mkNegativeExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
+      (experimentLoop mkBuildOutExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
       (const $ experimentThread eventChan)
 
 tuiMain :: IO ()
@@ -25,7 +25,7 @@ tuiMain = do
 
 genMain :: IO ()
 genMain = do
-  Experiment {design1, design2} <- mkNegativeExperiment
+  Experiment {design1, design2} <- mkBuildOutExperiment
   T.putStrLn (genSource design1)
   putStrLn "---------"
   T.putStrLn (genSource design2)

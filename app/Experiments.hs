@@ -8,6 +8,7 @@
 
 module Experiments where
 
+import BuildOut (grow, inequivalent, singleExprModule)
 import Control.Exception (SomeException, try)
 import Control.Monad (forM_, forever, void)
 import Data.Data (Data)
@@ -37,7 +38,7 @@ import Verismith.Generate as Generate
     Probability (..),
     proceduralSrcIO,
   )
-import Verismith.Verilog (SourceInfo (..), genSource)
+import Verismith.Verilog (SourceInfo (..), Verilog (..), genSource)
 import Verismith.Verilog.AST (Annotation (..), Identifier (..), topModuleId)
 
 data Experiment = forall ann1 ann2.
@@ -211,6 +212,16 @@ mkNegativeExperiment :: IO Experiment
 mkNegativeExperiment = do
   design1 <- proceduralSrcIO "mod1" genConfig
   design2 <- Hog.sample (randomizeNSP (annotateForTransformations design1)) <&> (topModuleId .~ Identifier "mod2")
+  uuid <- UUID.nextRandom
+  return Experiment {expectedResult = False, ..}
+
+mkBuildOutExperiment :: IO Experiment
+mkBuildOutExperiment = do
+  (expr1, expr2) <- Hog.sample $ do
+    seed <- inequivalent
+    grow seed
+  let design1 = SourceInfo "mod1" (Verilog [singleExprModule "mod1" expr1])
+  let design2 = SourceInfo "mod2" (Verilog [singleExprModule "mod2" expr2])
   uuid <- UUID.nextRandom
   return Experiment {expectedResult = False, ..}
 

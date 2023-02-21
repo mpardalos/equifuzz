@@ -17,6 +17,7 @@ executable equifuzz
     other-modules: Transform
                  , Experiments
                  , TUI
+                 , BuildOut
     -- other-extensions:
     build-depends:    base ==4.16.*
                     , libverismith
