@@ -10,18 +10,18 @@ import TUI (AppEvent (..), runTUI)
 import Text.Printf (printf)
 import Verismith.Verilog (genSource)
 
-experimentThread :: B.BChan AppEvent -> IO ()
-experimentThread eventChan =
-  void $
-    forkFinally
-      (experimentLoop mkBuildOutExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
-      (const $ experimentThread eventChan)
-
 tuiMain :: IO ()
 tuiMain = do
   eventChan <- B.newBChan 20
   replicateM_ 10 $ experimentThread eventChan
   runTUI eventChan
+  where
+    experimentThread :: B.BChan AppEvent -> IO ()
+    experimentThread eventChan =
+      void $
+        forkFinally
+          (experimentLoop mkBuildOutExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
+          (const $ experimentThread eventChan)
 
 genMain :: IO ()
 genMain = do
