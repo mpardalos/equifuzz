@@ -1,20 +1,35 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
-module BuildOut where
+module BuildOut (buildOutModules) where
 
+import Control.Applicative (Alternative)
 import Control.Monad (guard)
+import Control.Monad.Accum
+import Control.Monad.Identity (Identity)
+import Control.Monad.State (MonadState (state), StateT (runStateT))
 import Data.Data (Data)
-import Data.Generics.Uniplate.Data (universe)
 import Data.String (IsString)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Hedgehog (Gen)
+import Hedgehog qualified as Hog
 import Hedgehog.Gen qualified as Hog
+import Hedgehog.Internal.Distributive (MonadTransDistributive (..))
 import Hedgehog.Range qualified as Hog.Range
+import Optics (view, (%))
 import Verismith.Verilog.AST
+
+buildOutModules :: Identifier -> Identifier -> Gen (ModDecl BuildOut, ModDecl BuildOut)
+buildOutModules name1 name2 = do
+  ((expr1, expr2), ports) <- runBuildOutM (inequivalent >>= grow)
+  return
+    ( singleExprModule name1 ports expr1,
+      singleExprModule name2 ports expr2
+    )
 
 newtype ExprSource = ExprSource Text
   deriving newtype (IsString)
@@ -37,10 +52,39 @@ instance Default ExprSource where
 
 type ExprPair = (Expr BuildOut, Expr BuildOut)
 
-inequivalent :: Gen ExprPair
-inequivalent = Hog.choice [differentConstants]
+-- What we really want here is AccumT, but there are no instances for `AccumT w
+-- Gen`, so we instead we use StateT (which is isomorphic to AccumT) and provide
+-- MonadAccum instance
+newtype BuildOutM a = BuildOutM (StateT [Port BuildOut] Gen a)
+  deriving newtype (Applicative, Monad, Alternative, Hog.MonadGen)
+  deriving stock (Functor)
 
-differentConstants :: Gen ExprPair
+instance MonadAccum [Port BuildOut] BuildOutM where
+  accum f = BuildOutM . state $ \existing ->
+    let (val, new) = f existing
+     in (val, new <> existing)
+
+runBuildOutM :: BuildOutM a -> Gen (a, [Port BuildOut])
+runBuildOutM (BuildOutM m) = runStateT m []
+
+inequivalent :: BuildOutM ExprPair
+inequivalent =
+  Hog.frequency
+    [ (8, differentInputs),
+      (2, differentConstants)
+    ]
+
+newPort :: Range BuildOut -> BuildOutM (Port BuildOut)
+newPort size = do
+  existingPortNames <- map (view (#name % #getIdentifier)) <$> look
+  portName <-
+    Hog.filterT (not . (`elem` existingPortNames)) $
+      Hog.text (Hog.Range.singleton 5) Hog.lower
+  let port = Port Wire False size (Identifier portName)
+  add [port]
+  return port
+
+differentConstants :: BuildOutM ExprPair
 differentConstants = do
   n1 <- Hog.int (Hog.Range.constant 0 255)
   n2 <- Hog.int (Hog.Range.constant 0 255)
@@ -50,9 +94,24 @@ differentConstants = do
       Number "differentConstants" (fromIntegral n2)
     )
 
+nonZeroRange :: BuildOutM (Range BuildOut)
+nonZeroRange = do
+  size <- Hog.int (Hog.Range.linear 1 512)
+  return (Range (ConstNum () (fromIntegral $ size - 1)) (ConstNum () 0))
+
+differentInputs :: BuildOutM ExprPair
+differentInputs = do
+  range <- nonZeroRange
+  id1 <- view #name <$> newPort range
+  id2 <- view #name <$> newPort range
+  return
+    ( Id "differentInputs" id1,
+      Id "differentInputs" id2
+    )
+
 -- | Grow both expressions in a pair in an equivalent (but possibly not
 -- identical) way
-grow :: ExprPair -> Gen ExprPair
+grow :: ExprPair -> BuildOutM ExprPair
 grow pair = do
   count <- Hog.int (Hog.Range.linear 1 20)
   iterateM count grow1 pair
@@ -64,41 +123,42 @@ grow pair = do
           bimapF or0 p
         ]
 
-deadExpression :: Gen (Expr BuildOut)
+deadExpression :: BuildOutM (Expr BuildOut)
 deadExpression = Number "dead" . fromIntegral <$> Hog.int (Hog.Range.constant 1 255)
 
 bimapF :: Applicative f => (a -> f a) -> (a, a) -> f (a, a)
 bimapF f (x, y) = (,) <$> f x <*> f y
 
-ifTrue :: Expr BuildOut -> Gen (Expr BuildOut)
+ifTrue :: Expr BuildOut -> BuildOutM (Expr BuildOut)
 ifTrue e = do
   condition <- Number "condT" . fromIntegral <$> Hog.int (Hog.Range.constant 1 255)
   falseBranch <- deadExpression
   return (Cond "ifT" condition e falseBranch)
 
-ifFalse :: Expr BuildOut -> Gen (Expr BuildOut)
+ifFalse :: Expr BuildOut -> BuildOutM (Expr BuildOut)
 ifFalse e = do
   trueBranch <- deadExpression
   return (Cond "ifF" (Number "condF" 0) trueBranch e)
 
-or0 :: Expr BuildOut -> Gen (Expr BuildOut)
+or0 :: Expr BuildOut -> BuildOutM (Expr BuildOut)
 or0 e = pure (BinOp "or0" e BinOr (Number "or0" 0))
 
-
-singleExprModule :: Identifier -> Expr BuildOut -> ModDecl BuildOut
-singleExprModule name e =
+singleExprModule :: Identifier -> [Port BuildOut] -> Expr BuildOut -> ModDecl BuildOut
+singleExprModule name inPorts e =
   ModDecl
     { annotation = (),
       params = [],
-      inPorts = [],
       id = name,
+      inPorts,
       outPorts = [outPort],
-      items =
-        [ Decl () (Just PortOut) outPort Nothing,
-          ModCA () (ContAssign "y" e)
-        ]
+      items = portDecls ++ [ModCA () (ContAssign "y" e)]
     }
   where
+    portDecls =
+      Decl () (Just PortOut) outPort Nothing
+        : [ Decl () (Just PortIn) port Nothing
+            | port <- inPorts
+          ]
     outPort =
       Port
         { portType = Wire,

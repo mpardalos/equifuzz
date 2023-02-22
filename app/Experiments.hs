@@ -8,7 +8,7 @@
 
 module Experiments where
 
-import BuildOut (grow, inequivalent, singleExprModule)
+import BuildOut (buildOutModules)
 import Control.Exception (SomeException, try)
 import Control.Monad (forM_, forever, void)
 import Data.Data (Data)
@@ -217,11 +217,9 @@ mkNegativeExperiment = do
 
 mkBuildOutExperiment :: IO Experiment
 mkBuildOutExperiment = do
-  (expr1, expr2) <- Hog.sample $ do
-    seed <- inequivalent
-    grow seed
-  let design1 = SourceInfo "mod1" (Verilog [singleExprModule "mod1" expr1])
-  let design2 = SourceInfo "mod2" (Verilog [singleExprModule "mod2" expr2])
+  (mod1, mod2) <- Hog.sample (buildOutModules "mod1" "mod2")
+  let design1 = SourceInfo "mod1" (Verilog [mod1])
+  let design2 = SourceInfo "mod2" (Verilog [mod2])
   uuid <- UUID.nextRandom
   return Experiment {expectedResult = False, ..}
 
