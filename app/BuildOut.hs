@@ -58,18 +58,20 @@ singleExprModule name e =
       params = [],
       inPorts = [],
       id = name,
-      outPorts =
-        [ Port
-            { portType = Wire,
-              signed = False,
-              size = Range (ConstNum () 7) (ConstNum () 0),
-              name = "y"
-            }
-        ],
+      outPorts = [outPort],
       items =
-        [ ModCA () (ContAssign "y" e)
+        [ Decl () (Just PortOut) outPort Nothing,
+          ModCA () (ContAssign "y" e)
         ]
     }
+  where
+    outPort =
+      Port
+        { portType = Wire,
+          signed = False,
+          size = Range (ConstNum () 7) (ConstNum () 0),
+          name = "y"
+        }
 
 iterateM :: Monad m => Int -> (a -> m a) -> a -> m a
 iterateM 0 _ x = pure x
