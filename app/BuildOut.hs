@@ -20,36 +20,39 @@ differentConstants = do
   guard (n1 /= n2)
   return (Number () (fromIntegral n1), Number () (fromIntegral n2))
 
+-- | Grow both expressions in a pair in an equivalent (but possibly not
+-- identical) way
 grow :: ExprPair -> Gen ExprPair
 grow pair = do
   count <- Hog.int (Hog.Range.linear 1 20)
   iterateM count grow1 pair
   where
-    grow1 (e1, e2) = do
-      f <-
-        Hog.choice
-          [ ifTrue
-          , ifFalse
-          , or0
-          ]
-      return (f e1, f e2)
+    grow1 p =
+      Hog.choice
+        [ bimapF ifFalse p,
+          bimapF ifTrue p,
+          bimapF or0 p
+        ]
 
 deadExpression :: Gen (Expr ())
 deadExpression = Number () . fromIntegral <$> Hog.int (Hog.Range.constant 1 255)
 
-ifTrue :: Gen (Expr () -> Expr ())
-ifTrue = do
+bimapF :: Applicative f => (a -> f a) -> (a, a) -> f (a, a)
+bimapF f (x, y) = (,) <$> f x <*> f y
+
+ifTrue :: Expr () -> Gen (Expr ())
+ifTrue e = do
   condition <- Number () . fromIntegral <$> Hog.int (Hog.Range.constant 1 255)
   falseBranch <- deadExpression
-  return (\e -> Cond () condition e falseBranch)
+  return (Cond () condition e falseBranch)
 
-ifFalse :: Gen (Expr () -> Expr ())
-ifFalse = do
+ifFalse :: Expr () -> Gen (Expr ())
+ifFalse e = do
   falseBranch <- deadExpression
-  return (\e -> Cond () (Number () 0) e falseBranch)
+  return (Cond () (Number () 0) e falseBranch)
 
-or0 :: Gen (Expr () -> Expr ())
-or0 = pure (\e -> BinOp () e BinOr (Number () 0))
+or0 :: Expr () -> Gen (Expr ())
+or0 e = pure (BinOp () e BinOr (Number () 0))
 
 singleExprModule :: Identifier -> Expr () -> ModDecl ()
 singleExprModule name e =
