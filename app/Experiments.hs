@@ -42,7 +42,7 @@ import Verismith.Verilog (SourceInfo (..), Verilog (..), genSource)
 import Verismith.Verilog.AST (Annotation (..), Identifier (..), topModuleId)
 
 data Experiment = forall ann1 ann2.
-  (Show (AnnModDecl ann1), Show (AnnModDecl ann2)) =>
+  (Annotation ann1, Annotation ann2) =>
   Experiment
   { uuid :: UUID,
     -- | True if we expect the modules to be equivalent, False if we expect them not to be
