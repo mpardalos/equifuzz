@@ -137,6 +137,7 @@ grow pair = do
         [ mapBothA ifFalse p,
           mapBothA ifTrue p,
           bimapA ifFalse ifTrue p,
+          bimapA (pure . signedUnsigned) (pure . unsignedSigned) p,
           mapBothA or0 p
         ]
 
@@ -162,6 +163,12 @@ ifFalse e = do
 
 or0 :: Expr BuildOut -> BuildOutM (Expr BuildOut)
 or0 e = pure (BinOp "or0" e BinOr (Number "or0" 0))
+
+signedUnsigned :: Expr BuildOut -> Expr BuildOut
+signedUnsigned e = Appl "signedUnsigned" "$signed" (Appl "signedUnsigned" "$unsigned" e)
+
+unsignedSigned :: Expr BuildOut -> Expr BuildOut
+unsignedSigned e = Appl "unsignedSigned" "$unsigned" (Appl "unsignedSigned" "$signed" e)
 
 singleExprModule :: Identifier -> [Port BuildOut] -> Expr BuildOut -> ModDecl BuildOut
 singleExprModule name inPorts e =
