@@ -107,8 +107,11 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     remoteDir :: Text
     remoteDir = "equifuzz_vcf_experiment"
 
+    experimentDir :: Text
+    experimentDir = remoteDir<>"/"<>T.pack (show uuid)
+
     sshCommand :: Text
-    sshCommand = [i|cd #{remoteDir<>"/"<>T.pack (show uuid)} && ( pwd > ~/out ) && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl|]
+    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl && cd ~ && rm -rf #{experimentDir}|]
 
     compareScript :: Text -> Text -> Text -> Text -> Text
     compareScript file1 top1 file2 top2 =
