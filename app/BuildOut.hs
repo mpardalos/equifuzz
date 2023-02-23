@@ -141,7 +141,7 @@ grow pair = do
         ]
 
 deadExpression :: BuildOutM (Expr BuildOut)
-deadExpression = Number "dead" . fromIntegral <$> Hog.int (Hog.Range.constant 1 255)
+deadExpression = Number "dead" . fromIntegral <$> Hog.int (Hog.Range.constant (-255) 255)
 
 mapBothA :: Applicative f => (a -> f b) -> (a, a) -> f (b, b)
 mapBothA f = bimapA f f
