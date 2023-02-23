@@ -8,9 +8,9 @@ module BuildOut (buildOutModules) where
 import Control.Applicative (Alternative)
 import Control.Monad (guard)
 import Control.Monad.Accum
-import Control.Monad.Identity (Identity)
 import Control.Monad.State (MonadState (state), StateT (runStateT))
 import Data.Data (Data)
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.String (IsString)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -18,7 +18,6 @@ import GHC.Generics (Generic)
 import Hedgehog (Gen)
 import Hedgehog qualified as Hog
 import Hedgehog.Gen qualified as Hog
-import Hedgehog.Internal.Distributive (MonadTransDistributive (..))
 import Hedgehog.Range qualified as Hog.Range
 import Optics (view, (%))
 import Verismith.Verilog.AST
@@ -67,11 +66,15 @@ instance MonadAccum [Port BuildOut] BuildOutM where
 runBuildOutM :: BuildOutM a -> Gen (a, [Port BuildOut])
 runBuildOutM (BuildOutM m) = runStateT m []
 
+maxWireSize :: Int
+maxWireSize = 512
+
 inequivalent :: BuildOutM ExprPair
 inequivalent =
   Hog.frequency
-    [ (8, differentInputs),
-      (2, differentConstants)
+    [ (7, differentSignedShift),
+      (2, differentInputs),
+      (1, differentConstants)
     ]
 
 newPort :: Range BuildOut -> BuildOutM (Port BuildOut)
@@ -96,7 +99,7 @@ differentConstants = do
 
 nonZeroRange :: BuildOutM (Range BuildOut)
 nonZeroRange = do
-  size <- Hog.int (Hog.Range.linear 1 512)
+  size <- Hog.int (Hog.Range.linear 1 maxWireSize)
   return (Range (ConstNum () (fromIntegral $ size - 1)) (ConstNum () 0))
 
 differentInputs :: BuildOutM ExprPair
@@ -107,6 +110,19 @@ differentInputs = do
   return
     ( Id "differentInputs" id1,
       Id "differentInputs" id2
+    )
+
+-- | Used to make an expression self-determined
+concatSingle :: AnnExpr ann -> Expr ann -> Expr ann
+concatSingle ann e = Concat ann (e :| [])
+
+differentSignedShift :: BuildOutM ExprPair
+differentSignedShift = do
+  range <- nonZeroRange
+  ident <- view #name <$> newPort range
+  return
+    ( concatSingle "" (BinOp "differentSignedShift" (Appl "" "$signed" (Id "" ident)) BinASR (Number "" 1)),
+      concatSingle "" (BinOp "differentSignedShift" (Appl "" "$unsigned" (Id "" ident)) BinASR (Number "" 1))
     )
 
 -- | Grow both expressions in a pair in an equivalent (but possibly not
@@ -163,7 +179,7 @@ singleExprModule name inPorts e =
       Port
         { portType = Wire,
           signed = False,
-          size = Range (ConstNum () 7) (ConstNum () 0),
+          size = Range (ConstNum () (fromIntegral $ maxWireSize - 1)) (ConstNum () 0),
           name = "y"
         }
 
