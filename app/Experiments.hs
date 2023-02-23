@@ -10,7 +10,7 @@ module Experiments where
 
 import BuildOut (buildOutModules)
 import Control.Exception (SomeException, try)
-import Control.Monad (forM_, forever, void)
+import Control.Monad (forever, void)
 import Data.Data (Data)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
@@ -67,7 +67,7 @@ instance Ord Experiment where
   compare e1 e2 = compare e1.uuid e2.uuid
 
 data ExperimentResult = ExperimentResult
-  { proofFound :: Bool,
+  { proofFound :: Maybe Bool,
     fullOutput :: Text,
     uuid :: UUID
   }
@@ -97,10 +97,21 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
   void $ Sh.bash "scp" ["-r", dir <> "/*", vcfHost <> ":" <> remoteDir <> "/" <> T.pack (show uuid)]
 
   fullOutput <- Sh.silently $ Sh.run "ssh" [vcfHost, sshCommand]
-  let proofFound =
+
+  let proofSuccessful =
         fullOutput
           & T.lines
           & any ("Status for proof \"proof\": SUCCESSFUL" `T.isInfixOf`)
+
+  let proofFailed =
+        fullOutput
+          & T.lines
+          & any ("Status for proof \"proof\": FAILED" `T.isInfixOf`)
+
+  let proofFound = case (proofSuccessful, proofFailed) of
+        (True, False) -> Just True
+        (False, True) -> Just False
+        _ -> Nothing
 
   return ExperimentResult {proofFound, fullOutput, uuid}
   where
@@ -236,8 +247,9 @@ experimentLoop generator runner progress = forever $ do
     Left _ -> progress (Aborted experiment)
     Right result -> do
       case (experiment.expectedResult, result.proofFound) of
-        (True, False) -> saveExperiment "false-negatives" experiment result
-        (False, True) -> saveExperiment "false-positives" experiment result
+        (_, Nothing) -> saveExperiment "weird" experiment result
+        (True, Just False) -> saveExperiment "false-negatives" experiment result
+        (False, Just True) -> saveExperiment "false-positives" experiment result
         _ -> pure ()
 
       progress (Completed result)

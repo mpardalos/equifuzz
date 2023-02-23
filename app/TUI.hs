@@ -126,7 +126,13 @@ appDraw st =
                 B.str ("Expected result: " <> if experiment.expectedResult then "Equivalent" else "Non-equivalent")
               ]
           resultStuff = case mResult of
-            Just result -> B.str ("Actual result:   " <> if result.proofFound then "Equivalent" else "Non-equivalent")
+            Just result ->
+              B.str
+                ( "Actual result:   " <> case result.proofFound of
+                    Just True -> "Equivalent"
+                    Just False -> "Non-equivalent"
+                    Nothing -> "Unknown"
+                )
             Nothing -> B.emptyWidget
           diffDisplay =
             maybe
@@ -181,7 +187,7 @@ appHandleEvent (B.AppEvent ev) = case ev of
   (ExperimentProgress (Completed result)) -> do
     experimentIdx <- use (#running % #elements) <&> fromJust . Seq.findIndexL ((== result.uuid) . view (#experiment % #uuid))
     experimentInfo <- use (#running % #elements) <&> (`Seq.index` experimentIdx)
-    if result.proofFound == experimentInfo.experiment.expectedResult
+    if result.proofFound == Just experimentInfo.experiment.expectedResult
       then #uninteresting %= B.listInsert 0 (experimentInfo {result = Just result})
       else #interesting %= B.listInsert 0 (experimentInfo {result = Just result})
     #running %= B.listRemove experimentIdx
