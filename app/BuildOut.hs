@@ -134,16 +134,20 @@ grow pair = do
   where
     grow1 p =
       Hog.choice
-        [ bimapF ifFalse p,
-          bimapF ifTrue p,
-          bimapF or0 p
+        [ mapBothA ifFalse p,
+          mapBothA ifTrue p,
+          bimapA ifFalse ifTrue p,
+          mapBothA or0 p
         ]
 
 deadExpression :: BuildOutM (Expr BuildOut)
 deadExpression = Number "dead" . fromIntegral <$> Hog.int (Hog.Range.constant 1 255)
 
-bimapF :: Applicative f => (a -> f a) -> (a, a) -> f (a, a)
-bimapF f (x, y) = (,) <$> f x <*> f y
+mapBothA :: Applicative f => (a -> f b) -> (a, a) -> f (b, b)
+mapBothA f = bimapA f f
+
+bimapA :: Applicative f => (a -> f a') -> (b -> f b') -> (a, b) -> f (a', b')
+bimapA f g (x, y) = (,) <$> f x <*> g y
 
 ifTrue :: Expr BuildOut -> BuildOutM (Expr BuildOut)
 ifTrue e = do
