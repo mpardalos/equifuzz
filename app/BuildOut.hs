@@ -19,7 +19,7 @@ import Hedgehog (Gen)
 import Hedgehog qualified as Hog
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
-import Optics (view, (%))
+import Optics (both, over, view, (%), (%~), (&), (.~))
 import Verismith.Verilog.AST
 
 buildOutModules :: Identifier -> Identifier -> Gen (ModDecl BuildOut, ModDecl BuildOut)
@@ -138,7 +138,8 @@ grow pair = do
           mapBothA ifTrue p,
           bimapA ifFalse ifTrue p,
           bimapA (pure . signedUnsigned) (pure . unsignedSigned) p,
-          mapBothA or0 p
+          mapBothA or0 p,
+          sameArithmetic p
         ]
 
 deadExpression :: BuildOutM (Expr BuildOut)
@@ -169,6 +170,15 @@ signedUnsigned e = Appl "signedUnsigned" "$signed" (Appl "signedUnsigned" "$unsi
 
 unsignedSigned :: Expr BuildOut -> Expr BuildOut
 unsignedSigned e = Appl "unsignedSigned" "$unsigned" (Appl "unsignedSigned" "$signed" e)
+
+sameArithmetic :: ExprPair -> BuildOutM ExprPair
+sameArithmetic pair = do
+  num <- Number "sameArithmetic" . fromIntegral <$> Hog.int (Hog.Range.linear 0 255)
+  op <- Hog.element [BinPlus, BinMinus, BinTimes]
+  Hog.element
+    [ pair & both %~ \e -> BinOp "sameArithmetic" num op e,
+      pair & both %~ \e -> BinOp "sameArithmetic" e op num
+    ]
 
 singleExprModule :: Identifier -> [Port BuildOut] -> Expr BuildOut -> ModDecl BuildOut
 singleExprModule name inPorts e =
