@@ -151,7 +151,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     |]
 
     vcfHost :: Text
-    vcfHost = "ee-mill3"
+    vcfHost = "mp5617@ee-mill3.ee.ic.ac.uk"
 
 saveExperiment :: String -> Experiment -> ExperimentResult -> IO ()
 saveExperiment category Experiment {design1, design2, uuid, expectedResult} ExperimentResult {fullOutput, proofFound} = Sh.shelly . Sh.silently $ do
