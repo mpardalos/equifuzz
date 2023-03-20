@@ -125,22 +125,26 @@ differentSignedShift = do
       concatSingle "" (BinOp "differentSignedShift" (Appl "" "$unsigned" (Id "" ident)) BinASR (Number "" 1))
     )
 
--- | Grow both expressions in a pair in an equivalent (but possibly not
--- identical) way
+-- | Increase the size and complexity of an expression while preserving its semantics
 grow :: ExprPair -> BuildOutM ExprPair
 grow pair = do
   count <- Hog.int (Hog.Range.linear 1 20)
   iterateM count grow1 pair
   where
-    grow1 p =
-      Hog.choice
-        [ mapBothA ifFalse p,
-          mapBothA ifTrue p,
-          bimapA ifFalse ifTrue p,
-          bimapA (pure . signedUnsigned) (pure . unsignedSigned) p,
-          mapBothA or0 p,
-          sameArithmetic p
-        ]
+    grow1 (e1, e2) = do
+      -- FIXME: Make the random parts be identical for both expressions
+      f <-
+        Hog.element
+          [ ifFalse,
+            ifTrue,
+            pure . signedUnsigned,
+            pure . unsignedSigned,
+            or0
+            -- TODO: Implement bit-select entire vector
+          ]
+      e1' <- f e1
+      e2' <- f e2
+      return (e1', e2')
 
 deadExpression :: BuildOutM (Expr BuildOut)
 deadExpression = Number "dead" . fromIntegral <$> Hog.int (Hog.Range.constant (-255) 255)
@@ -170,15 +174,6 @@ signedUnsigned e = Appl "signedUnsigned" "$signed" (Appl "signedUnsigned" "$unsi
 
 unsignedSigned :: Expr BuildOut -> Expr BuildOut
 unsignedSigned e = Appl "unsignedSigned" "$unsigned" (Appl "unsignedSigned" "$signed" e)
-
-sameArithmetic :: ExprPair -> BuildOutM ExprPair
-sameArithmetic pair = do
-  num <- Number "sameArithmetic" . fromIntegral <$> Hog.int (Hog.Range.linear 0 255)
-  op <- Hog.element [BinPlus, BinMinus, BinTimes]
-  Hog.element
-    [ pair & both %~ \e -> BinOp "sameArithmetic" num op e,
-      pair & both %~ \e -> BinOp "sameArithmetic" e op num
-    ]
 
 singleExprModule :: Identifier -> [Port BuildOut] -> Expr BuildOut -> ModDecl BuildOut
 singleExprModule name inPorts e =
