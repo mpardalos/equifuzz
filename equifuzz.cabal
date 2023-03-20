@@ -12,12 +12,12 @@ build-type:         Simple
 
 executable equifuzz
     ghc-options: -Wall -threaded
-    import:           warnings
     main-is:          Main.hs
     other-modules: Transform
                  , Experiments
                  , TUI
                  , BuildOut
+                 , SystemC
     -- other-extensions:
     build-depends:    base ==4.16.*
                     , libverismith
