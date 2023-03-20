@@ -16,6 +16,9 @@ executable equifuzz
     other-modules: Experiments
                  , TUI
                  , BuildOut
+                 , BuildOut.Verilog
+                 , BuildOut.SystemC
+                 , BuildOut.Internal
                  , SystemC
     -- other-extensions:
     build-depends:    base ==4.16.*
