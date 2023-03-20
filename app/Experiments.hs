@@ -20,14 +20,10 @@ import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Hedgehog.Gen qualified as Hog
-import Optics (makeFieldLabelsNoPrefix, (&), (.~), (<&>))
+import Optics (makeFieldLabelsNoPrefix, (&))
 import Shelly ((</>))
 import Shelly qualified as Sh
 import Text.Printf (printf)
-import Transform
-  ( annotateForTransformations,
-    randomizeNSP,
-  )
 import Verismith.Generate as Generate
   ( ConfProperty (..),
     Config (..),
@@ -36,10 +32,9 @@ import Verismith.Generate as Generate
     ProbModItem (..),
     ProbStatement (..),
     Probability (..),
-    proceduralSrcIO,
   )
 import Verismith.Verilog (SourceInfo (..), Verilog (..), genSource)
-import Verismith.Verilog.AST (Annotation (..), Identifier (..), topModuleId)
+import Verismith.Verilog.AST (Annotation (..))
 
 data Experiment = forall ann1 ann2.
   (Annotation ann1, Annotation ann2) =>
@@ -221,13 +216,6 @@ genConfig =
             defaultYosys = Nothing
           }
     }
-
-mkNegativeExperiment :: IO Experiment
-mkNegativeExperiment = do
-  design1 <- proceduralSrcIO "mod1" genConfig
-  design2 <- Hog.sample (randomizeNSP (annotateForTransformations design1)) <&> (topModuleId .~ Identifier "mod2")
-  uuid <- UUID.nextRandom
-  return Experiment {expectedResult = False, ..}
 
 mkBuildOutExperiment :: IO Experiment
 mkBuildOutExperiment = do

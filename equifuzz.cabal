@@ -13,8 +13,7 @@ build-type:         Simple
 executable equifuzz
     ghc-options: -Wall -threaded
     main-is:          Main.hs
-    other-modules: Transform
-                 , Experiments
+    other-modules: Experiments
                  , TUI
                  , BuildOut
                  , SystemC
