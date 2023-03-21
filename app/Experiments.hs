@@ -115,7 +115,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     experimentDir = remoteDir <> "/" <> T.pack (show uuid)
 
     sshCommand :: Text
-    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl && cd ~ && rm -rf #{experimentDir}|]
+    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl && cd ~ && rm -rf ./#{experimentDir}|]
 
     compileCommand :: DesignLanguage -> Text -> Text
     compileCommand language file = case language of
