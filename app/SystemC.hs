@@ -57,6 +57,12 @@ prettyBinOp Multiply = "*"
 prettyBinOp Divide = "/"
 prettyBinOp BitwiseOr = "|"
 
+instance Source BinOp where
+  genSource =
+    renderStrict
+      . layoutPretty defaultLayoutOptions
+      . prettyBinOp
+
 prettyExpr :: Expr -> Doc a
 prettyExpr (Constant n) = pretty n
 prettyExpr (BinOp l op r) =
@@ -73,14 +79,32 @@ prettyExpr (Conditional cond tBranch fBranch) =
     ]
 prettyExpr (Variable name) = pretty name
 
+instance Source Expr where
+  genSource =
+    renderStrict
+      . layoutPretty defaultLayoutOptions
+      . prettyExpr
+
 prettyStatement :: Statement -> Doc a
 prettyStatement (Return e) = "return" <+> prettyExpr e <> ";"
 prettyStatement (Block statements) =
   vsep ["{", indent 4 . vsep $ prettyStatement <$> statements, "}"]
 
+instance Source Statement where
+  genSource =
+    renderStrict
+      . layoutPretty defaultLayoutOptions
+      . prettyStatement
+
 prettySCType :: SCType -> Doc a
 prettySCType (SCInt size) = "sc_int<" <> pretty size <> ">"
 prettySCType (SCUInt size) = "sc_uint<" <> pretty size <> ">"
+
+instance Source SCType where
+  genSource =
+    renderStrict
+      . layoutPretty defaultLayoutOptions
+      . prettySCType
 
 prettyFunctionDeclaration :: FunctionDeclaration -> Doc a
 prettyFunctionDeclaration FunctionDeclaration {..} =
@@ -95,15 +119,15 @@ prettyFunctionDeclaration FunctionDeclaration {..} =
           | (argType, argName) <- args
         ]
 
-prettyTranslationUnit :: TranslationUnit -> Doc a
-prettyTranslationUnit (TranslationUnit funcs) =
-  vsep . punctuate line . map prettyFunctionDeclaration $ funcs
-
 instance Source FunctionDeclaration where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions
       . prettyFunctionDeclaration
+
+prettyTranslationUnit :: TranslationUnit -> Doc a
+prettyTranslationUnit (TranslationUnit funcs) =
+  vsep . punctuate line $ map prettyFunctionDeclaration funcs
 
 instance Source TranslationUnit where
   genSource =
