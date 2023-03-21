@@ -36,6 +36,7 @@ executable equifuzz
                     , containers
                     , mtl == 2.3.*
                     , transformers
+                    , prettyprinter
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions:

@@ -1,10 +1,28 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module SystemC where
 
 import Data.Data (Data)
 import Data.Text (Text)
 import GHC.Generics (Generic)
+import Prettyprinter
+  ( Doc,
+    Pretty (pretty),
+    comma,
+    defaultLayoutOptions,
+    indent,
+    layoutPretty,
+    line,
+    parens,
+    punctuate,
+    sep,
+    vsep,
+    (<+>),
+  )
+import Prettyprinter.Render.Text (renderStrict)
+import Verismith.Verilog.CodeGen (Source (..))
 
-data BinOp = Plus | Minus | Multiply | Divide
+data BinOp = Plus | Minus | Multiply | Divide | BitwiseOr
   deriving (Eq, Show, Generic, Data)
 
 data Expr
@@ -24,7 +42,69 @@ data FunctionDeclaration = FunctionDeclaration
   { returnType :: SCType,
     name :: Text,
     args :: [(SCType, Text)],
-    body :: Statement
+    body :: [Statement]
   }
 
 newtype TranslationUnit = TranslationUnit [FunctionDeclaration]
+
+prettyBinOp :: BinOp -> Doc a
+prettyBinOp Plus = "+"
+prettyBinOp Minus = "-"
+prettyBinOp Multiply = "*"
+prettyBinOp Divide = "/"
+prettyBinOp BitwiseOr = "|"
+
+prettyExpr :: Expr -> Doc a
+prettyExpr (Constant n) = pretty n
+prettyExpr (BinOp l op r) =
+  parens . sep $
+    [ prettyExpr l,
+      prettyBinOp op,
+      prettyExpr r
+    ]
+prettyExpr (Conditional cond tBranch fBranch) =
+  parens . sep $
+    [ prettyExpr cond,
+      "?",
+      prettyExpr tBranch,
+      ":",
+      prettyExpr fBranch
+    ]
+prettyExpr (Variable name) = pretty name
+
+prettyStatement :: Statement -> Doc a
+prettyStatement (Return e) = "return" <+> prettyExpr e <> ";"
+prettyStatement (Block statements) =
+  vsep ["{", indent 4 . vsep $ prettyStatement <$> statements, "}"]
+
+prettySCType :: SCType -> Doc a
+prettySCType SCInt = "int"
+
+prettyFunctionDeclaration :: FunctionDeclaration -> Doc a
+prettyFunctionDeclaration FunctionDeclaration {..} =
+  prettySCType returnType
+    <+> pretty name
+      <> prettyArgs
+    <+> prettyStatement (Block body)
+  where
+    prettyArgs =
+      parens . sep . punctuate comma $
+        [ prettySCType argType <+> pretty argName
+          | (argType, argName) <- args
+        ]
+
+prettyTranslationUnit :: TranslationUnit -> Doc a
+prettyTranslationUnit (TranslationUnit funcs) =
+  vsep . punctuate line . map prettyFunctionDeclaration $ funcs
+
+instance Source FunctionDeclaration where
+  genSource =
+    renderStrict
+      . layoutPretty defaultLayoutOptions
+      . prettyFunctionDeclaration
+
+instance Source TranslationUnit where
+  genSource =
+    renderStrict
+      . layoutPretty defaultLayoutOptions
+      . prettyTranslationUnit
