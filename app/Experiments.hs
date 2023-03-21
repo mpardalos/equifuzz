@@ -80,6 +80,9 @@ isCompleted :: ExperimentProgress -> Bool
 isCompleted Completed {} = True
 isCompleted _ = False
 
+hectorWrapperName :: Text
+hectorWrapperName = "hector_wrapper"
+
 runVCFormal :: Experiment -> IO ExperimentResult
 runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
@@ -122,17 +125,22 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
       Verilog -> [i|vcs -sverilog #{file}|]
       SystemC -> [i|cppan #{file}|]
 
+    designTopName :: DesignSource -> Text
+    designTopName design = case design.language of
+      Verilog -> design.topName
+      SystemC -> hectorWrapperName
+
     compareScript :: Text -> DesignSource -> Text -> DesignSource -> Text
     compareScript file1 design1 file2 design2 =
       [__i|
                 set_custom_solve_script "orch_multipliers"
                 set_user_assumes_lemmas_procedure "miter"
 
-                create_design -name spec -top #{design1 ^. #topName}
+                create_design -name spec -top #{designTopName design1}
                 #{compileCommand (design1 ^. #language) file1}
                 compile_design spec
 
-                create_design -name impl -top #{design2 ^. #topName}
+                create_design -name impl -top #{designTopName design2}
                 #{compileCommand (design2 ^. #language) file2}
                 compile_design impl
 
@@ -228,9 +236,6 @@ systemCHectorWrapper SC.FunctionDeclaration {returnType, args, name} =
 
       |]
   where
-    hectorWrapperName :: Text
-    hectorWrapperName = "hector_wrapper"
-
     inputDeclarations :: Text
     inputDeclarations =
       T.intercalate
