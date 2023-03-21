@@ -8,7 +8,7 @@
 module BuildOut.Internal where
 
 import Control.Applicative (Alternative)
-import Control.Monad.Accum (MonadAccum (accum, look))
+import Control.Monad.Accum (MonadAccum (..))
 import Control.Monad.State (MonadState (state), StateT (runStateT))
 import Data.Text (Text)
 import Hedgehog (Gen)
@@ -47,7 +47,9 @@ newInputPort size = do
   name <-
     Hog.filterT (not . (`elem` existingPortNames)) $
       Hog.text (Hog.Range.singleton 5) Hog.lower
-  return (InputPort size name)
+  let port = InputPort size name
+  add [port]
+  return port
 
 inputPortAsVerilog :: V.Annotation a => InputPort -> V.Port a
 inputPortAsVerilog InputPort {width, name} =
