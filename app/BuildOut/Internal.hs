@@ -1,21 +1,30 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module BuildOut.Internal where
 
 import Control.Applicative (Alternative)
-import Control.Monad.Accum
+import Control.Monad.Accum (MonadAccum (accum, look))
 import Control.Monad.State (MonadState (state), StateT (runStateT))
 import Data.Text (Text)
 import Hedgehog (Gen)
 import Hedgehog qualified as Hog
+import Hedgehog.Gen qualified as Hog
+import Hedgehog.Range qualified as Hog.Range
+import Optics (makeFieldLabelsNoPrefix, view)
+import SystemC qualified as SC
+import Verismith.Verilog.AST qualified as V
 
 data InputPort = InputPort
   { width :: Int,
     name :: Text
   }
+
+makeFieldLabelsNoPrefix ''InputPort
 
 -- What we really want here is AccumT, but there are no instances for `AccumT w
 -- Gen`, so we instead we use StateT (which is isomorphic to AccumT) and provide
@@ -31,3 +40,35 @@ instance MonadAccum [InputPort] BuildOutM where
 
 runBuildOutM :: BuildOutM a -> Gen (a, [InputPort])
 runBuildOutM (BuildOutM m) = runStateT m []
+
+newInputPort :: Int -> BuildOutM InputPort
+newInputPort size = do
+  existingPortNames <- map (view #name) <$> look
+  name <-
+    Hog.filterT (not . (`elem` existingPortNames)) $
+      Hog.text (Hog.Range.singleton 5) Hog.lower
+  return (InputPort size name)
+
+inputPortAsVerilog :: V.Annotation a => InputPort -> V.Port a
+inputPortAsVerilog InputPort {width, name} =
+  V.Port
+    V.Wire
+    False
+    (V.rangeFromSize (fromIntegral width))
+    (V.Identifier name)
+
+inputPortAsSystemC :: InputPort -> (SC.SCType, Text)
+inputPortAsSystemC InputPort {width, name} = (SC.SCUInt width, name)
+
+iterateM :: Monad m => Int -> (a -> m a) -> a -> m a
+iterateM 0 _ x = pure x
+iterateM 1 f x = f x
+iterateM n f x = do
+  x' <- f x
+  iterateM (n - 1) f x'
+
+maxWireSize :: Int
+maxWireSize = 512
+
+wireSize :: BuildOutM Int
+wireSize = Hog.int (Hog.Range.linear 1 maxWireSize)

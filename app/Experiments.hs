@@ -8,7 +8,7 @@
 
 module Experiments where
 
-import BuildOut (buildOutModules)
+import BuildOut (buildOutSystemCVerilog, buildOutVerilogVerilog)
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, void)
 import Data.Data (Data)
@@ -24,26 +24,22 @@ import Optics (makeFieldLabelsNoPrefix, (&))
 import Shelly ((</>))
 import Shelly qualified as Sh
 import Text.Printf (printf)
-import Verismith.Generate as Generate
-  ( ConfProperty (..),
-    Config (..),
-    ProbExpr (..),
-    ProbMod (..),
-    ProbModItem (..),
-    ProbStatement (..),
-    Probability (..),
-  )
-import Verismith.Verilog (SourceInfo (..), Verilog (..), genSource)
-import Verismith.Verilog.AST (Annotation (..))
+import Verismith.Verilog.CodeGen (Source (genSource))
 
-data Experiment = forall ann1 ann2.
-  (Annotation ann1, Annotation ann2) =>
-  Experiment
+data Experiment = Experiment
   { uuid :: UUID,
     -- | True if we expect the modules to be equivalent, False if we expect them not to be
     expectedResult :: Bool,
-    design1 :: SourceInfo ann1,
-    design2 :: SourceInfo ann2
+    design1 :: DesignSource,
+    design2 :: DesignSource
+  }
+
+data DesignLanguage = SystemC | Verilog
+
+data DesignSource = DesignSource
+  { language :: DesignLanguage,
+    topName :: Text,
+    source :: Text
   }
 
 makeFieldLabelsNoPrefix ''Experiment
@@ -85,9 +81,9 @@ isCompleted _ = False
 runVCFormal :: Experiment -> IO ExperimentResult
 runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
-  Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript "design1.v" design1.top "design2.v" design2.top)
-  Sh.writefile (dir </> ("design1.v" :: Text)) (genSource design1)
-  Sh.writefile (dir </> ("design2.v" :: Text)) (genSource design2)
+  Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript "design1.v" design1.topName "design2.v" design2.topName)
+  Sh.writefile (dir </> ("design1.v" :: Text)) design1.source
+  Sh.writefile (dir </> ("design2.v" :: Text)) design2.source
   void $ Sh.bash "ssh" [vcfHost, "mkdir -p " <> remoteDir <> "/"]
   void $ Sh.bash "scp" ["-r", dir <> "/*", vcfHost <> ":" <> remoteDir <> "/" <> T.pack (show uuid)]
 
@@ -114,7 +110,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     remoteDir = "equifuzz_vcf_experiment"
 
     experimentDir :: Text
-    experimentDir = remoteDir<>"/"<>T.pack (show uuid)
+    experimentDir = remoteDir <> "/" <> T.pack (show uuid)
 
     sshCommand :: Text
     sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl && cd ~ && rm -rf #{experimentDir}|]
@@ -158,70 +154,24 @@ saveExperiment category Experiment {design1, design2, uuid, expectedResult} Expe
             |]
 
   Sh.mkdir_p dir
-  Sh.writefile (dir </> ("design1.v" :: Text)) (genSource design1)
-  Sh.writefile (dir </> ("design2.v" :: Text)) (genSource design2)
+  Sh.writefile (dir </> ("design1.v" :: Text)) design1.source
+  Sh.writefile (dir </> ("design2.v" :: Text)) design2.source
   Sh.writefile (dir </> ("full_output.txt" :: Text)) fullOutput
   Sh.writefile (dir </> ("info.txt" :: Text)) info
 
-genConfig :: Config
-genConfig =
-  Config
-    { probability =
-        Probability
-          { modItem =
-              ProbModItem
-                { assign = 2,
-                  seqAlways = 0,
-                  combAlways = 1,
-                  inst = 0
-                },
-            stmnt =
-              ProbStatement
-                { block = 0,
-                  nonBlock = 3,
-                  cond = 1,
-                  for = 0
-                },
-            expr =
-              ProbExpr
-                { num = 1,
-                  id = 5,
-                  rangeSelect = 5,
-                  unOp = 5,
-                  binOp = 5,
-                  cond = 5,
-                  concat = 3,
-                  str = 0,
-                  signed = 1,
-                  unsigned = 5
-                },
-            mod =
-              ProbMod
-                { dropOutput = 0,
-                  keepOutput = 1
-                }
-          },
-      property =
-        ConfProperty
-          { size = 50,
-            seed = Nothing,
-            stmntDepth = 3,
-            modDepth = 2,
-            maxModules = 5,
-            sampleMethod = "random",
-            sampleSize = 10,
-            combine = False,
-            nonDeterminism = 0,
-            determinism = 1,
-            defaultYosys = Nothing
-          }
-    }
+mkVerilogVerilogExperiment :: IO Experiment
+mkVerilogVerilogExperiment = do
+  (mod1, mod2) <- Hog.sample (buildOutVerilogVerilog "mod1" "mod2")
+  let design1 = DesignSource {language = Verilog, topName = "mod1", source = genSource mod1}
+  let design2 = DesignSource {language = Verilog, topName = "mod2", source = genSource mod2}
+  uuid <- UUID.nextRandom
+  return Experiment {expectedResult = False, ..}
 
-mkBuildOutExperiment :: IO Experiment
-mkBuildOutExperiment = do
-  (mod1, mod2) <- Hog.sample (buildOutModules "mod1" "mod2")
-  let design1 = SourceInfo "mod1" (Verilog [mod1])
-  let design2 = SourceInfo "mod2" (Verilog [mod2])
+mkSystemCVerilogExperiment :: IO Experiment
+mkSystemCVerilogExperiment = do
+  (systemcModule, verilogModule) <- Hog.sample (buildOutSystemCVerilog "mod1" "mod2")
+  let design1 = DesignSource {language = Verilog, topName = "mod1", source = genSource systemcModule}
+  let design2 = DesignSource {language = Verilog, topName = "mod2", source = genSource verilogModule}
   uuid <- UUID.nextRandom
   return Experiment {expectedResult = False, ..}
 

@@ -10,9 +10,11 @@ import Prettyprinter
     Pretty (pretty),
     comma,
     defaultLayoutOptions,
+    hsep,
     indent,
     layoutPretty,
     line,
+    nest,
     parens,
     punctuate,
     sep,
@@ -36,7 +38,8 @@ data Statement
   = Return Expr
   | Block [Statement]
 
-data SCType = SCInt
+-- | SystemC types. Constructor parameters correspond to template arguments
+data SCType = SCInt Int | SCUInt Int
 
 data FunctionDeclaration = FunctionDeclaration
   { returnType :: SCType,
@@ -57,18 +60,16 @@ prettyBinOp BitwiseOr = "|"
 prettyExpr :: Expr -> Doc a
 prettyExpr (Constant n) = pretty n
 prettyExpr (BinOp l op r) =
-  parens . sep $
+  parens . hsep $
     [ prettyExpr l,
       prettyBinOp op,
       prettyExpr r
     ]
 prettyExpr (Conditional cond tBranch fBranch) =
-  parens . sep $
+  parens . nest 4 . sep $
     [ prettyExpr cond,
-      "?",
-      prettyExpr tBranch,
-      ":",
-      prettyExpr fBranch
+      "?" <+> prettyExpr tBranch,
+      ":" <+> prettyExpr fBranch
     ]
 prettyExpr (Variable name) = pretty name
 
@@ -78,7 +79,8 @@ prettyStatement (Block statements) =
   vsep ["{", indent 4 . vsep $ prettyStatement <$> statements, "}"]
 
 prettySCType :: SCType -> Doc a
-prettySCType SCInt = "int"
+prettySCType (SCInt size) = "sc_int<" <> pretty size <> ">"
+prettySCType (SCUInt size) = "sc_uint<" <> pretty size <> ">"
 
 prettyFunctionDeclaration :: FunctionDeclaration -> Doc a
 prettyFunctionDeclaration FunctionDeclaration {..} =

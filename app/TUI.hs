@@ -27,7 +27,6 @@ import Graphics.Vty qualified as Vty
 import Optics
 import Optics.State.Operators ((%=))
 import Shelly qualified as Sh
-import Verismith.Verilog (genSource)
 
 instance LabelOptic "name" A_Lens (B.GenericList n t e) (B.GenericList n t e) n n where
   labelOptic = lensVL B.listNameL
@@ -202,8 +201,6 @@ appHandleEvent B.MouseUp {} = pure ()
 -- | Run the experiment's modules through a text diff
 getDiff :: Experiment -> IO (Maybe Text)
 getDiff Experiment {design1, design2} = do
-  let designTxt1 = genSource design1
-      designTxt2 = genSource design2
   Sh.shelly . Sh.silently $ do
     diffExists <- isJust <$> Sh.which "diff"
     if diffExists
@@ -211,8 +208,8 @@ getDiff Experiment {design1, design2} = do
         tmpdir <- T.strip <$> Sh.run "mktemp" ["-d"]
         let path1 = tmpdir Sh.</> ("design1.v" :: FilePath)
         let path2 = tmpdir Sh.</> ("design2.v" :: FilePath)
-        Sh.writefile path1 designTxt1
-        Sh.writefile path2 designTxt2
+        Sh.writefile path1 design1.source
+        Sh.writefile path2 design2.source
         Sh.errExit False $
           Just <$> Sh.run "diff" [T.pack path1, T.pack path2]
       else return Nothing

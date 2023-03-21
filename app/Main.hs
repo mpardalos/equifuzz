@@ -8,7 +8,6 @@ import Experiments
 import System.Environment (getArgs, getProgName)
 import TUI (AppEvent (..), runTUI)
 import Text.Printf (printf)
-import Verismith.Verilog (genSource)
 
 tuiMain :: IO ()
 tuiMain = do
@@ -20,15 +19,15 @@ tuiMain = do
     experimentThread eventChan =
       void $
         forkFinally
-          (experimentLoop mkBuildOutExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
+          (experimentLoop mkVerilogVerilogExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
           (const $ experimentThread eventChan)
 
 genMain :: IO ()
 genMain = do
-  Experiment {design1, design2} <- mkBuildOutExperiment
-  T.putStrLn (genSource design1)
+  Experiment {design1, design2} <- mkSystemCVerilogExperiment
+  T.putStrLn design1.source
   putStrLn "---------"
-  T.putStrLn (genSource design2)
+  T.putStrLn design2.source
 
 main :: IO ()
 main = do

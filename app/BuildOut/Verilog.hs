@@ -5,21 +5,15 @@
 
 module BuildOut.Verilog where
 
-import Control.Applicative (Alternative)
-import Control.Monad (guard)
-import Control.Monad.Accum
-import Control.Monad.State (MonadState (state), StateT (runStateT))
+import BuildOut.Internal
 import Data.Data (Data)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.String (IsString)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
-import Hedgehog (Gen)
-import Hedgehog qualified as Hog
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
-import Optics (both, over, view, (%), (%~), (&), (.~))
 import Verismith.Verilog.AST
 
 newtype ExprSource = ExprSource Text
@@ -41,96 +35,17 @@ instance Annotation BuildOut where
 instance Default ExprSource where
   def = ExprSource ""
 
-type ExprPair = (Expr BuildOut, Expr BuildOut)
-
-maxWireSize :: Int
-maxWireSize = 512
-
-inequivalent :: BuildOutM ExprPair
-inequivalent =
-  Hog.frequency
-    [ (7, differentSignedShift),
-      (2, differentInputs),
-      (1, differentConstants)
-    ]
-
-newPort :: Range BuildOut -> BuildOutM (Port BuildOut)
+newPort :: Int -> BuildOutM (Port BuildOut)
 newPort size = do
-  existingPortNames <- map (view (#name % #getIdentifier)) <$> look
-  portName <-
-    Hog.filterT (not . (`elem` existingPortNames)) $
-      Hog.text (Hog.Range.singleton 5) Hog.lower
-  let port = Port Wire False size (Identifier portName)
-  add [port]
-  return port
-
-differentConstants :: BuildOutM ExprPair
-differentConstants = do
-  n1 <- Hog.int (Hog.Range.constant 0 255)
-  n2 <- Hog.int (Hog.Range.constant 0 255)
-  guard (n1 /= n2)
-  return
-    ( Number "differentConstants" (fromIntegral n1),
-      Number "differentConstants" (fromIntegral n2)
-    )
-
-nonZeroRange :: BuildOutM (Range BuildOut)
-nonZeroRange = do
-  size <- Hog.int (Hog.Range.linear 1 maxWireSize)
-  return (Range (ConstNum () (fromIntegral $ size - 1)) (ConstNum () 0))
-
-differentInputs :: BuildOutM ExprPair
-differentInputs = do
-  range <- nonZeroRange
-  id1 <- view #name <$> newPort range
-  id2 <- view #name <$> newPort range
-  return
-    ( Id "differentInputs" id1,
-      Id "differentInputs" id2
-    )
+  InputPort _ name <- newInputPort size
+  return (Port Wire False (rangeFromSize (fromIntegral size)) (Identifier name))
 
 -- | Used to make an expression self-determined
 concatSingle :: AnnExpr ann -> Expr ann -> Expr ann
 concatSingle ann e = Concat ann (e :| [])
 
-differentSignedShift :: BuildOutM ExprPair
-differentSignedShift = do
-  range <- nonZeroRange
-  ident <- view #name <$> newPort range
-  return
-    ( concatSingle "" (BinOp "differentSignedShift" (Appl "" "$signed" (Id "" ident)) BinASR (Number "" 1)),
-      concatSingle "" (BinOp "differentSignedShift" (Appl "" "$unsigned" (Id "" ident)) BinASR (Number "" 1))
-    )
-
--- | Increase the size and complexity of an expression while preserving its semantics
-growVerilogPair :: ExprPair -> BuildOutM ExprPair
-growVerilogPair pair = do
-  count <- Hog.int (Hog.Range.linear 1 20)
-  iterateM count grow1 pair
-  where
-    grow1 (e1, e2) = do
-      -- FIXME: Make the random parts be identical for both expressions
-      f <-
-        Hog.element
-          [ ifFalse,
-            ifTrue,
-            pure . signedUnsigned,
-            pure . unsignedSigned,
-            or0
-            -- TODO: Implement bit-select entire vector
-          ]
-      e1' <- f e1
-      e2' <- f e2
-      return (e1', e2')
-
 deadExpression :: BuildOutM (Expr BuildOut)
 deadExpression = Number "dead" . fromIntegral <$> Hog.int (Hog.Range.constant (-255) 255)
-
-mapBothA :: Applicative f => (a -> f b) -> (a, a) -> f (b, b)
-mapBothA f = bimapA f f
-
-bimapA :: Applicative f => (a -> f a') -> (b -> f b') -> (a, b) -> f (a', b')
-bimapA f g (x, y) = (,) <$> f x <*> g y
 
 ifTrue :: Expr BuildOut -> BuildOutM (Expr BuildOut)
 ifTrue e = do
@@ -175,10 +90,3 @@ singleExprModule name inPorts e =
           size = Range (ConstNum () (fromIntegral $ maxWireSize - 1)) (ConstNum () 0),
           name = "y"
         }
-
-iterateM :: Monad m => Int -> (a -> m a) -> a -> m a
-iterateM 0 _ x = pure x
-iterateM 1 f x = f x
-iterateM n f x = do
-  x' <- f x
-  iterateM (n - 1) f x'

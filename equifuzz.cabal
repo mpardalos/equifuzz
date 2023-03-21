@@ -18,6 +18,8 @@ executable equifuzz
                  , BuildOut
                  , BuildOut.Verilog
                  , BuildOut.SystemC
+                 , BuildOut.VerilogVerilog
+                 , BuildOut.SystemCVerilog
                  , BuildOut.Internal
                  , SystemC
     -- other-extensions:
