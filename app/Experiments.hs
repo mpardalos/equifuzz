@@ -20,9 +20,10 @@ import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Hedgehog.Gen qualified as Hog
-import Optics (makeFieldLabelsNoPrefix, (&))
+import Optics (makeFieldLabelsNoPrefix, (&), (^.))
 import Shelly ((</>))
 import Shelly qualified as Sh
+import SystemC qualified as SC
 import Text.Printf (printf)
 import Verismith.Verilog.CodeGen (Source (genSource))
 
@@ -43,6 +44,7 @@ data DesignSource = DesignSource
   }
 
 makeFieldLabelsNoPrefix ''Experiment
+makeFieldLabelsNoPrefix ''DesignSource
 
 instance Show Experiment where
   show e =
@@ -81,7 +83,7 @@ isCompleted _ = False
 runVCFormal :: Experiment -> IO ExperimentResult
 runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
-  Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript "design1.v" design1.topName "design2.v" design2.topName)
+  Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript "design1.v" design1 "design2.v" design2)
   Sh.writefile (dir </> ("design1.v" :: Text)) design1.source
   Sh.writefile (dir </> ("design2.v" :: Text)) design2.source
   void $ Sh.bash "ssh" [vcfHost, "mkdir -p " <> remoteDir <> "/"]
@@ -115,18 +117,23 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     sshCommand :: Text
     sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl && cd ~ && rm -rf #{experimentDir}|]
 
-    compareScript :: Text -> Text -> Text -> Text -> Text
-    compareScript file1 top1 file2 top2 =
+    compileCommand :: DesignLanguage -> Text -> Text
+    compileCommand language file = case language of
+      Verilog -> [i|vcs -sverilog #{file}|]
+      SystemC -> [i|cppan #{file}|]
+
+    compareScript :: Text -> DesignSource -> Text -> DesignSource -> Text
+    compareScript file1 design1 file2 design2 =
       [__i|
                 set_custom_solve_script "orch_multipliers"
                 set_user_assumes_lemmas_procedure "miter"
 
-                create_design -name spec -top #{top1} -lang mx
-                vcs -sverilog #{file1}
+                create_design -name spec -top #{design1 ^. #topName}
+                #{compileCommand (design1 ^. #language) file1}
                 compile_design spec
 
-                create_design -name impl -top #{top2} -lang mx
-                vcs -sverilog #{file2}
+                create_design -name impl -top #{design2 ^. #topName}
+                #{compileCommand (design2 ^. #language) file2}
                 compile_design impl
 
                 proc miter {} {
@@ -162,18 +169,89 @@ saveExperiment category Experiment {design1, design2, uuid, expectedResult} Expe
 mkVerilogVerilogExperiment :: IO Experiment
 mkVerilogVerilogExperiment = do
   (mod1, mod2) <- Hog.sample (buildOutVerilogVerilog "mod1" "mod2")
-  let design1 = DesignSource {language = Verilog, topName = "mod1", source = genSource mod1}
-  let design2 = DesignSource {language = Verilog, topName = "mod2", source = genSource mod2}
+  let design1 =
+        DesignSource
+          { language = Verilog,
+            topName = "mod1",
+            source = genSource mod1
+          }
+  let design2 =
+        DesignSource
+          { language = Verilog,
+            topName = "mod2",
+            source = genSource mod2
+          }
   uuid <- UUID.nextRandom
   return Experiment {expectedResult = False, ..}
 
 mkSystemCVerilogExperiment :: IO Experiment
 mkSystemCVerilogExperiment = do
   (systemcModule, verilogModule) <- Hog.sample (buildOutSystemCVerilog "mod1" "mod2")
-  let design1 = DesignSource {language = Verilog, topName = "mod1", source = genSource systemcModule}
-  let design2 = DesignSource {language = Verilog, topName = "mod2", source = genSource verilogModule}
+  let design1 =
+        DesignSource
+          { language = SystemC,
+            topName = "mod1",
+            source =
+              SC.includeHeader
+                <> "\n\n"
+                <> genSource systemcModule
+                <> "\n\n"
+                <> systemCHectorWrapper systemcModule
+          }
+  let design2 =
+        DesignSource
+          { language = Verilog,
+            topName = "mod2",
+            source = genSource verilogModule
+          }
   uuid <- UUID.nextRandom
   return Experiment {expectedResult = False, ..}
+
+-- | When doing equivalence checking with Hector (VC Formal) the code under test
+-- needs to be presented to hector using a wrapper
+systemCHectorWrapper :: SC.FunctionDeclaration -> Text
+systemCHectorWrapper SC.FunctionDeclaration {returnType, args, name} =
+  [__i|
+      \#include<Hector.h>
+
+      void #{hectorWrapperName}() {
+          #{inputDeclarations}
+          #{outType} out;
+
+          #{inputsHectorRegister}
+          Hector::registerOutput("out", out);
+
+          Hector::beginCapture();
+          out = #{name}(#{argList});
+          Hector::endCapture();
+      }
+
+      |]
+  where
+    hectorWrapperName :: Text
+    hectorWrapperName = "hector_wrapper"
+
+    inputDeclarations :: Text
+    inputDeclarations =
+      T.intercalate
+        "\n    "
+        [ genSource argType <> " " <> argName <> ";"
+          | (argType, argName) <- args
+        ]
+
+    outType :: Text
+    outType = genSource returnType
+
+    inputsHectorRegister :: Text
+    inputsHectorRegister =
+      T.intercalate
+        "\n    "
+        [ "Hector::registerInput(\"" <> argName <> "\", " <> argName <> ");"
+          | (_, argName) <- args
+        ]
+
+    argList :: Text
+    argList = T.intercalate ", " [argName | (_, argName) <- args]
 
 experimentLoop :: IO Experiment -> (Experiment -> IO ExperimentResult) -> ProgressNotify -> IO ()
 experimentLoop generator runner progress = forever $ do

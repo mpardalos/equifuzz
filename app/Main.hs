@@ -19,7 +19,7 @@ tuiMain = do
     experimentThread eventChan =
       void $
         forkFinally
-          (experimentLoop mkVerilogVerilogExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
+          (experimentLoop mkSystemCVerilogExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
           (const $ experimentThread eventChan)
 
 genMain :: IO ()

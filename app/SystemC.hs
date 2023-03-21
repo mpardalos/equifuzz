@@ -50,6 +50,10 @@ data FunctionDeclaration = FunctionDeclaration
 
 newtype TranslationUnit = TranslationUnit [FunctionDeclaration]
 
+-- | This needs to be included in the final program
+includeHeader :: Text
+includeHeader = "#include <systemc.h>"
+
 prettyBinOp :: BinOp -> Doc a
 prettyBinOp Plus = "+"
 prettyBinOp Minus = "-"
