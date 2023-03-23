@@ -69,8 +69,10 @@ iterateM n f x = do
   x' <- f x
   iterateM (n - 1) f x'
 
+-- | Maximum size in bits for any given signal generated. This limitation is set
+-- by Hector for the output signal, so it should be easy to remove
 maxWireSize :: Int
-maxWireSize = 512
+maxWireSize = 64
 
 wireSize :: BuildOutM Int
 wireSize = Hog.int (Hog.Range.linear 1 maxWireSize)
