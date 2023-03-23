@@ -146,7 +146,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
 
                 proc miter {} {
                         map_by_name -inputs -implphase 1 -specphase 1
-                        map_by_name -outputs -implphase 1 -specphase 1
+                        lemma spec.out(1) == impl.out(1)
                 }
 
                 compose
