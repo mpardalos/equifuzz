@@ -75,7 +75,7 @@ singleExprModule name inPorts e =
       id = name,
       inPorts,
       outPorts = [outPort],
-      items = portDecls ++ [ModCA () (ContAssign "y" e)]
+      items = portDecls ++ [ModCA () (ContAssign "out" e)]
     }
   where
     portDecls =
@@ -88,5 +88,5 @@ singleExprModule name inPorts e =
         { portType = Wire,
           signed = False,
           size = Range (ConstNum () (fromIntegral $ maxWireSize - 1)) (ConstNum () 0),
-          name = "y"
+          name = "out"
         }
