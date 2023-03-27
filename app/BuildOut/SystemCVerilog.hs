@@ -28,10 +28,7 @@ grow pair = do
     grow1 (e1, e2) = do
       (systemcGrow, verilogGrow) <-
         Hog.element
-          [ (SC.ifTrue, V.ifTrue),
-            (SC.ifFalse, V.ifFalse),
-            (SC.or0, V.or0)
-          ]
+          [ (SC.or0, V.or0) ]
       e1' <- systemcGrow e1
       e2' <- verilogGrow e2
       return (e1', e2')
