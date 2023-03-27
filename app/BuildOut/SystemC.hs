@@ -19,6 +19,12 @@ newInput size = do
 or0 :: SC.Expr -> BuildOutM SC.Expr
 or0 e = pure (SC.BinOp e SC.BitwiseOr (SC.Constant 0))
 
+-- ((e - 1) + 1)
+plusNMinusN :: SC.Expr -> BuildOutM SC.Expr
+plusNMinusN e = do
+  n <- Hog.int (Hog.Range.constant 0 255)
+  pure (SC.BinOp (SC.BinOp e SC.Plus (SC.Constant n)) SC.Minus (SC.Constant n))
+
 singleExprFunction ::
   SC.SCType ->
   Text ->

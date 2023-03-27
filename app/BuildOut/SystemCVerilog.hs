@@ -21,17 +21,21 @@ inequivalent =
 
 -- | Increase the size and complexity of an expression while preserving its semantics
 grow :: ExprPair -> BuildOutM ExprPair
-grow pair = do
+grow (systemcExpr, verilogExpr) = do
   count <- Hog.int (Hog.Range.linear 1 20)
-  iterateM count grow1 pair
+  systemcExpr' <- iterateM count systemcGrow systemcExpr
+  verilogExpr' <- iterateM count verilogGrow verilogExpr
+  pure (systemcExpr', verilogExpr')
   where
-    grow1 (e1, e2) = do
-      (systemcGrow, verilogGrow) <-
-        Hog.element
-          [ (SC.or0, V.or0) ]
-      e1' <- systemcGrow e1
-      e2' <- verilogGrow e2
-      return (e1', e2')
+    systemcGrow e =
+      Hog.choice
+        [ SC.or0 e,
+          SC.plusNMinusN e
+        ]
+    verilogGrow e =
+      Hog.choice
+        [ V.or0 e
+        ]
 
 differentConstants :: BuildOutM ExprPair
 differentConstants = do
