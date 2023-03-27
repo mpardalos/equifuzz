@@ -107,8 +107,8 @@ instance Source Statement where
       . prettyStatement
 
 prettySCType :: SCType -> Doc a
-prettySCType (SCInt size) = "sc_int<" <> pretty size <> ">"
-prettySCType (SCUInt size) = "sc_uint<" <> pretty size <> ">"
+prettySCType (SCInt size) = "sc_dt::sc_int<" <> pretty size <> ">"
+prettySCType (SCUInt size) = "sc_dt::sc_uint<" <> pretty size <> ">"
 
 instance Source SCType where
   genSource =
