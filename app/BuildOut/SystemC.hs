@@ -19,6 +19,14 @@ newInput size = do
 or0 :: SC.Expr -> BuildOutM SC.Expr
 or0 e = pure (SC.BinOp e SC.BitwiseOr (SC.Constant 0))
 
+-- (e + 0)
+plus0 :: SC.Expr -> BuildOutM SC.Expr
+plus0 e = pure (SC.BinOp e SC.Plus (SC.Constant 0))
+
+-- (e * 1)
+times1 :: SC.Expr -> BuildOutM SC.Expr
+times1 e = pure (SC.BinOp e SC.Multiply (SC.Constant 1))
+
 -- ((e - 1) + 1)
 plusNMinusN :: SC.Expr -> BuildOutM SC.Expr
 plusNMinusN e = do

@@ -3,6 +3,7 @@ module BuildOut.SystemCVerilog where
 import BuildOut.Internal
 import BuildOut.SystemC qualified as SC
 import BuildOut.Verilog qualified as V
+import Control.Applicative (Applicative (liftA2))
 import Control.Monad (guard)
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
@@ -23,15 +24,19 @@ inequivalent =
 grow :: ExprPair -> BuildOutM ExprPair
 grow (systemcExpr, verilogExpr) = do
   count <- Hog.int (Hog.Range.linear 1 20)
-  systemcExpr' <- iterateM count systemcGrow systemcExpr
-  verilogExpr' <- iterateM count verilogGrow verilogExpr
-  pure (systemcExpr', verilogExpr')
+  liftA2
+    (,)
+    (iterateM count systemcGrow systemcExpr)
+    (iterateM count verilogGrow verilogExpr)
   where
     systemcGrow e =
       Hog.choice
         [ SC.or0 e,
-          SC.plusNMinusN e
+          SC.plusNMinusN e,
+          SC.plus0 e,
+          SC.times1 e
         ]
+
     verilogGrow e =
       Hog.choice
         [ V.or0 e
