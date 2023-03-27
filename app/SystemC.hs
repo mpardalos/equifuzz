@@ -32,14 +32,17 @@ data Expr
   | BinOp Expr BinOp Expr
   | Conditional Expr Expr Expr
   | Variable Text
+  | Cast SCType Expr
   deriving (Eq, Show, Generic, Data)
 
 data Statement
   = Return Expr
   | Block [Statement]
+  deriving (Eq, Show, Generic, Data)
 
 -- | SystemC types. Constructor parameters correspond to template arguments
 data SCType = SCInt Int | SCUInt Int
+  deriving (Eq, Show, Generic, Data)
 
 data FunctionDeclaration = FunctionDeclaration
   { returnType :: SCType,
@@ -47,8 +50,10 @@ data FunctionDeclaration = FunctionDeclaration
     args :: [(SCType, Text)],
     body :: [Statement]
   }
+  deriving (Eq, Show, Generic, Data)
 
 newtype TranslationUnit = TranslationUnit [FunctionDeclaration]
+  deriving (Eq, Show, Generic, Data)
 
 -- | This needs to be included in the final program
 includeHeader :: Text
@@ -82,6 +87,7 @@ prettyExpr (Conditional cond tBranch fBranch) =
       ":" <+> prettyExpr fBranch
     ]
 prettyExpr (Variable name) = pretty name
+prettyExpr (Cast castType expr) = prettySCType castType <> parens (prettyExpr expr)
 
 instance Source Expr where
   genSource =
