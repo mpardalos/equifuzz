@@ -18,7 +18,7 @@ buildOutVerilogVerilog name1 name2 = do
       V.singleExprModule name2 (map inputPortAsVerilog ports) expr2
     )
 
-buildOutSystemCVerilog :: Text -> V.Identifier -> Gen (SC.FunctionDeclaration, V.ModDecl V.BuildOut)
+buildOutSystemCVerilog :: Text -> V.Identifier -> Gen (SC.FunctionDeclaration SC.BuildOut, V.ModDecl V.BuildOut)
 buildOutSystemCVerilog name1 name2 = do
   ((systemcExpr, verilogExpr), ports) <- runBuildOutM (SCxV.inequivalent >>= SCxV.grow)
   return

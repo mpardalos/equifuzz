@@ -76,3 +76,4 @@ maxWireSize = 64
 
 wireSize :: BuildOutM Int
 wireSize = Hog.int (Hog.Range.linear 1 maxWireSize)
+

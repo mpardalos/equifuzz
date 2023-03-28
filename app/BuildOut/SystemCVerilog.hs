@@ -11,7 +11,7 @@ import Optics (view)
 import SystemC qualified as SC
 import Verismith.Verilog qualified as V
 
-type ExprPair = (SC.Expr, V.Expr V.BuildOut)
+type ExprPair = (SC.Expr SC.BuildOut, V.Expr V.BuildOut)
 
 inequivalent :: BuildOutM ExprPair
 inequivalent =
@@ -48,7 +48,7 @@ differentConstants = do
   n2 <- Hog.int (Hog.Range.constant 0 255)
   guard (n1 /= n2)
   return
-    ( SC.Constant (fromIntegral n1),
+    ( SC.boConstant (fromIntegral n1),
       V.Number "differentConstants" (fromIntegral n2)
     )
 
@@ -58,6 +58,6 @@ differentInputs = do
   id1 <- SC.newInput size
   id2 <- view #name <$> V.newPort size
   return
-    ( SC.Variable id1,
+    ( SC.Variable (SC.Bitwidth size) id1,
       V.Id "differentInputs" id2
     )

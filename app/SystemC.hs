@@ -1,10 +1,18 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module SystemC where
 
-import Data.Data (Data)
+import Data.Data (Data, Typeable)
+import Data.Default.Class (Default (def))
+import Data.Kind (Constraint, Type)
 import Data.Text (Text)
 import GHC.Generics (Generic)
+import GHC.Records (HasField (getField))
+import Optics (A_Getter, LabelOptic, to)
+import Optics.Label (LabelOptic (labelOptic))
 import Prettyprinter
   ( Doc,
     Pretty (pretty),
@@ -24,36 +32,105 @@ import Prettyprinter
 import Prettyprinter.Render.Text (renderStrict)
 import Verismith.Verilog.CodeGen (Source (..))
 
+type AnnConstraint (c :: Type -> Constraint) ann =
+  ( c (AnnExpr ann),
+    c (AnnStatement ann)
+  )
+
+class
+  ( AnnConstraint Default ann,
+    AnnConstraint Data ann,
+    AnnConstraint Show ann,
+    AnnConstraint Pretty ann,
+    Typeable ann,
+    Typeable k
+  ) =>
+  Annotation (ann :: k)
+  where
+  type AnnExpr ann
+  type AnnStatement ann
+
+instance Annotation () where
+  type AnnExpr () = ()
+  type AnnStatement () = ()
+
 data BinOp = Plus | Minus | Multiply | Divide | BitwiseOr
   deriving (Eq, Show, Generic, Data)
 
-data Expr
-  = Constant Int
-  | BinOp Expr BinOp Expr
-  | Conditional Expr Expr Expr
-  | Variable Text
-  | Cast SCType Expr
-  deriving (Eq, Show, Generic, Data)
+data Expr ann
+  = Constant (AnnExpr ann) Int
+  | BinOp (AnnExpr ann) (Expr ann) BinOp (Expr ann)
+  | Conditional (AnnExpr ann) (Expr ann) (Expr ann) (Expr ann)
+  | Variable (AnnExpr ann) Text
+  | Cast (AnnExpr ann) SCType (Expr ann)
+  deriving (Generic)
 
-data Statement
-  = Return Expr
-  | Block [Statement]
-  deriving (Eq, Show, Generic, Data)
+deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (Expr ann)
+
+deriving instance (Annotation ann, AnnConstraint Show ann) => Show (Expr ann)
+
+deriving instance (Annotation ann, AnnConstraint Data ann) => Data (Expr ann)
+
+instance (Annotation ann, AnnExpr ann ~ annType) => HasField "annotation" (Expr ann) annType where
+  getField (Constant ann _) = ann
+  getField (BinOp ann _ _ _) = ann
+  getField (Conditional ann _ _ _) = ann
+  getField (Variable ann _) = ann
+  getField (Cast ann _ _) = ann
+
+instance
+  (Annotation ann, AnnExpr ann ~ annType) =>
+  LabelOptic "annotation" A_Getter (Expr ann) (Expr ann) annType annType
+  where
+  labelOptic = to (getField @"annotation")
+
+data Statement ann
+  = Return (AnnStatement ann) (Expr ann)
+  | Block (AnnStatement ann) [Statement ann]
+  deriving (Generic)
+
+deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (Statement ann)
+
+deriving instance (Annotation ann, AnnConstraint Show ann) => Show (Statement ann)
+
+deriving instance (Annotation ann, AnnConstraint Data ann) => Data (Statement ann)
+
+instance
+  (Annotation ann, AnnStatement ann ~ annType) =>
+  LabelOptic "annotation" A_Getter (Statement ann) (Statement ann) annType annType
+  where
+  labelOptic = to (getField @"annotation")
+
+instance (annType ~ AnnStatement ann) => HasField "annotation" (Statement ann) annType where
+  getField (Return ann _) = ann
+  getField (Block ann _) = ann
 
 -- | SystemC types. Constructor parameters correspond to template arguments
 data SCType = SCInt Int | SCUInt Int
   deriving (Eq, Show, Generic, Data)
 
-data FunctionDeclaration = FunctionDeclaration
+data FunctionDeclaration ann = FunctionDeclaration
   { returnType :: SCType,
     name :: Text,
     args :: [(SCType, Text)],
-    body :: [Statement]
+    body :: [Statement ann]
   }
-  deriving (Eq, Show, Generic, Data)
+  deriving (Generic)
 
-newtype TranslationUnit = TranslationUnit [FunctionDeclaration]
-  deriving (Eq, Show, Generic, Data)
+deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (FunctionDeclaration ann)
+
+deriving instance (Annotation ann, AnnConstraint Show ann) => Show (FunctionDeclaration ann)
+
+deriving instance (Annotation ann, AnnConstraint Data ann) => Data (FunctionDeclaration ann)
+
+newtype TranslationUnit ann = TranslationUnit [FunctionDeclaration ann]
+  deriving (Generic)
+
+deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (TranslationUnit ann)
+
+deriving instance (Annotation ann, AnnConstraint Show ann) => Show (TranslationUnit ann)
+
+deriving instance (Annotation ann, AnnConstraint Data ann) => Data (TranslationUnit ann)
 
 -- | This needs to be included in the final program
 includeHeader :: Text
@@ -72,35 +149,49 @@ instance Source BinOp where
       . layoutPretty defaultLayoutOptions
       . prettyBinOp
 
-prettyExpr :: Expr -> Doc a
-prettyExpr (Constant n) = pretty n
-prettyExpr (BinOp l op r) =
-  parens . hsep $
-    [ prettyExpr l,
-      prettyBinOp op,
-      prettyExpr r
-    ]
-prettyExpr (Conditional cond tBranch fBranch) =
-  parens . nest 4 . sep $
-    [ prettyExpr cond,
-      "?" <+> prettyExpr tBranch,
-      ":" <+> prettyExpr fBranch
-    ]
-prettyExpr (Variable name) = pretty name
-prettyExpr (Cast castType expr) = prettySCType castType <> parens (prettyExpr expr)
+bComment :: Doc a -> Doc a
+bComment b = "/*" <+> b <+> "*/"
 
-instance Source Expr where
+prettyExpr :: Annotation ann => Expr ann -> Doc a
+prettyExpr (Constant ann n) = bComment (pretty ann) <+> pretty n
+prettyExpr (BinOp ann l op r) =
+  parens $
+    bComment (pretty ann)
+      <+> ( parens . hsep $
+              [ prettyExpr l,
+                prettyBinOp op,
+                prettyExpr r
+              ]
+          )
+prettyExpr (Conditional ann cond tBranch fBranch) =
+  parens $
+    bComment (pretty ann)
+      <+> ( parens . nest 4 . sep $
+              [ prettyExpr cond,
+                "?" <+> prettyExpr tBranch,
+                ":" <+> prettyExpr fBranch
+              ]
+          )
+prettyExpr (Variable ann name) =
+  parens $
+    bComment (pretty ann) <+> pretty name
+prettyExpr (Cast ann castType expr) =
+  parens $
+    bComment (pretty ann)
+      <+> prettySCType castType <> parens (prettyExpr expr)
+
+instance Annotation ann => Source (Expr ann) where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions
       . prettyExpr
 
-prettyStatement :: Statement -> Doc a
-prettyStatement (Return e) = "return" <+> prettyExpr e <> ";"
-prettyStatement (Block statements) =
-  vsep ["{", indent 4 . vsep $ prettyStatement <$> statements, "}"]
+prettyStatement :: Annotation ann => Statement ann -> Doc a
+prettyStatement (Return ann e) = "return" <+> prettyExpr e <> ";" <+> "//" <+> pretty ann
+prettyStatement (Block ann statements) =
+  vsep ["{", indent 4 . vsep $ prettyStatement <$> statements, "}" <+> "//" <+> pretty ann]
 
-instance Source Statement where
+instance Annotation ann => Source (Statement ann) where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions
@@ -116,12 +207,12 @@ instance Source SCType where
       . layoutPretty defaultLayoutOptions
       . prettySCType
 
-prettyFunctionDeclaration :: FunctionDeclaration -> Doc a
+prettyFunctionDeclaration :: Annotation ann => FunctionDeclaration ann -> Doc a
 prettyFunctionDeclaration FunctionDeclaration {..} =
   prettySCType returnType
     <+> pretty name
       <> prettyArgs
-    <+> prettyStatement (Block body)
+    <+> prettyStatement (Block def body)
   where
     prettyArgs =
       parens . sep . punctuate comma $
@@ -129,17 +220,17 @@ prettyFunctionDeclaration FunctionDeclaration {..} =
           | (argType, argName) <- args
         ]
 
-instance Source FunctionDeclaration where
+instance Annotation ann => Source (FunctionDeclaration ann) where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions
       . prettyFunctionDeclaration
 
-prettyTranslationUnit :: TranslationUnit -> Doc a
+prettyTranslationUnit :: Annotation ann => TranslationUnit ann -> Doc a
 prettyTranslationUnit (TranslationUnit funcs) =
   vsep . punctuate line $ map prettyFunctionDeclaration funcs
 
-instance Source TranslationUnit where
+instance Annotation ann => Source (TranslationUnit ann) where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions

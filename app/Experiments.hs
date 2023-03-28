@@ -217,7 +217,7 @@ mkSystemCVerilogExperiment = do
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper
-systemCHectorWrapper :: SC.FunctionDeclaration -> Text
+systemCHectorWrapper :: SC.Annotation ann => SC.FunctionDeclaration ann -> Text
 systemCHectorWrapper SC.FunctionDeclaration {returnType, args, name} =
   [__i|
       \#include<Hector.h>
