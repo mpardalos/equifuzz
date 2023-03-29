@@ -17,16 +17,13 @@ import Brick.Widgets.Dialog qualified as B
 import Brick.Widgets.List qualified as B
 import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (fromJust)
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
-import Data.Text (Text)
-import Data.Text qualified as T
 import Experiments
 import Graphics.Vty qualified as Vty
 import Optics
 import Optics.State.Operators ((%=))
-import Shelly qualified as Sh
 
 instance LabelOptic "name" A_Lens (B.GenericList n t e) (B.GenericList n t e) n n where
   labelOptic = lensVL B.listNameL
@@ -65,8 +62,7 @@ cyclePrevious x
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
-    result :: Maybe ExperimentResult,
-    modulesDiff :: Maybe Text
+    result :: Maybe ExperimentResult
   }
   deriving (Show)
 
@@ -118,7 +114,7 @@ appDraw st =
     ]
   where
     renderSelection :: ExperimentInfo -> B.Widget WidgetID
-    renderSelection (ExperimentInfo experiment mResult mDiff) =
+    renderSelection (ExperimentInfo experiment mResult) =
       let start =
             B.vBox
               [ B.str ("UUID:            " <> show experiment.uuid),
@@ -134,12 +130,10 @@ appDraw st =
                 )
             Nothing -> B.emptyWidget
           diffDisplay =
-            maybe
-              B.emptyWidget
-              ( B.borderWithLabel (B.str " Diff ")
-                  . B.txtWrap
-              )
-              mDiff
+            B.hBox
+              [ B.borderWithLabel (B.str " Design 1 ") $ B.txtWrap experiment.design1.source,
+                B.borderWithLabel (B.str " Design 2 ") $ B.txtWrap experiment.design2.source
+              ]
           outputDisplay =
             maybe
               B.emptyWidget
@@ -181,8 +175,7 @@ appHandleEvent (B.VtyEvent ev) = case ev of
       UninterestingList -> B.zoom (toLensVL #uninteresting) (B.handleListEvent ev)
 appHandleEvent (B.AppEvent ev) = case ev of
   (ExperimentProgress (Began experiment)) -> do
-    diff <- liftIO $ getDiff experiment
-    #running %= B.listInsert 0 (ExperimentInfo experiment Nothing diff)
+    #running %= B.listInsert 0 (ExperimentInfo experiment Nothing)
   (ExperimentProgress (Completed result)) -> do
     experimentIdx <- use (#running % #elements) <&> fromJust . Seq.findIndexL ((== result.uuid) . view (#experiment % #uuid))
     experimentInfo <- use (#running % #elements) <&> (`Seq.index` experimentIdx)
@@ -197,22 +190,6 @@ appHandleEvent (B.AppEvent ev) = case ev of
       Nothing -> pure ()
 appHandleEvent B.MouseDown {} = pure ()
 appHandleEvent B.MouseUp {} = pure ()
-
--- | Run the experiment's modules through a text diff
-getDiff :: Experiment -> IO (Maybe Text)
-getDiff Experiment {design1, design2} = do
-  Sh.shelly . Sh.silently $ do
-    diffExists <- isJust <$> Sh.which "diff"
-    if diffExists
-      then do
-        tmpdir <- T.strip <$> Sh.run "mktemp" ["-d"]
-        let path1 = tmpdir Sh.</> ("design1.v" :: FilePath)
-        let path2 = tmpdir Sh.</> ("design2.v" :: FilePath)
-        Sh.writefile path1 design1.source
-        Sh.writefile path2 design2.source
-        Sh.errExit False $
-          Just <$> Sh.run "diff" [T.pack path1, T.pack path2]
-      else return Nothing
 
 runTUI :: B.BChan AppEvent -> IO ()
 runTUI eventChan = do
