@@ -6,12 +6,11 @@
 module SystemC where
 
 import Data.Data (Data, Typeable)
-import Data.Default.Class (Default (def))
 import Data.Kind (Constraint, Type)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import GHC.Records (HasField (getField))
-import Optics (A_Getter, LabelOptic, to)
+import Optics (A_Getter, LabelOptic, Lens', lens, to)
 import Optics.Label (LabelOptic (labelOptic))
 import Prettyprinter
   ( Doc,
@@ -38,8 +37,7 @@ type AnnConstraint (c :: Type -> Constraint) ann =
   )
 
 class
-  ( AnnConstraint Default ann,
-    AnnConstraint Data ann,
+  ( AnnConstraint Data ann,
     AnnConstraint Show ann,
     AnnConstraint Pretty ann,
     Typeable ann,
@@ -109,6 +107,15 @@ instance (annType ~ AnnStatement ann) => HasField "annotation" (Statement ann) a
 data SCType = SCInt Int | SCUInt Int
   deriving (Eq, Show, Generic, Data)
 
+width :: Lens' SCType Int
+width = lens get set
+  where
+    get (SCInt n) = n
+    get (SCUInt n) = n
+
+    set (SCInt _) n = SCInt n
+    set (SCUInt _) n = SCUInt n
+
 data FunctionDeclaration ann = FunctionDeclaration
   { returnType :: SCType,
     name :: Text,
@@ -136,102 +143,104 @@ deriving instance (Annotation ann, AnnConstraint Data ann) => Data (TranslationU
 includeHeader :: Text
 includeHeader = "#include <systemc.h>"
 
-prettyBinOp :: BinOp -> Doc a
-prettyBinOp Plus = "+"
-prettyBinOp Minus = "-"
-prettyBinOp Multiply = "*"
-prettyBinOp Divide = "/"
-prettyBinOp BitwiseOr = "|"
+instance Pretty BinOp where
+  pretty Plus = "+"
+  pretty Minus = "-"
+  pretty Multiply = "*"
+  pretty Divide = "/"
+  pretty BitwiseOr = "|"
 
 instance Source BinOp where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions
-      . prettyBinOp
+      . pretty
 
 bComment :: Doc a -> Doc a
 bComment b = "/*" <+> b <+> "*/"
 
-prettyExpr :: Annotation ann => Expr ann -> Doc a
-prettyExpr (Constant ann n) = bComment (pretty ann) <+> pretty n
-prettyExpr (BinOp ann l op r) =
-  parens $
-    bComment (pretty ann)
-      <+> ( parens . hsep $
-              [ prettyExpr l,
-                prettyBinOp op,
-                prettyExpr r
-              ]
-          )
-prettyExpr (Conditional ann cond tBranch fBranch) =
-  parens $
-    bComment (pretty ann)
-      <+> ( parens . nest 4 . sep $
-              [ prettyExpr cond,
-                "?" <+> prettyExpr tBranch,
-                ":" <+> prettyExpr fBranch
-              ]
-          )
-prettyExpr (Variable ann name) =
-  parens $
-    bComment (pretty ann) <+> pretty name
-prettyExpr (Cast ann castType expr) =
-  parens $
-    bComment (pretty ann)
-      <+> prettySCType castType <> parens (prettyExpr expr)
+instance Annotation ann => Pretty (Expr ann) where
+  pretty (Constant ann n) = bComment (pretty ann) <+> pretty n
+  pretty (BinOp ann l op r) =
+    parens $
+      bComment (pretty ann)
+        <+> ( parens . hsep $
+                [ pretty l,
+                  pretty op,
+                  pretty r
+                ]
+            )
+  pretty (Conditional ann cond tBranch fBranch) =
+    parens $
+      bComment (pretty ann)
+        <+> ( parens . nest 4 . sep $
+                [ pretty cond,
+                  "?" <+> pretty tBranch,
+                  ":" <+> pretty fBranch
+                ]
+            )
+  pretty (Variable ann name) =
+    parens $
+      bComment (pretty ann) <+> pretty name
+  pretty (Cast ann castType expr) =
+    parens $
+      bComment (pretty ann)
+        <+> pretty castType <> parens (pretty expr)
 
 instance Annotation ann => Source (Expr ann) where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions
-      . prettyExpr
+      . pretty
 
-prettyStatement :: Annotation ann => Statement ann -> Doc a
-prettyStatement (Return ann e) = "return" <+> prettyExpr e <> ";" <+> "//" <+> pretty ann
-prettyStatement (Block ann statements) =
-  vsep ["{", indent 4 . vsep $ prettyStatement <$> statements, "}" <+> "//" <+> pretty ann]
+prettyBlock :: Annotation ann => [Statement ann] -> Doc a
+prettyBlock statements = vsep ["{", indent 4 . vsep $ pretty <$> statements, "}"]
+
+instance Annotation ann => Pretty (Statement ann) where
+  pretty (Return ann e) = "return" <+> pretty e <> ";" <+> "//" <+> pretty ann
+  pretty (Block ann statements) = pretty statements <+> "//" <+> pretty ann
 
 instance Annotation ann => Source (Statement ann) where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions
-      . prettyStatement
+      . pretty
 
-prettySCType :: SCType -> Doc a
-prettySCType (SCInt size) = "sc_dt::sc_int<" <> pretty size <> ">"
-prettySCType (SCUInt size) = "sc_dt::sc_uint<" <> pretty size <> ">"
+instance Pretty SCType where
+  pretty (SCInt size) = "sc_dt::sc_int<" <> pretty size <> ">"
+  pretty (SCUInt size) = "sc_dt::sc_uint<" <> pretty size <> ">"
 
 instance Source SCType where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions
-      . prettySCType
+      . pretty
 
-prettyFunctionDeclaration :: Annotation ann => FunctionDeclaration ann -> Doc a
-prettyFunctionDeclaration FunctionDeclaration {..} =
-  prettySCType returnType
-    <+> pretty name
-      <> prettyArgs
-    <+> prettyStatement (Block def body)
-  where
-    prettyArgs =
-      parens . sep . punctuate comma $
-        [ prettySCType argType <+> pretty argName
-          | (argType, argName) <- args
-        ]
+instance Annotation ann => Pretty (FunctionDeclaration ann) where
+  pretty FunctionDeclaration {..} =
+    pretty returnType
+      <+> pretty name
+        <> prettyArgs
+      <+> prettyBlock body
+    where
+      prettyArgs =
+        parens . sep . punctuate comma $
+          [ pretty argType <+> pretty argName
+            | (argType, argName) <- args
+          ]
 
 instance Annotation ann => Source (FunctionDeclaration ann) where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions
-      . prettyFunctionDeclaration
+      . pretty
 
-prettyTranslationUnit :: Annotation ann => TranslationUnit ann -> Doc a
-prettyTranslationUnit (TranslationUnit funcs) =
-  vsep . punctuate line $ map prettyFunctionDeclaration funcs
+instance Annotation ann => Pretty (TranslationUnit ann) where
+  pretty (TranslationUnit funcs) =
+    vsep . punctuate line $ map pretty funcs
 
 instance Annotation ann => Source (TranslationUnit ann) where
   genSource =
     renderStrict
       . layoutPretty defaultLayoutOptions
-      . prettyTranslationUnit
+      . pretty

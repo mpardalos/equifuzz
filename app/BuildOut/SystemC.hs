@@ -6,41 +6,23 @@
 module BuildOut.SystemC where
 
 import BuildOut.Internal
-import Data.Data (Data)
-import Data.Default.Class (Default (..))
 import Data.Text (Text)
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
-import Optics (view)
-import Prettyprinter (Pretty (pretty))
+import Optics (view, over)
 import SystemC qualified as SC
 
 data BuildOut
 
-newtype Bitwidth = Bitwidth Int
-  deriving stock (Data, Show)
-  deriving newtype (Num, Eq, Ord)
-
-instance Pretty Bitwidth where
-  pretty (Bitwidth n) = pretty n <> "b"
-
-instance Default Bitwidth where
-  def = Bitwidth 0
-
 instance SC.Annotation BuildOut where
-  type AnnExpr BuildOut = Bitwidth
+  type AnnExpr BuildOut = SC.SCType
   type AnnStatement BuildOut = ()
 
-boConstant :: Int -> SC.Expr BuildOut
-boConstant n = SC.Constant (Bitwidth numBits) n
-  where
-    numBits = case n of
-      0 -> 0
-      1 -> 1
-      _ -> ceiling $ logBase @Double 2.0 $ fromIntegral n
+castConstant :: SC.SCType -> Int -> SC.Expr BuildOut
+castConstant t val = SC.Cast t t (SC.Constant t val)
 
-bitwidth :: (SC.Annotation ann, SC.AnnExpr ann ~ Bitwidth) => SC.Expr ann -> Bitwidth
-bitwidth = view #annotation
+typeof :: (SC.Annotation ann, SC.AnnExpr ann ~ SC.SCType) => SC.Expr ann -> SC.SCType
+typeof = view #annotation
 
 newInput :: Int -> BuildOutM Text
 newInput size = do
@@ -48,23 +30,24 @@ newInput size = do
   return name
 
 or0 :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
-or0 e = pure (SC.BinOp (bitwidth e) e SC.BitwiseOr (boConstant 0))
+or0 e = pure (SC.BinOp (typeof e) e SC.BitwiseOr (castConstant (typeof e) 0))
 
 -- (e + 0)
 plus0 :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
-plus0 e = pure (SC.BinOp (bitwidth e) e SC.Plus (boConstant 0))
+plus0 e = pure (SC.BinOp (typeof e) e SC.Plus (castConstant (typeof e) 0))
 
 -- (e * 1)
 times1 :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
-times1 e = pure (SC.BinOp (bitwidth e) e SC.Multiply (boConstant 1))
+times1 e = pure (SC.BinOp (typeof e) e SC.Multiply (castConstant (typeof e) 1))
 
 -- ((e - 1) + 1)
 plusNMinusN :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
 plusNMinusN e = do
-  n <- boConstant <$> Hog.int (Hog.Range.constant 0 255)
+  n <- castConstant (typeof e) <$> Hog.int (Hog.Range.constant 0 255)
   -- TODO: Check that this is as expected.
-  let width = max (bitwidth n) (bitwidth e) + 1
-  pure (SC.BinOp width (SC.BinOp width e SC.Plus n) SC.Minus n)
+  let t1 = over SC.width (+1) (typeof e)
+  let t2 = over SC.width (+1) t1
+  pure (SC.BinOp t2 (SC.BinOp t1 e SC.Plus n) SC.Minus n)
 
 singleExprFunction ::
   SC.SCType ->
