@@ -20,11 +20,12 @@ import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Hedgehog.Gen qualified as Hog
-import Optics (makeFieldLabelsNoPrefix, (&), (^.))
+import Optics (ix, makeFieldLabelsNoPrefix, traversed, (%), (&), (^.), (^..), _2)
 import Shelly ((</>))
 import Shelly qualified as Sh
 import SystemC qualified as SC
 import Text.Printf (printf)
+import Verismith.Verilog.AST (Identifier (), ModDecl (inPorts))
 import Verismith.Verilog.CodeGen (Source (genSource))
 
 data Experiment = Experiment
@@ -39,6 +40,7 @@ data DesignLanguage = SystemC | Verilog
 
 data DesignSource = DesignSource
   { language :: DesignLanguage,
+    inputNames :: [Text],
     topName :: Text,
     source :: Text
   }
@@ -132,6 +134,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
 
     compareScript :: Text -> DesignSource -> Text -> DesignSource -> Text
     compareScript file1 design1 file2 design2 =
+      -- TODO: Add input assumptions by hand instead of map_by_name (use DesignSource.inputNames)
       [__i|
                 set_custom_solve_script "orch_multipliers"
                 set_user_assumes_lemmas_procedure "miter"
@@ -180,12 +183,14 @@ mkVerilogVerilogExperiment = do
   let design1 =
         DesignSource
           { language = Verilog,
+            inputNames = mod1 ^.. #inPorts % traversed % #name % #_Identifier,
             topName = "mod1",
             source = genSource mod1
           }
   let design2 =
         DesignSource
           { language = Verilog,
+            inputNames = mod2 ^.. #inPorts % traversed % #name % #_Identifier,
             topName = "mod2",
             source = genSource mod2
           }
@@ -198,6 +203,7 @@ mkSystemCVerilogExperiment = do
   let design1 =
         DesignSource
           { language = SystemC,
+            inputNames = systemcModule ^.. #args % traversed % _2,
             topName = "mod1",
             source =
               SC.includeHeader
@@ -209,6 +215,7 @@ mkSystemCVerilogExperiment = do
   let design2 =
         DesignSource
           { language = Verilog,
+            inputNames = verilogModule ^.. #inPorts % traversed % #name % #_Identifier,
             topName = "mod2",
             source = genSource verilogModule
           }
