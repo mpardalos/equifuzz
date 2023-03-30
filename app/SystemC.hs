@@ -104,7 +104,7 @@ instance (annType ~ AnnStatement ann) => HasField "annotation" (Statement ann) a
   getField (Block ann _) = ann
 
 -- | SystemC types. Constructor parameters correspond to template arguments
-data SCType = SCInt Int | SCUInt Int
+data SCType = SCInt Int | SCUInt Int | CUInt | CInt
   deriving (Eq, Show, Generic, Data)
 
 width :: Lens' SCType Int
@@ -112,9 +112,13 @@ width = lens get set
   where
     get (SCInt n) = n
     get (SCUInt n) = n
+    get CInt = 32
+    get CUInt = 32
 
     set (SCInt _) n = SCInt n
     set (SCUInt _) n = SCUInt n
+    set CInt n = SCInt n
+    set CUInt n = SCUInt n
 
 data FunctionDeclaration ann = FunctionDeclaration
   { returnType :: SCType,
@@ -209,6 +213,8 @@ instance Annotation ann => Source (Statement ann) where
 instance Pretty SCType where
   pretty (SCInt size) = "sc_dt::sc_int<" <> pretty size <> ">"
   pretty (SCUInt size) = "sc_dt::sc_uint<" <> pretty size <> ">"
+  pretty CInt = "int"
+  pretty CUInt = "unsigned"
 
 instance Source SCType where
   genSource =

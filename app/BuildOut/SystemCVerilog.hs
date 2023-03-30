@@ -34,7 +34,8 @@ grow (systemcExpr, verilogExpr) = do
         [ SC.or0 e,
           SC.plusNMinusN e,
           SC.plus0 e,
-          SC.times1 e
+          SC.times1 e,
+          SC.ifTrue e
         ]
 
     verilogGrow e =
@@ -48,7 +49,7 @@ differentConstants = do
   n2 <- Hog.int (Hog.Range.constant 0 255)
   guard (n1 /= n2)
   return
-    ( SC.castConstant (SC.SCUInt 8) (fromIntegral n1),
+    ( SC.constant (fromIntegral n1),
       V.Number "differentConstants" (fromIntegral n2)
     )
 
