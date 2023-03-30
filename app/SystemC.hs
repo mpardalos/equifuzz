@@ -15,13 +15,12 @@ import Optics.Label (LabelOptic (labelOptic))
 import Prettyprinter
   ( Doc,
     Pretty (pretty),
+    align,
     comma,
     defaultLayoutOptions,
-    hsep,
     indent,
     layoutPretty,
     line,
-    nest,
     parens,
     punctuate,
     sep,
@@ -160,36 +159,67 @@ instance Source BinOp where
       . layoutPretty defaultLayoutOptions
       . pretty
 
-bComment :: Doc a -> Doc a
-bComment b = "/*" <+> b <+> "*/"
+annComment :: Doc a -> Doc a
+annComment ann = "/* " <> ann <> " */"
 
 instance Annotation ann => Pretty (Expr ann) where
-  pretty (Constant ann n) = bComment (pretty ann) <+> pretty n
+  pretty (Constant ann n) = pretty n <+> annComment (pretty ann)
   pretty (BinOp ann l op r) =
-    parens $
-      bComment (pretty ann)
-        <+> ( parens . hsep $
-                [ pretty l,
-                  pretty op,
-                  pretty r
-                ]
-            )
+    align $
+      vsep
+        [ "(",
+          indent 4 . vsep $
+            [ pretty l,
+              pretty op <+> annComment (pretty ann),
+              pretty r
+            ],
+          ")"
+        ]
   pretty (Conditional ann cond tBranch fBranch) =
-    parens $
-      bComment (pretty ann)
-        <+> ( parens . nest 4 . sep $
-                [ pretty cond,
-                  "?" <+> pretty tBranch,
-                  ":" <+> pretty fBranch
-                ]
-            )
+    align $
+      vsep
+        [ "(",
+          indent 4 . vsep $
+            [ pretty cond <+> annComment ("?:" <+> pretty ann),
+              "?" <+> pretty tBranch,
+              ":" <+> pretty fBranch
+            ],
+          ")"
+        ]
   pretty (Variable ann name) =
-    parens $
-      bComment (pretty ann) <+> pretty name
+    pretty name <+> annComment (pretty ann)
   pretty (Cast ann castType expr) =
-    parens $
-      bComment (pretty ann)
-        <+> pretty castType <> parens (pretty expr)
+    pretty castType <> parens (pretty expr)
+
+-- pretty (Constant ann n) = parens (pretty n <+> annComment (pretty ann) <+> pretty n)
+-- pretty (BinOp ann l op r) =
+--   parens . align . vsep $
+--     [ bComment (pretty ann),
+--       parens . nest 4 . sep $
+--         [ pretty l,
+--           pretty op,
+--           pretty r
+--         ]
+--     ]
+-- pretty (Conditional ann cond tBranch fBranch) =
+--   parens . align . vsep $
+--     [ bComment (pretty ann),
+--       nest 4 . parens . sep $
+--         [ pretty cond,
+--           "?" <+> pretty tBranch,
+--           ":" <+> pretty fBranch
+--         ]
+--     ]
+-- pretty (Variable ann name) =
+--   parens . align . vsep $
+--     [ bComment (pretty ann),
+--       pretty name
+--     ]
+-- pretty (Cast ann castType expr) =
+--   parens . align . vsep $
+--     [ bComment (pretty ann),
+--       pretty castType <> parens (pretty expr)
+--     ]
 
 instance Annotation ann => Source (Expr ann) where
   genSource =
