@@ -1,7 +1,8 @@
-module BuildOut (buildOutVerilogVerilog, buildOutSystemCVerilog) where
+module BuildOut (buildOutVerilogVerilog, buildOutSystemCVerilog, buildOutSystemCConstant) where
 
 import BuildOut.Internal (inputPortAsSystemC, inputPortAsVerilog, maxWireSize, runBuildOutM)
 import BuildOut.SystemC qualified as SC
+import BuildOut.SystemCConstant qualified as SCConst
 import BuildOut.SystemCVerilog qualified as SCxV
 import BuildOut.Verilog qualified as V
 import BuildOut.VerilogVerilog qualified as VxV
@@ -25,3 +26,13 @@ buildOutSystemCVerilog name1 name2 = do
     ( SC.singleExprFunction (SC.SCUInt maxWireSize) name1 (map inputPortAsSystemC ports) systemcExpr,
       V.singleExprModule name2 (map inputPortAsVerilog ports) verilogExpr
     )
+
+buildOutSystemCConstant :: Text -> Gen (SC.FunctionDeclaration SC.BuildOut)
+buildOutSystemCConstant name = do
+  (expr, inPorts) <- runBuildOutM SCConst.genExpr
+  return $
+    SC.singleExprFunction
+      expr.annotation
+      name
+      (map inputPortAsSystemC inPorts)
+      expr

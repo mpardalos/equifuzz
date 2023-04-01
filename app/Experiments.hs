@@ -8,7 +8,8 @@
 
 module Experiments where
 
-import BuildOut (buildOutSystemCVerilog, buildOutVerilogVerilog)
+import BuildOut (buildOutSystemCConstant, buildOutSystemCVerilog, buildOutVerilogVerilog)
+import BuildOut.Verilog qualified as V
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, void)
 import Data.Data (Data)
@@ -25,7 +26,7 @@ import Shelly ((</>))
 import Shelly qualified as Sh
 import SystemC qualified as SC
 import Text.Printf (printf)
-import Verismith.Verilog.AST (Identifier (), ModDecl (inPorts))
+import Verismith.Verilog.AST as V (Expr (Number), Identifier (), ModDecl (inPorts))
 import Verismith.Verilog.CodeGen (Source (genSource))
 
 data Experiment = Experiment
@@ -221,6 +222,34 @@ mkSystemCVerilogExperiment = do
           }
   uuid <- UUID.nextRandom
   return Experiment {expectedResult = False, ..}
+
+mkSystemCConstantExperiment :: IO Experiment
+mkSystemCConstantExperiment = do
+  systemcModule <- Hog.sample (buildOutSystemCConstant "mod1")
+  let design1 =
+        DesignSource
+          { language = SystemC,
+            -- Should be empty, but just in case
+            inputNames = systemcModule ^.. #args % traversed % _2,
+            topName = "mod1",
+            source =
+              SC.includeHeader
+                <> "\n\n"
+                <> genSource systemcModule
+                <> "\n\n"
+                <> systemCHectorWrapper systemcModule
+          }
+  let verilogModule = V.singleExprModule "mod2" [] (V.Number "constant" 0)
+  -- TODO: Run SystemC to get the expected output.
+  let design2 =
+        DesignSource
+          { language = Verilog,
+            inputNames = design1.inputNames,
+            topName = "mod2",
+            source = genSource verilogModule
+          }
+  uuid <- UUID.nextRandom
+  return Experiment {expectedResult = True, ..}
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper

@@ -20,6 +20,7 @@ executable equifuzz
                  , BuildOut.SystemC
                  , BuildOut.VerilogVerilog
                  , BuildOut.SystemCVerilog
+                 , BuildOut.SystemCConstant
                  , BuildOut.Internal
                  , SystemC
     -- other-extensions:
