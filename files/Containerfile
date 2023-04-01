@@ -1,0 +1,19 @@
+FROM docker.io/redhat/ubi9:9.1.0-1782 AS systemc
+
+RUN dnf install -y git make automake libtool g++
+
+ADD https://github.com/accellera-official/systemc/archive/refs/tags/2.3.4.tar.gz \
+    /systemc.tar.gz
+
+RUN tar -xzf systemc.tar.gz && cd systemc-2.3.4 && \
+    config/bootstrap && pwd && mkdir build && cd build && \
+    ../configure --prefix=/usr --with-unix-layout=yes && \
+    gmake -j$(nproc)
+
+RUN cd /systemc-2.3.4/build && make install
+
+FROM docker.io/redhat/ubi9:9.1.0-1782 AS equifuzz
+
+ADD ./* /src
+
+RUN dnf install -y cabal ghc
