@@ -8,7 +8,8 @@
 
 module Experiments where
 
-import BuildOut (buildOutSystemCVerilog, buildOutVerilogVerilog)
+import BuildOut (buildOutSystemCConstant, buildOutSystemCVerilog, buildOutVerilogVerilog)
+import BuildOut.Verilog qualified as V
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, void)
 import Data.Data (Data)
@@ -20,12 +21,13 @@ import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Hedgehog.Gen qualified as Hog
-import Optics (ix, makeFieldLabelsNoPrefix, traversed, (%), (&), (^.), (^..), _2)
+import Optics (makeFieldLabelsNoPrefix, traversed, (%), (&), (^.), (^..), _2)
+import Safe (readMay)
 import Shelly ((</>))
 import Shelly qualified as Sh
 import SystemC qualified as SC
 import Text.Printf (printf)
-import Verismith.Verilog.AST (Identifier (), ModDecl (inPorts))
+import Verismith.Verilog.AST as V (Expr (Number))
 import Verismith.Verilog.CodeGen (Source (genSource))
 
 data Experiment = Experiment
@@ -222,6 +224,35 @@ mkSystemCVerilogExperiment = do
   uuid <- UUID.nextRandom
   return Experiment {expectedResult = False, ..}
 
+mkSystemCConstantExperiment :: IO Experiment
+mkSystemCConstantExperiment = do
+  systemcModule <- Hog.sample (buildOutSystemCConstant "mod1")
+  let design1 =
+        DesignSource
+          { language = SystemC,
+            -- Should be empty, but just in case
+            inputNames = systemcModule ^.. #args % traversed % _2,
+            topName = "mod1",
+            source =
+              SC.includeHeader
+                <> "\n\n"
+                <> genSource systemcModule
+                <> "\n\n"
+                <> systemCHectorWrapper systemcModule
+          }
+
+  expectedResult <- simulateSystemCConstant systemcModule
+  let verilogModule = V.singleExprModule "mod2" [] (V.Number "constant" (fromIntegral expectedResult))
+  let design2 =
+        DesignSource
+          { language = Verilog,
+            inputNames = design1.inputNames,
+            topName = "mod2",
+            source = genSource verilogModule
+          }
+  uuid <- UUID.nextRandom
+  return Experiment {expectedResult = True, ..}
+
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper
 systemCHectorWrapper :: SC.Annotation ann => SC.FunctionDeclaration ann -> Text
@@ -264,6 +295,34 @@ systemCHectorWrapper SC.FunctionDeclaration {returnType, args, name} =
 
     argList :: Text
     argList = T.intercalate ", " [argName | (_, argName) <- args]
+
+simulateSystemCConstant :: SC.Annotation ann => SC.FunctionDeclaration ann -> IO Int
+simulateSystemCConstant decl@SC.FunctionDeclaration {name} = Sh.shelly . Sh.silently $ do
+  let fullSource =
+        [__i|
+            #{SC.includeHeader}
+
+            #{genSource decl}
+
+            int sc_main(int argc, char **argv) {
+                std::cout << #{name}() << std::endl;
+                return 0;
+            }
+            |]
+
+  tmpDir <- T.strip <$> Sh.run "mktemp" ["-d"]
+  let cppPath = tmpDir <> "/main.cpp"
+  let binPath = tmpDir <> "/main"
+
+  Sh.writefile (T.unpack cppPath) fullSource
+  _compileOutput <- Sh.bash "g++" ["-std=c++11", "-I/usr/include/systemc", "-lsystemc", cppPath, "-o", binPath]
+  programOut <- T.strip <$> Sh.bash (T.unpack binPath) []
+
+  void $ Sh.bash "rm" ["-r", tmpDir]
+
+  case readMay . T.unpack $ programOut of
+    Just num -> return num
+    Nothing -> error ("Cannot parse output of SystemC program: \n\n" <> T.unpack programOut)
 
 experimentLoop :: IO Experiment -> (Experiment -> IO ExperimentResult) -> ProgressNotify -> IO ()
 experimentLoop generator runner progress = forever $ do

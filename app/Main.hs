@@ -22,12 +22,18 @@ tuiMain = do
           (experimentLoop mkSystemCVerilogExperiment runVCFormal (B.writeBChan eventChan . ExperimentProgress))
           (const $ experimentThread eventChan)
 
-genMain :: IO ()
-genMain = do
+genMain :: String -> IO ()
+genMain "systemc-verilog" = do
   Experiment {design1, design2} <- mkSystemCVerilogExperiment
   T.putStrLn design1.source
   putStrLn "---------"
   T.putStrLn design2.source
+genMain "systemc-constant" = do
+  Experiment {design1,design2} <- mkSystemCConstantExperiment
+  T.putStrLn design1.source
+  putStrLn "---------"
+  T.putStrLn design2.source
+genMain t = printf "Unknown generate type: '%s'" t
 
 main :: IO ()
 main = do
@@ -35,10 +41,13 @@ main = do
   case args of
     ["tui"] -> tuiMain
     [] -> tuiMain
-    ["generate"] -> genMain
+    ["generate", genType] -> genMain genType
     _ -> do
       name <- getProgName
       printf "Usage: %s [command]\n" name
       printf "Commands:\n"
-      printf "  tui       : (default) Run the TUI\n"
-      printf "  generate  : Generate an experiment and write it to stdout\n"
+      printf "  tui                (default) Run the TUI\n"
+      printf "  generate <type>    Generate an experiment and write it to stdout\n"
+      printf "Generate types:\n"
+      printf "  - systemc-verilog\n"
+      printf "  - systemc-constant\n"

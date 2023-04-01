@@ -20,6 +20,7 @@ executable equifuzz
                  , BuildOut.SystemC
                  , BuildOut.VerilogVerilog
                  , BuildOut.SystemCVerilog
+                 , BuildOut.SystemCConstant
                  , BuildOut.Internal
                  , SystemC
     -- other-extensions:
@@ -40,6 +41,7 @@ executable equifuzz
                     , transformers
                     , prettyprinter
                     , data-default-class
+                    , safe
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions:
