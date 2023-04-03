@@ -13,7 +13,7 @@ import Verismith.Verilog qualified as V
 
 type ExprPair = (SC.Expr SC.BuildOut, V.Expr V.BuildOut)
 
-inequivalent :: BuildOutM ExprPair
+inequivalent :: BuildOutM InputPort ExprPair
 inequivalent =
   Hog.frequency
     [ (1, differentInputs),
@@ -21,7 +21,7 @@ inequivalent =
     ]
 
 -- | Increase the size and complexity of an expression while preserving its semantics
-grow :: ExprPair -> BuildOutM ExprPair
+grow :: ExprPair -> BuildOutM InputPort ExprPair
 grow (systemcExpr, verilogExpr) = do
   count <- Hog.int (Hog.Range.linear 1 20)
   liftA2
@@ -43,7 +43,7 @@ grow (systemcExpr, verilogExpr) = do
         [ V.or0 e
         ]
 
-differentConstants :: BuildOutM ExprPair
+differentConstants :: BuildOutM InputPort ExprPair
 differentConstants = do
   n1 <- Hog.int (Hog.Range.constant 0 255)
   n2 <- Hog.int (Hog.Range.constant 0 255)
@@ -53,7 +53,7 @@ differentConstants = do
       V.Number "differentConstants" (fromIntegral n2)
     )
 
-differentInputs :: BuildOutM ExprPair
+differentInputs :: BuildOutM InputPort ExprPair
 differentInputs = do
   size <- wireSize
   id1 <- SC.newInput size

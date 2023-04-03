@@ -28,24 +28,24 @@ constant = SC.Constant SC.CInt
 typeof :: (SC.Annotation ann, SC.AnnExpr ann ~ SC.SCType) => SC.Expr ann -> SC.SCType
 typeof = view #annotation
 
-newInput :: Int -> BuildOutM Text
+newInput :: BuildOutState s => Int -> BuildOutM s Text
 newInput size = do
   InputPort _ name <- newInputPort size
   return name
 
-or0 :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
+or0 :: SC.Expr BuildOut -> BuildOutM s (SC.Expr BuildOut)
 or0 e = pure (SC.BinOp (typeof e) e SC.BitwiseOr (constant 0))
 
 -- (e + 0)
-plus0 :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
+plus0 :: SC.Expr BuildOut -> BuildOutM s (SC.Expr BuildOut)
 plus0 e = pure (SC.BinOp (typeof e) e SC.Plus (constant 0))
 
 -- (e * 1)
-times1 :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
+times1 :: SC.Expr BuildOut -> BuildOutM s (SC.Expr BuildOut)
 times1 e = pure (SC.BinOp (typeof e) e SC.Multiply (constant 1))
 
 -- ((e - 1) + 1)
-plusNMinusN :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
+plusNMinusN :: SC.Expr BuildOut -> BuildOutM s (SC.Expr BuildOut)
 plusNMinusN e = do
   n <- cast (typeof e) . constant <$> Hog.int (Hog.Range.constant 0 255)
   -- TODO: Check that this is as expected.
@@ -53,13 +53,13 @@ plusNMinusN e = do
   let t2 = over SC.width (+ 1) t1
   pure (SC.BinOp t2 (SC.BinOp t1 e SC.Plus n) SC.Minus n)
 
-ifTrue :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
+ifTrue :: SC.Expr BuildOut -> BuildOutM s (SC.Expr BuildOut)
 ifTrue e = do
   let cond = SC.Constant (SC.SCUInt 1) 1
   fBranch <- deadExpression (typeof e)
   pure (SC.Conditional (typeof e) cond e fBranch)
 
-deadExpression :: SC.SCType -> BuildOutM (SC.Expr BuildOut)
+deadExpression :: SC.SCType -> BuildOutM s (SC.Expr BuildOut)
 deadExpression t =
   case t of
     SC.SCUInt n -> cast t . constant <$> Hog.int (Hog.Range.constant 0 (2 ^ n - 1))

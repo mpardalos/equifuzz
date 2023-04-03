@@ -35,7 +35,7 @@ instance Annotation BuildOut where
 instance Default ExprSource where
   def = ExprSource ""
 
-newPort :: Int -> BuildOutM (Port BuildOut)
+newPort :: BuildOutState s => Int -> BuildOutM s (Port BuildOut)
 newPort size = do
   InputPort _ name <- newInputPort size
   return (Port Wire False (rangeFromSize (fromIntegral size)) (Identifier name))
@@ -44,21 +44,21 @@ newPort size = do
 concatSingle :: AnnExpr ann -> Expr ann -> Expr ann
 concatSingle ann e = Concat ann (e :| [])
 
-deadExpression :: BuildOutM (Expr BuildOut)
+deadExpression :: BuildOutM s (Expr BuildOut)
 deadExpression = Number "dead" . fromIntegral <$> Hog.int (Hog.Range.constant (-255) 255)
 
-ifTrue :: Expr BuildOut -> BuildOutM (Expr BuildOut)
+ifTrue :: Expr BuildOut -> BuildOutM s (Expr BuildOut)
 ifTrue e = do
   condition <- Number "condT" . fromIntegral <$> Hog.int (Hog.Range.constant 1 255)
   falseBranch <- deadExpression
   return (Cond "ifT" condition e falseBranch)
 
-ifFalse :: Expr BuildOut -> BuildOutM (Expr BuildOut)
+ifFalse :: Expr BuildOut -> BuildOutM s (Expr BuildOut)
 ifFalse e = do
   trueBranch <- deadExpression
   return (Cond "ifF" (Number "condF" 0) trueBranch e)
 
-or0 :: Expr BuildOut -> BuildOutM (Expr BuildOut)
+or0 :: Expr BuildOut -> BuildOutM s (Expr BuildOut)
 or0 e = pure (BinOp "or0" e BinOr (Number "or0" 0))
 
 signedUnsigned :: Expr BuildOut -> Expr BuildOut

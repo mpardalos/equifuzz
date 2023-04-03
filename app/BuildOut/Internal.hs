@@ -10,12 +10,13 @@ module BuildOut.Internal where
 import Control.Applicative (Alternative)
 import Control.Monad.Accum (MonadAccum (..))
 import Control.Monad.State (MonadState (state), StateT (runStateT))
+import Data.Maybe (mapMaybe)
 import Data.Text (Text)
 import Hedgehog (Gen)
 import Hedgehog qualified as Hog
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
-import Optics (makeFieldLabelsNoPrefix, view)
+import Optics (Prism', castOptic, makeFieldLabelsNoPrefix, preview, review, simple, (%))
 import SystemC qualified as SC
 import Verismith.Verilog.AST qualified as V
 
@@ -26,29 +27,38 @@ data InputPort = InputPort
 
 makeFieldLabelsNoPrefix ''InputPort
 
+-- | Monad for building out test programs inside-out. It provides `MonadGen` and
+-- `MonadAccum`. The idea
+--
 -- What we really want here is AccumT, but there are no instances for `AccumT w
 -- Gen`, so we instead we use StateT (which is isomorphic to AccumT) and provide
 -- MonadAccum instance
-newtype BuildOutM a = BuildOutM (StateT [InputPort] Gen a)
+newtype BuildOutM s a = BuildOutM (StateT [s] Gen a)
   deriving newtype (Applicative, Monad, Alternative, Hog.MonadGen)
   deriving stock (Functor)
 
-instance MonadAccum [InputPort] BuildOutM where
+class BuildOutState s where
+  inputPortPrism :: Prism' s InputPort
+
+instance BuildOutState InputPort where
+  inputPortPrism = castOptic simple
+
+instance MonadAccum [s] (BuildOutM s) where
   accum f = BuildOutM . state $ \existing ->
     let (val, new) = f existing
      in (val, new <> existing)
 
-runBuildOutM :: BuildOutM a -> Gen (a, [InputPort])
+runBuildOutM :: BuildOutM s a -> Gen (a, [s])
 runBuildOutM (BuildOutM m) = runStateT m []
 
-newInputPort :: Int -> BuildOutM InputPort
+newInputPort :: BuildOutState s => Int -> BuildOutM s InputPort
 newInputPort size = do
-  existingPortNames <- map (view #name) <$> look
+  existingPortNames <- mapMaybe (preview (inputPortPrism % #name)) <$> look
   name <-
     Hog.filterT (not . (`elem` existingPortNames)) $
       Hog.text (Hog.Range.singleton 5) Hog.lower
   let port = InputPort size name
-  add [port]
+  add [review inputPortPrism port]
   return port
 
 inputPortAsVerilog :: V.Annotation a => InputPort -> V.Port a
@@ -74,6 +84,5 @@ iterateM n f x = do
 maxWireSize :: Int
 maxWireSize = 64
 
-wireSize :: BuildOutM Int
+wireSize :: Hog.MonadGen m => m Int
 wireSize = Hog.int (Hog.Range.linear 1 maxWireSize)
-
