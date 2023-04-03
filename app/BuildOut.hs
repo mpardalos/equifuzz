@@ -30,13 +30,11 @@ buildOutSystemCVerilog name1 name2 = do
 
 buildOutSystemCConstant :: Text -> Gen (SC.FunctionDeclaration SC.BuildOut)
 buildOutSystemCConstant name = do
-  (expr, genItems) <- runBuildOutM SCConst.genExpr (initState [])
-  let inPorts = genItems ^.. #extraState % traversed % #_SCInput
-  let statements = genItems ^.. #extraState % traversed % #_SCStatement
+  (expr, state) <- runBuildOutM SCConst.genExpr (initState SCConst.initSCConstState)
   return $
     SC.FunctionDeclaration
       { returnType = expr.annotation,
         name,
-        args = map inputPortAsSystemC inPorts,
-        body = statements ++ [SC.Return () expr]
+        args = map inputPortAsSystemC state.inputPorts,
+        body = state.extraState.statements ++ [SC.Return () expr]
       }

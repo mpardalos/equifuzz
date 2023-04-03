@@ -8,6 +8,7 @@ module BuildOut.SystemC where
 
 import BuildOut.Internal
 import Data.Text (Text)
+import Hedgehog (MonadGen)
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
 import Optics (over, view)
@@ -66,6 +67,26 @@ deadExpression t =
     SC.SCInt n -> cast t . constant <$> Hog.int (Hog.Range.constant (-(2 ^ (n - 1))) (2 ^ (n - 1) - 1))
     SC.CUInt -> constant <$> Hog.int (Hog.Range.constant 0 (2 ^ 32 - 1))
     SC.CInt -> constant <$> Hog.int (Hog.Range.constant (-(2 ^ (32 - 1))) (2 ^ (32 - 1) - 1))
+
+someWidth :: MonadGen m => m Int
+someWidth = Hog.int (Hog.Range.constant 1 64)
+
+someType :: MonadGen m => m SC.SCType
+someType =
+  Hog.choice
+    [ SC.SCInt <$> someWidth,
+      SC.SCUInt <$> someWidth,
+      do
+        w <- someWidth
+        i <- Hog.int (Hog.Range.constant 1 w)
+        return (SC.SCFixed {w, i}),
+      do
+        w <- someWidth
+        i <- Hog.int (Hog.Range.constant 1 w)
+        return (SC.SCUFixed {w, i}),
+      pure SC.CUInt,
+      pure SC.CInt
+    ]
 
 singleExprFunction ::
   SC.SCType ->

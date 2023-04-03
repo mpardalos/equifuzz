@@ -156,7 +156,7 @@ deriving instance (Annotation ann, AnnConstraint Data ann) => Data (TranslationU
 
 -- | This needs to be included in the final program
 includeHeader :: Text
-includeHeader = "#include <systemc.h>"
+includeHeader = "#define SC_INCLUDE_FX\n#include <systemc>"
 
 instance Pretty BinOp where
   pretty Plus = "+"
@@ -229,6 +229,8 @@ instance Annotation ann => Source (Statement ann) where
 instance Pretty SCType where
   pretty (SCInt size) = "sc_dt::sc_int<" <> pretty size <> ">"
   pretty (SCUInt size) = "sc_dt::sc_uint<" <> pretty size <> ">"
+  pretty (SCFixed w i) = "sc_dt::sc_fixed<" <> pretty w <> "," <> pretty i <> ">"
+  pretty (SCUFixed w i) = "sc_dt::sc_ufixed<" <> pretty w <> "," <> pretty i <> ">"
   pretty CInt = "int"
   pretty CUInt = "unsigned"
 
