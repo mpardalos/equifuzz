@@ -191,36 +191,6 @@ instance Annotation ann => Pretty (Expr ann) where
   pretty (Cast ann castType expr) =
     pretty castType <> parens (pretty expr)
 
--- pretty (Constant ann n) = parens (pretty n <+> annComment (pretty ann) <+> pretty n)
--- pretty (BinOp ann l op r) =
---   parens . align . vsep $
---     [ bComment (pretty ann),
---       parens . nest 4 . sep $
---         [ pretty l,
---           pretty op,
---           pretty r
---         ]
---     ]
--- pretty (Conditional ann cond tBranch fBranch) =
---   parens . align . vsep $
---     [ bComment (pretty ann),
---       nest 4 . parens . sep $
---         [ pretty cond,
---           "?" <+> pretty tBranch,
---           ":" <+> pretty fBranch
---         ]
---     ]
--- pretty (Variable ann name) =
---   parens . align . vsep $
---     [ bComment (pretty ann),
---       pretty name
---     ]
--- pretty (Cast ann castType expr) =
---   parens . align . vsep $
---     [ bComment (pretty ann),
---       pretty castType <> parens (pretty expr)
---     ]
-
 instance Annotation ann => Source (Expr ann) where
   genSource =
     renderStrict
