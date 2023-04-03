@@ -1,35 +1,36 @@
+{-# LANGUAGE DataKinds #-}
 {-# OPTIONS -fdefer-typed-holes #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-unused-matches #-}
 
 module BuildOut.SystemCConstant where
 
-import BuildOut.Internal (BuildOutM)
+import BuildOut.Internal (BuildOutM, InputPort)
 import BuildOut.SystemC qualified as SC
+import Control.Monad.Accum (MonadAccum (add))
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
+import Optics (makePrismLabels)
 import SystemC qualified as SC
 
-genExpr :: BuildOutM s (SC.Expr SC.BuildOut)
+data SCGenItem
+  = SCInput InputPort
+  | SCStatement (SC.Statement SC.BuildOut)
+
+makePrismLabels ''SCGenItem
+
+genExpr :: BuildOutM [SCGenItem] (SC.Expr SC.BuildOut)
 genExpr = seedExpr >>= grow
 
-seedExpr :: BuildOutM s (SC.Expr SC.BuildOut)
+seedExpr :: BuildOutM [SCGenItem] (SC.Expr SC.BuildOut)
 seedExpr = SC.constant <$> Hog.int (Hog.Range.constant (-128) 128)
 
-grow :: SC.Expr SC.BuildOut -> BuildOutM s (SC.Expr SC.BuildOut)
-grow e = Hog.choice [randomBinOp e]
+grow :: SC.Expr SC.BuildOut -> BuildOutM [SCGenItem] (SC.Expr SC.BuildOut)
+grow e = return e
 
-randomBinOp :: SC.Expr SC.BuildOut -> BuildOutM s (SC.Expr SC.BuildOut)
-randomBinOp lhs = do
-  op <-
-    Hog.element
-      [ SC.Plus,
-        SC.Minus,
-        SC.Multiply,
-        SC.Divide,
-        SC.BitwiseOr
-      ]
-  rhs <- SC.constant <$> Hog.int (Hog.Range.constant 0 512)
-  return $ SC.BinOp (binOpResult lhs.annotation op rhs.annotation) lhs op rhs
-
-binOpResult :: SC.SCType -> SC.BinOp -> SC.SCType -> SC.SCType
-binOpResult lType op rType = case rType of {}
+-- castWithDeclaration :: SC.Expr SC.BuildOut -> BuildOutM SCGenItem (SC.Expr SC.BuildOut)
+-- castWithDeclaration e = do
+--   add [SCStatement _]
+--   return _

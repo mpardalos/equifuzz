@@ -8,15 +8,15 @@
 module BuildOut.Internal where
 
 import Control.Applicative (Alternative)
-import Control.Monad.Accum (MonadAccum (..))
-import Control.Monad.State (MonadState (state), StateT (runStateT))
-import Data.Maybe (mapMaybe)
+import Control.Monad.State (MonadState, StateT (runStateT))
 import Data.Text (Text)
+import Data.Text qualified as T
 import Hedgehog (Gen)
 import Hedgehog qualified as Hog
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
-import Optics (Prism', castOptic, makeFieldLabelsNoPrefix, preview, review, simple, (%))
+import Optics (makeFieldLabelsNoPrefix, use)
+import Optics.State.Operators ((%=))
 import SystemC qualified as SC
 import Verismith.Verilog.AST qualified as V
 
@@ -27,38 +27,43 @@ data InputPort = InputPort
 
 makeFieldLabelsNoPrefix ''InputPort
 
+data BuildOutState s = BuildOutState
+  { inputPorts :: [InputPort],
+    nextInputPortIdx :: Int,
+    extraState :: s
+  }
+
+makeFieldLabelsNoPrefix ''BuildOutState
+
 -- | Monad for building out test programs inside-out. It provides `MonadGen` and
 -- `MonadAccum`. The idea
 --
 -- What we really want here is AccumT, but there are no instances for `AccumT w
 -- Gen`, so we instead we use StateT (which is isomorphic to AccumT) and provide
 -- MonadAccum instance
-newtype BuildOutM s a = BuildOutM (StateT [s] Gen a)
+newtype BuildOutM s a = BuildOutM (StateT (BuildOutState s) Gen a)
   deriving newtype (Applicative, Monad, Alternative, Hog.MonadGen)
   deriving stock (Functor)
 
-class BuildOutState s where
-  inputPortPrism :: Prism' s InputPort
+deriving newtype instance MonadState (BuildOutState s) (BuildOutM s)
 
-instance BuildOutState InputPort where
-  inputPortPrism = castOptic simple
+initState :: s -> BuildOutState s
+initState s =
+  BuildOutState
+    { inputPorts = [],
+      nextInputPortIdx = 0,
+      extraState = s
+    }
 
-instance MonadAccum [s] (BuildOutM s) where
-  accum f = BuildOutM . state $ \existing ->
-    let (val, new) = f existing
-     in (val, new <> existing)
+runBuildOutM :: BuildOutM s a -> BuildOutState s -> Gen (a, BuildOutState s)
+runBuildOutM (BuildOutM m) = runStateT m
 
-runBuildOutM :: BuildOutM s a -> Gen (a, [s])
-runBuildOutM (BuildOutM m) = runStateT m []
-
-newInputPort :: BuildOutState s => Int -> BuildOutM s InputPort
+newInputPort :: Int -> BuildOutM s InputPort
 newInputPort size = do
-  existingPortNames <- mapMaybe (preview (inputPortPrism % #name)) <$> look
-  name <-
-    Hog.filterT (not . (`elem` existingPortNames)) $
-      Hog.text (Hog.Range.singleton 5) Hog.lower
-  let port = InputPort size name
-  add [review inputPortPrism port]
+  portIdx <- use #nextInputPortIdx
+  #nextInputPortIdx %= (+ 1)
+  let port = InputPort size ("in" <> T.pack (show portIdx))
+  #inputPorts %= (++ [port])
   return port
 
 inputPortAsVerilog :: V.Annotation a => InputPort -> V.Port a

@@ -83,6 +83,7 @@ instance
 
 data Statement ann
   = Return (AnnStatement ann) (Expr ann)
+  | Declaration (AnnStatement ann) SCType Text (Expr ann)
   | Block (AnnStatement ann) [Statement ann]
   deriving (Generic)
 
@@ -100,10 +101,17 @@ instance
 
 instance (annType ~ AnnStatement ann) => HasField "annotation" (Statement ann) annType where
   getField (Return ann _) = ann
+  getField (Declaration ann _ _ _) = ann
   getField (Block ann _) = ann
 
 -- | SystemC types. Constructor parameters correspond to template arguments
-data SCType = SCInt Int | SCUInt Int | CUInt | CInt
+data SCType
+  = SCInt Int
+  | SCUInt Int
+  | SCFixed {w :: Int, i :: Int}
+  | SCUFixed {w :: Int, i :: Int}
+  | CUInt
+  | CInt
   deriving (Eq, Show, Generic, Data)
 
 width :: Lens' SCType Int
@@ -111,11 +119,15 @@ width = lens get set
   where
     get (SCInt n) = n
     get (SCUInt n) = n
+    get SCFixed {w} = w
+    get SCUFixed {w} = w
     get CInt = 32
     get CUInt = 32
 
     set (SCInt _) n = SCInt n
     set (SCUInt _) n = SCUInt n
+    set t@SCFixed {} n = t {w = n}
+    set t@SCUFixed {} n = t {w = n}
     set CInt n = SCInt n
     set CUInt n = SCUInt n
 
@@ -201,8 +213,12 @@ prettyBlock :: Annotation ann => [Statement ann] -> Doc a
 prettyBlock statements = vsep ["{", indent 4 . vsep $ pretty <$> statements, "}"]
 
 instance Annotation ann => Pretty (Statement ann) where
-  pretty (Return ann e) = "return" <+> pretty e <> ";" <+> "//" <+> pretty ann
-  pretty (Block ann statements) = pretty statements <+> "//" <+> pretty ann
+  pretty (Return ann e) =
+    "return" <+> pretty e <> "; //" <+> pretty ann
+  pretty (Declaration ann t name expr) =
+    pretty t <+> pretty name <+> "=" <+> pretty expr <> "; //" <+> pretty ann
+  pretty (Block ann statements) =
+    prettyBlock statements <+> "//" <+> pretty ann
 
 instance Annotation ann => Source (Statement ann) where
   genSource =

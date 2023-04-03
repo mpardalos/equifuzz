@@ -10,7 +10,7 @@ import Verismith.Verilog (BinaryOperator (..), Expr (..))
 
 type ExprPair = (Expr BuildOut, Expr BuildOut)
 
-inequivalent :: BuildOutM InputPort ExprPair
+inequivalent :: BuildOutM s ExprPair
 inequivalent =
   Hog.frequency
     [ (7, differentSignedShift),
@@ -49,7 +49,7 @@ differentConstants = do
       Number "differentConstants" (fromIntegral n2)
     )
 
-differentInputs :: BuildOutM InputPort ExprPair
+differentInputs :: BuildOutM s ExprPair
 differentInputs = do
   size <- wireSize
   id1 <- view #name <$> newPort size
@@ -59,7 +59,7 @@ differentInputs = do
       Id "differentInputs" id2
     )
 
-differentSignedShift :: BuildOutM InputPort ExprPair
+differentSignedShift :: BuildOutM s ExprPair
 differentSignedShift = do
   size <- wireSize
   ident <- view #name <$> newPort size

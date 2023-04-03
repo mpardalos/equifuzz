@@ -1,6 +1,6 @@
 module BuildOut (buildOutVerilogVerilog, buildOutSystemCVerilog, buildOutSystemCConstant) where
 
-import BuildOut.Internal (inputPortAsSystemC, inputPortAsVerilog, maxWireSize, runBuildOutM)
+import BuildOut.Internal (BuildOutState (..), initState, inputPortAsSystemC, inputPortAsVerilog, maxWireSize, runBuildOutM)
 import BuildOut.SystemC qualified as SC
 import BuildOut.SystemCConstant qualified as SCConst
 import BuildOut.SystemCVerilog qualified as SCxV
@@ -8,31 +8,35 @@ import BuildOut.Verilog qualified as V
 import BuildOut.VerilogVerilog qualified as VxV
 import Data.Text (Text)
 import Hedgehog (Gen)
+import Optics (traversed, (%), (^..))
 import SystemC as SC
 import Verismith.Verilog.AST qualified as V
 
 buildOutVerilogVerilog :: V.Identifier -> V.Identifier -> Gen (V.ModDecl V.BuildOut, V.ModDecl V.BuildOut)
 buildOutVerilogVerilog name1 name2 = do
-  ((expr1, expr2), ports) <- runBuildOutM (VxV.inequivalent >>= VxV.grow)
+  ((expr1, expr2), state) <- runBuildOutM (VxV.inequivalent >>= VxV.grow) (initState ())
   return
-    ( V.singleExprModule name1 (map inputPortAsVerilog ports) expr1,
-      V.singleExprModule name2 (map inputPortAsVerilog ports) expr2
+    ( V.singleExprModule name1 (map inputPortAsVerilog state.inputPorts) expr1,
+      V.singleExprModule name2 (map inputPortAsVerilog state.inputPorts) expr2
     )
 
 buildOutSystemCVerilog :: Text -> V.Identifier -> Gen (SC.FunctionDeclaration SC.BuildOut, V.ModDecl V.BuildOut)
 buildOutSystemCVerilog name1 name2 = do
-  ((systemcExpr, verilogExpr), ports) <- runBuildOutM (SCxV.inequivalent >>= SCxV.grow)
+  ((systemcExpr, verilogExpr), state) <- runBuildOutM (SCxV.inequivalent >>= SCxV.grow) (initState ())
   return
-    ( SC.singleExprFunction (SC.SCUInt maxWireSize) name1 (map inputPortAsSystemC ports) systemcExpr,
-      V.singleExprModule name2 (map inputPortAsVerilog ports) verilogExpr
+    ( SC.singleExprFunction (SC.SCUInt maxWireSize) name1 (map inputPortAsSystemC state.inputPorts) systemcExpr,
+      V.singleExprModule name2 (map inputPortAsVerilog state.inputPorts) verilogExpr
     )
 
 buildOutSystemCConstant :: Text -> Gen (SC.FunctionDeclaration SC.BuildOut)
 buildOutSystemCConstant name = do
-  (expr, inPorts) <- runBuildOutM SCConst.genExpr
+  (expr, genItems) <- runBuildOutM SCConst.genExpr (initState [])
+  let inPorts = genItems ^.. #extraState % traversed % #_SCInput
+  let statements = genItems ^.. #extraState % traversed % #_SCStatement
   return $
-    SC.singleExprFunction
-      expr.annotation
-      name
-      (map inputPortAsSystemC inPorts)
-      expr
+    SC.FunctionDeclaration
+      { returnType = expr.annotation,
+        name,
+        args = map inputPortAsSystemC inPorts,
+        body = statements ++ [SC.Return () expr]
+      }

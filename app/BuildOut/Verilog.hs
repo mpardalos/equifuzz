@@ -35,7 +35,7 @@ instance Annotation BuildOut where
 instance Default ExprSource where
   def = ExprSource ""
 
-newPort :: BuildOutState s => Int -> BuildOutM s (Port BuildOut)
+newPort :: Int -> BuildOutM s (Port BuildOut)
 newPort size = do
   InputPort _ name <- newInputPort size
   return (Port Wire False (rangeFromSize (fromIntegral size)) (Identifier name))

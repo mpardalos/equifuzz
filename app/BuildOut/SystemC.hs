@@ -28,7 +28,7 @@ constant = SC.Constant SC.CInt
 typeof :: (SC.Annotation ann, SC.AnnExpr ann ~ SC.SCType) => SC.Expr ann -> SC.SCType
 typeof = view #annotation
 
-newInput :: BuildOutState s => Int -> BuildOutM s Text
+newInput :: Int -> BuildOutM s Text
 newInput size = do
   InputPort _ name <- newInputPort size
   return name
