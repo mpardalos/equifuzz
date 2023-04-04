@@ -242,7 +242,12 @@ mkSystemCConstantExperiment = do
           }
 
   expectedResult <- simulateSystemCConstant systemcModule
-  let verilogModule = V.singleExprModule "mod2" [] (V.Number "constant" (fromIntegral expectedResult))
+  let verilogModule =
+        V.singleExprModule
+          "mod2"
+          []
+          (systemcModule.returnType ^. SC.width)
+          (V.Number "constant" (fromIntegral expectedResult))
   let design2 =
         DesignSource
           { language = Verilog,

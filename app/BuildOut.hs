@@ -16,8 +16,8 @@ buildOutVerilogVerilog :: V.Identifier -> V.Identifier -> Gen (V.ModDecl V.Build
 buildOutVerilogVerilog name1 name2 = do
   ((expr1, expr2), state) <- runBuildOutM (VxV.inequivalent >>= VxV.grow) (initState ())
   return
-    ( V.singleExprModule name1 (map inputPortAsVerilog state.inputPorts) expr1,
-      V.singleExprModule name2 (map inputPortAsVerilog state.inputPorts) expr2
+    ( V.singleExprModule name1 (map inputPortAsVerilog state.inputPorts) maxWireSize expr1,
+      V.singleExprModule name2 (map inputPortAsVerilog state.inputPorts) maxWireSize expr2
     )
 
 buildOutSystemCVerilog :: Text -> V.Identifier -> Gen (SC.FunctionDeclaration SC.BuildOut, V.ModDecl V.BuildOut)
@@ -25,7 +25,7 @@ buildOutSystemCVerilog name1 name2 = do
   ((systemcExpr, verilogExpr), state) <- runBuildOutM (SCxV.inequivalent >>= SCxV.grow) (initState ())
   return
     ( SC.singleExprFunction (SC.SCUInt maxWireSize) name1 (map inputPortAsSystemC state.inputPorts) systemcExpr,
-      V.singleExprModule name2 (map inputPortAsVerilog state.inputPorts) verilogExpr
+      V.singleExprModule name2 (map inputPortAsVerilog state.inputPorts) maxWireSize verilogExpr
     )
 
 buildOutSystemCConstant :: Text -> Gen (SC.FunctionDeclaration SC.BuildOut)

@@ -67,8 +67,8 @@ signedUnsigned e = Appl "signedUnsigned" "$signed" (Appl "signedUnsigned" "$unsi
 unsignedSigned :: Expr BuildOut -> Expr BuildOut
 unsignedSigned e = Appl "unsignedSigned" "$unsigned" (Appl "unsignedSigned" "$signed" e)
 
-singleExprModule :: Identifier -> [Port BuildOut] -> Expr BuildOut -> ModDecl BuildOut
-singleExprModule name inPorts e =
+singleExprModule :: Identifier -> [Port BuildOut] -> Int -> Expr BuildOut -> ModDecl BuildOut
+singleExprModule name inPorts width e =
   ModDecl
     { annotation = (),
       params = [],
@@ -87,6 +87,6 @@ singleExprModule name inPorts e =
       Port
         { portType = Wire,
           signed = False,
-          size = Range (ConstNum () (fromIntegral $ maxWireSize - 1)) (ConstNum () 0),
+          size = Range (ConstNum () (fromIntegral $ width - 1)) (ConstNum () 0),
           name = "out"
         }
