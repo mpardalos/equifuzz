@@ -15,7 +15,7 @@ import GHC.Generics (Generic)
 import Hedgehog (MonadGen)
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
-import Optics (makePrismLabels, use, (%))
+import Optics (makePrismLabels, use, view, (%))
 import Optics.State.Operators ((%=))
 import SystemC qualified as SC
 
@@ -47,7 +47,7 @@ grow scExpr = do
 
 castWithDeclaration :: SC.Expr SC.BuildOut -> BuildOutM SCConstState (SC.Expr SC.BuildOut)
 castWithDeclaration e = do
-  varType <- SC.someType
+  varType <- castToType e.annotation
   varIdx <- use (#extraState % #nextVarIdx)
   let varName = "x" <> T.pack (show varIdx)
   #extraState % #nextVarIdx %= (+ 1)
@@ -56,19 +56,8 @@ castWithDeclaration e = do
 
 -- | Generate a type that the input type can be cast to
 castToType :: MonadGen m => SC.SCType -> m SC.SCType
-castToType (SC.SCInt n) =
+castToType t =
   Hog.choice
     [ SC.SCInt <$> SC.someWidth,
-      SC.SCUInt <$> SC.someWidth,
-      do
-        w <- SC.someWidth
-        i <- Hog.int (Hog.Range.constant 1 (w - n))
-        return (SC.SCFixed w i),
-      do
-        w <- SC.someWidth
-        i <- Hog.int (Hog.Range.constant 1 (w - n))
-        return (SC.SCUFixed w i),
-      pure SC.CUInt,
-      pure SC.CInt
+      SC.SCUInt <$> SC.someWidth
     ]
-castToType _ = SC.someType
