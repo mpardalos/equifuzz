@@ -131,6 +131,14 @@ width = lens get set
     set CInt n = SCInt n
     set CUInt n = SCUInt n
 
+isSigned :: SCType -> Bool
+isSigned SCInt {} = True
+isSigned SCFixed {} = True
+isSigned CInt = True
+isSigned SCUInt {} = False
+isSigned SCUFixed {} = False
+isSigned CUInt = False
+
 data FunctionDeclaration ann = FunctionDeclaration
   { returnType :: SCType,
     name :: Text,

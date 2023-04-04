@@ -13,6 +13,7 @@ import BuildOut.Verilog qualified as V
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, void)
 import Data.Data (Data)
+import Data.String (fromString)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -21,7 +22,7 @@ import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Hedgehog.Gen qualified as Hog
-import Optics (makeFieldLabelsNoPrefix, traversed, (%), (&), (^.), (^..), _2)
+import Optics (makeFieldLabelsNoPrefix, traversed, view, (%), (&), (^.), (^..), _2)
 import Safe (readMay)
 import Shelly ((</>))
 import Shelly qualified as Sh
@@ -241,19 +242,22 @@ mkSystemCConstantExperiment = do
                 <> systemCHectorWrapper systemcModule
           }
 
+  let outWidth = view SC.width systemcModule.returnType
   expectedResult <- simulateSystemCConstant systemcModule
+  let constant :: Text = [i|#{(if expectedResult < 0 then "-" else "")::Text}#{outWidth}'d#{abs expectedResult}|]
   let verilogModule =
-        V.singleExprModule
-          "mod2"
-          []
-          (systemcModule.returnType ^. SC.width)
-          (V.Number "constant" (fromIntegral expectedResult))
+        [__i|
+          module mod2 (out);
+            output wire [#{outWidth - 1}:0] out;
+            assign out = #{constant};
+          endmodule
+            |]
   let design2 =
         DesignSource
           { language = Verilog,
             inputNames = design1.inputNames,
             topName = "mod2",
-            source = genSource verilogModule
+            source = verilogModule
           }
   uuid <- UUID.nextRandom
   return Experiment {expectedResult = True, ..}
