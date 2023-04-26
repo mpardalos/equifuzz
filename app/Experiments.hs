@@ -9,11 +9,9 @@
 module Experiments where
 
 import BuildOut (buildOutSystemCConstant, buildOutSystemCVerilog, buildOutVerilogVerilog)
-import BuildOut.Verilog qualified as V
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, void)
 import Data.Data (Data)
-import Data.String (fromString)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -22,13 +20,11 @@ import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Hedgehog.Gen qualified as Hog
-import Optics (makeFieldLabelsNoPrefix, traversed, view, (%), (&), (^.), (^..), _2)
-import Safe (readMay)
+import Optics (makeFieldLabelsNoPrefix, traversed, view, (%), (&), (<&>), (^.), (^..), _2)
 import Shelly ((</>))
 import Shelly qualified as Sh
 import SystemC qualified as SC
 import Text.Printf (printf)
-import Verismith.Verilog.AST as V (Expr (Number))
 import Verismith.Verilog.CodeGen (Source (genSource))
 
 data Experiment = Experiment
@@ -243,13 +239,16 @@ mkSystemCConstantExperiment = do
           }
 
   let outWidth = view SC.width systemcModule.returnType
-  expectedResult <- simulateSystemCConstant systemcModule
-  let constant :: Text = [i|#{(if expectedResult < 0 then "-" else "")::Text}#{outWidth}'d#{abs expectedResult}|]
+  expectedResult <-
+    simulateSystemCConstant systemcModule
+      <&> T.drop 2 -- 0b prefix
+      <&> T.replace "." "" -- Remove decimal point if present
+  let signed :: Text = if SC.isSigned systemcModule.returnType then "signed" else ""
   let verilogModule =
         [__i|
           module mod2 (out);
-            output wire [#{outWidth - 1}:0] out;
-            assign out = #{constant};
+            output wire #{signed} [#{outWidth - 1}:0] out;
+            assign out = #{outWidth}'b#{expectedResult};
           endmodule
             |]
   let design2 =
@@ -305,7 +304,13 @@ systemCHectorWrapper SC.FunctionDeclaration {returnType, args, name} =
     argList :: Text
     argList = T.intercalate ", " [argName | (_, argName) <- args]
 
-simulateSystemCConstant :: SC.Annotation ann => SC.FunctionDeclaration ann -> IO Int
+-- | Run the SystemC function and return its output represented as text of a binary number
+-- We use this output format because the normal (decimal) output makes the
+-- representation of the output non-obvious. E.g. -1 as an sc_uint<8> or a
+-- sc_fixed<10,3> are represented completely differently. With the default
+-- SystemC output, we would get "-1" in both cases, but here we (correctly) get
+-- "0b11111111" and "0b111.0000000"
+simulateSystemCConstant :: SC.Annotation ann => SC.FunctionDeclaration ann -> IO Text
 simulateSystemCConstant decl@SC.FunctionDeclaration {name} = Sh.shelly . Sh.silently $ do
   let fullSource =
         [__i|
@@ -314,7 +319,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {name} = Sh.shelly . Sh.sile
             #{genSource decl}
 
             int sc_main(int argc, char **argv) {
-                std::cout << #{name}() << std::endl;
+                std::cout << #{name}().to_string(sc_dt::SC_BIN) << std::endl;
                 return 0;
             }
             |]
@@ -326,12 +331,8 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {name} = Sh.shelly . Sh.sile
   Sh.writefile (T.unpack cppPath) fullSource
   _compileOutput <- Sh.bash "g++" ["-std=c++11", "-I/usr/include/systemc", "-lsystemc", cppPath, "-o", binPath]
   programOut <- T.strip <$> Sh.bash (T.unpack binPath) []
-
   void $ Sh.bash "rm" ["-r", tmpDir]
-
-  case readMay . T.unpack $ programOut of
-    Just num -> return num
-    Nothing -> error ("Cannot parse output of SystemC program: \n\n" <> T.unpack programOut)
+  return programOut
 
 experimentLoop :: IO Experiment -> (Experiment -> IO ExperimentResult) -> ProgressNotify -> IO ()
 experimentLoop generator runner progress = forever $ do
