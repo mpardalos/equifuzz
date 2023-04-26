@@ -87,9 +87,9 @@ hectorWrapperName = "hector_wrapper"
 runVCFormal :: Experiment -> IO ExperimentResult
 runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
-  Sh.writefile (dir </> ("compare.tcl" :: Text)) (compareScript "design1.v" design1 "design2.v" design2)
-  Sh.writefile (dir </> ("design1.v" :: Text)) design1.source
-  Sh.writefile (dir </> ("design2.v" :: Text)) design2.source
+  Sh.writefile (dir </> ("compare.tcl" :: Text)) compareScript
+  Sh.writefile (dir </> design1Filename) design1.source
+  Sh.writefile (dir </> design2Filename) design2.source
   void $ Sh.bash "ssh" [vcfHost, "mkdir -p " <> remoteDir <> "/"]
   void $ Sh.bash "scp" ["-r", dir <> "/*", vcfHost <> ":" <> remoteDir <> "/" <> T.pack (show uuid)]
 
@@ -115,6 +115,16 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     remoteDir :: Text
     remoteDir = "equifuzz_vcf_experiment"
 
+    design1Filename :: Text
+    design1Filename = case design1.language of
+      Verilog -> "design1.v"
+      SystemC -> "design1.cpp"
+
+    design2Filename :: Text
+    design2Filename = case design2.language of
+      Verilog -> "design2.v"
+      SystemC -> "design2.cpp"
+
     experimentDir :: Text
     experimentDir = remoteDir <> "/" <> T.pack (show uuid)
 
@@ -131,19 +141,19 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
       Verilog -> design.topName
       SystemC -> hectorWrapperName
 
-    compareScript :: Text -> DesignSource -> Text -> DesignSource -> Text
-    compareScript file1 design1 file2 design2 =
+    compareScript :: Text
+    compareScript  =
       -- TODO: Add input assumptions by hand instead of map_by_name (use DesignSource.inputNames)
       [__i|
                 set_custom_solve_script "orch_multipliers"
                 set_user_assumes_lemmas_procedure "miter"
 
                 create_design -name spec -top #{designTopName design1}
-                #{compileCommand (design1 ^. #language) file1}
+                #{compileCommand (design1 ^. #language) design1Filename}
                 compile_design spec
 
                 create_design -name impl -top #{designTopName design2}
-                #{compileCommand (design2 ^. #language) file2}
+                #{compileCommand (design2 ^. #language) design2Filename}
                 compile_design impl
 
                 proc miter {} {
