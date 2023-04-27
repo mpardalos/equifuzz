@@ -114,23 +114,6 @@ data SCType
   | CInt
   deriving (Eq, Show, Generic, Data)
 
-width :: Lens' SCType Int
-width = lens get set
-  where
-    get (SCInt n) = n
-    get (SCUInt n) = n
-    get SCFixed {w} = w
-    get SCUFixed {w} = w
-    get CInt = 32
-    get CUInt = 32
-
-    set (SCInt _) n = SCInt n
-    set (SCUInt _) n = SCUInt n
-    set t@SCFixed {} n = t {w = n}
-    set t@SCUFixed {} n = t {w = n}
-    set CInt n = SCInt n
-    set CUInt n = SCUInt n
-
 isSigned :: SCType -> Bool
 isSigned SCInt {} = True
 isSigned SCFixed {} = True

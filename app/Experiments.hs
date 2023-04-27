@@ -248,11 +248,11 @@ mkSystemCConstantExperiment = do
                 <> systemCHectorWrapper systemcModule
           }
 
-  let outWidth = view SC.width systemcModule.returnType
   expectedResult <-
     simulateSystemCConstant systemcModule
       <&> T.drop 2 -- 0b prefix
       <&> T.replace "." "" -- Remove decimal point if present
+  let outWidth = T.length expectedResult
   let signed :: Text = if SC.isSigned systemcModule.returnType then "signed" else ""
   let verilogModule =
         [__i|

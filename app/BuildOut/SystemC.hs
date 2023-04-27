@@ -45,15 +45,6 @@ plus0 e = pure (SC.BinOp (typeof e) e SC.Plus (constant 0))
 times1 :: SC.Expr BuildOut -> BuildOutM s (SC.Expr BuildOut)
 times1 e = pure (SC.BinOp (typeof e) e SC.Multiply (constant 1))
 
--- ((e - 1) + 1)
-plusNMinusN :: SC.Expr BuildOut -> BuildOutM s (SC.Expr BuildOut)
-plusNMinusN e = do
-  n <- cast (typeof e) . constant <$> Hog.int (Hog.Range.constant 0 255)
-  -- TODO: Check that this is as expected.
-  let t1 = over SC.width (+ 1) (typeof e)
-  let t2 = over SC.width (+ 1) t1
-  pure (SC.BinOp t2 (SC.BinOp t1 e SC.Plus n) SC.Minus n)
-
 ifTrue :: SC.Expr BuildOut -> BuildOutM s (SC.Expr BuildOut)
 ifTrue e = do
   let cond = SC.Constant (SC.SCUInt 1) 1

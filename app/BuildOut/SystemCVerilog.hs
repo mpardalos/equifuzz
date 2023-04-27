@@ -32,7 +32,6 @@ grow (systemcExpr, verilogExpr) = do
     systemcGrow e =
       Hog.choice
         [ SC.or0 e,
-          SC.plusNMinusN e,
           SC.plus0 e,
           SC.times1 e,
           SC.ifTrue e
