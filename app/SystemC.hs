@@ -10,7 +10,7 @@ import Data.Kind (Constraint, Type)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import GHC.Records (HasField (getField))
-import Optics (A_Getter, LabelOptic, Lens', lens, to)
+import Optics (A_Getter, LabelOptic, to)
 import Optics.Label (LabelOptic (labelOptic))
 import Prettyprinter
   ( Doc,
@@ -60,6 +60,7 @@ data Expr ann
   | Conditional (AnnExpr ann) (Expr ann) (Expr ann) (Expr ann)
   | Variable (AnnExpr ann) Text
   | Cast (AnnExpr ann) SCType (Expr ann)
+  | Range (AnnExpr ann) (Expr ann) Int Int
   deriving (Generic)
 
 deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (Expr ann)
@@ -74,6 +75,7 @@ instance (Annotation ann, AnnExpr ann ~ annType) => HasField "annotation" (Expr 
   getField (Conditional ann _ _ _) = ann
   getField (Variable ann _) = ann
   getField (Cast ann _ _) = ann
+  getField (Range ann _ _ _) = ann
 
 instance
   (Annotation ann, AnnExpr ann ~ annType) =>
@@ -110,6 +112,9 @@ data SCType
   | SCUInt Int
   | SCFixed {w :: Int, i :: Int}
   | SCUFixed {w :: Int, i :: Int}
+  | SCFxnumSubref
+  | SCIntSubref
+  | SCUIntSubref
   | CUInt
   | CInt
   deriving (Eq, Show, Generic, Data)
@@ -118,9 +123,40 @@ isSigned :: SCType -> Bool
 isSigned SCInt {} = True
 isSigned SCFixed {} = True
 isSigned CInt = True
+-- TODO: SCSubref includes both signed and unsigned types. Add the "real" subref
+-- types
+isSigned SCFxnumSubref = False
+isSigned SCIntSubref = False
+isSigned SCUIntSubref = False
 isSigned SCUInt {} = False
 isSigned SCUFixed {} = False
 isSigned CUInt = False
+
+-- | `Just <subref type>` if the type supports the range operator, or `Nothing`
+-- if it does not
+supportsRange :: SCType -> Maybe SCType
+supportsRange SCInt {} = Just SCIntSubref
+supportsRange SCUInt {} = Just SCUIntSubref
+supportsRange SCFixed {} = Just SCFxnumSubref
+supportsRange SCUFixed {} = Just SCFxnumSubref
+supportsRange SCFxnumSubref = Nothing
+supportsRange SCIntSubref = Nothing
+supportsRange SCUIntSubref = Nothing
+supportsRange CInt = Nothing
+supportsRange CUInt = Nothing
+
+-- | Give the bitwidth of the type where that exists (i.e. SystemC types with a
+-- width template parameters)
+specifiedWidth :: SCType -> Maybe Int
+specifiedWidth (SCInt n) = Just n
+specifiedWidth SCFixed {w} = Just w
+specifiedWidth (SCUInt n) = Just n
+specifiedWidth SCUFixed {w} = Just w
+specifiedWidth SCFxnumSubref = Nothing
+specifiedWidth SCIntSubref = Nothing
+specifiedWidth SCUIntSubref = Nothing
+specifiedWidth CInt = Nothing
+specifiedWidth CUInt = Nothing
 
 data FunctionDeclaration ann = FunctionDeclaration
   { returnType :: SCType,
@@ -193,6 +229,7 @@ instance Annotation ann => Pretty (Expr ann) where
     pretty name <+> annComment (pretty ann)
   pretty (Cast ann castType expr) =
     pretty castType <> parens (pretty expr)
+  pretty (Range ann e hi lo) = pretty e <+> ".range(" <> pretty hi <> ", " <> pretty lo <> ")"
 
 instance Annotation ann => Source (Expr ann) where
   genSource =
@@ -222,6 +259,9 @@ instance Pretty SCType where
   pretty (SCUInt size) = "sc_dt::sc_uint<" <> pretty size <> ">"
   pretty (SCFixed w i) = "sc_dt::sc_fixed<" <> pretty w <> "," <> pretty i <> ">"
   pretty (SCUFixed w i) = "sc_dt::sc_ufixed<" <> pretty w <> "," <> pretty i <> ">"
+  pretty SCFxnumSubref = "sc_dt::sc_fxnum_subref"
+  pretty SCIntSubref = "sc_dt::sc_int_subref"
+  pretty SCUIntSubref = "sc_dt::sc_uint_subref"
   pretty CInt = "int"
   pretty CUInt = "unsigned"
 
