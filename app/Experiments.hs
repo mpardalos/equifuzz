@@ -12,6 +12,7 @@ import BuildOut (buildOutSystemCConstant, buildOutSystemCVerilog, buildOutVerilo
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, void)
 import Data.Data (Data)
+import Data.Maybe (fromJust)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -142,7 +143,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
       SystemC -> hectorWrapperName
 
     compareScript :: Text
-    compareScript  =
+    compareScript =
       -- TODO: Add input assumptions by hand instead of map_by_name (use DesignSource.inputNames)
       [__i|
                 set_custom_solve_script "orch_multipliers"
@@ -252,7 +253,10 @@ mkSystemCConstantExperiment = do
     simulateSystemCConstant systemcModule
       <&> T.drop 2 -- 0b prefix
       <&> T.replace "." "" -- Remove decimal point if present
-  let outWidth = T.length expectedResult
+
+  -- FIXME: The error from this `fromJust` is unhandled up the stack. Handle
+  -- errors from experiment generation
+  let outWidth = fromJust $ SC.specifiedWidth systemcModule.returnType
   let signed :: Text = if SC.isSigned systemcModule.returnType then "signed" else ""
   let verilogModule =
         [__i|
@@ -346,6 +350,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {name} = Sh.shelly . Sh.sile
 
 experimentLoop :: IO Experiment -> (Experiment -> IO ExperimentResult) -> ProgressNotify -> IO ()
 experimentLoop generator runner progress = forever $ do
+  -- FIXME: Handle errors from the generator
   experiment <- generator
 
   progress (Began experiment)
