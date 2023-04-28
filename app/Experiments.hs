@@ -22,7 +22,7 @@ import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Hedgehog.Gen qualified as Hog
 import Optics (makeFieldLabelsNoPrefix, traversed, view, (%), (&), (<&>), (^.), (^..), _2)
-import Shelly ((</>))
+import Shelly ((</>), (<.>))
 import Shelly qualified as Sh
 import SystemC qualified as SC
 import Text.Printf (printf)
@@ -85,6 +85,10 @@ isCompleted _ = False
 hectorWrapperName :: Text
 hectorWrapperName = "hector_wrapper"
 
+languageFileExtension :: DesignLanguage -> Text
+languageFileExtension Verilog = "v"
+languageFileExtension SystemC = "cpp"
+
 runVCFormal :: Experiment -> IO ExperimentResult
 runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
@@ -117,14 +121,10 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     remoteDir = "equifuzz_vcf_experiment"
 
     design1Filename :: Text
-    design1Filename = case design1.language of
-      Verilog -> "design1.v"
-      SystemC -> "design1.cpp"
+    design1Filename = "design1." <> languageFileExtension design1.language
 
     design2Filename :: Text
-    design2Filename = case design2.language of
-      Verilog -> "design2.v"
-      SystemC -> "design2.cpp"
+    design2Filename = "design2." <> languageFileExtension design2.language
 
     experimentDir :: Text
     experimentDir = remoteDir <> "/" <> T.pack (show uuid)
@@ -182,8 +182,8 @@ saveExperiment category Experiment {design1, design2, uuid, expectedResult} Expe
             |]
 
   Sh.mkdir_p dir
-  Sh.writefile (dir </> ("design1.v" :: Text)) design1.source
-  Sh.writefile (dir </> ("design2.v" :: Text)) design2.source
+  Sh.writefile (dir </> ("design1" :: Text) <.> languageFileExtension design1.language) design1.source
+  Sh.writefile (dir </> ("design2" :: Text) <.> languageFileExtension design2.language) design2.source
   Sh.writefile (dir </> ("full_output.txt" :: Text)) fullOutput
   Sh.writefile (dir </> ("info.txt" :: Text)) info
 
