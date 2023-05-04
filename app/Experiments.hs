@@ -13,6 +13,7 @@ import Control.Exception (SomeException, try)
 import Control.Monad (forever, void)
 import Data.Data (Data)
 import Data.Maybe (fromJust)
+import Data.String (IsString)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -38,9 +39,14 @@ data Experiment = Experiment
 
 data DesignLanguage = SystemC | Verilog
 
+languageFromExtension :: (Eq a, IsString a) => a -> Maybe DesignLanguage
+languageFromExtension "c" = Just SystemC
+languageFromExtension "cpp" = Just SystemC
+languageFromExtension "v" = Just Verilog
+languageFromExtension _ = Nothing
+
 data DesignSource = DesignSource
   { language :: DesignLanguage,
-    inputNames :: [Text],
     topName :: Text,
     source :: Text
   }
@@ -193,14 +199,12 @@ mkVerilogVerilogExperiment = do
   let design1 =
         DesignSource
           { language = Verilog,
-            inputNames = mod1 ^.. #inPorts % traversed % #name % #_Identifier,
             topName = "mod1",
             source = genSource mod1
           }
   let design2 =
         DesignSource
           { language = Verilog,
-            inputNames = mod2 ^.. #inPorts % traversed % #name % #_Identifier,
             topName = "mod2",
             source = genSource mod2
           }
@@ -213,7 +217,6 @@ mkSystemCVerilogExperiment = do
   let design1 =
         DesignSource
           { language = SystemC,
-            inputNames = systemcModule ^.. #args % traversed % _2,
             topName = "mod1",
             source =
               SC.includeHeader
@@ -225,7 +228,6 @@ mkSystemCVerilogExperiment = do
   let design2 =
         DesignSource
           { language = Verilog,
-            inputNames = verilogModule ^.. #inPorts % traversed % #name % #_Identifier,
             topName = "mod2",
             source = genSource verilogModule
           }
@@ -238,8 +240,6 @@ mkSystemCConstantExperiment = do
   let design1 =
         DesignSource
           { language = SystemC,
-            -- Should be empty, but just in case
-            inputNames = systemcModule ^.. #args % traversed % _2,
             topName = "mod1",
             source =
               SC.includeHeader
@@ -268,7 +268,6 @@ mkSystemCConstantExperiment = do
   let design2 =
         DesignSource
           { language = Verilog,
-            inputNames = design1.inputNames,
             topName = "mod2",
             source = verilogModule
           }
@@ -354,7 +353,7 @@ experimentLoop generator runner progress = forever $ do
   experiment <- generator
 
   progress (Began experiment)
-  runResult <- try @SomeException $ runner experiment
+  runResult <- Control.Exception.try @Control.Exception.SomeException $ runner experiment
   case runResult of
     Left _ -> progress (Aborted experiment)
     Right result -> do

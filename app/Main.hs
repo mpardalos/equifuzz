@@ -1,4 +1,6 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Main where
 
@@ -6,9 +8,13 @@ import Brick.BChan qualified as B
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally)
 import Control.Monad (replicateM_, void)
+import Data.Text qualified as T
 import Data.Text.IO qualified as T
+import Data.UUID.V4 qualified as UUID
 import Experiments
 import Options.Applicative qualified as Opt
+import Safe (fromJustNote, tailDef)
+import System.FilePath (takeBaseName, takeExtension)
 import TUI (AppEvent (..), runTUI)
 
 tuiMain :: IO Experiment -> IO ()
@@ -31,11 +37,46 @@ genMain generator = do
   putStrLn "---------"
   T.putStrLn design2.source
 
+checkMain :: FilePath -> FilePath -> IO ()
+checkMain path1 path2 = do
+  uuid <- UUID.nextRandom
+  design1 <- designSourceFromFile path1
+  design2 <- designSourceFromFile path2
+
+  let experiment =
+        Experiment
+          { expectedResult = True, -- We have to set this, but it doesn't actually matter
+            uuid,
+            design1,
+            design2
+          }
+  putStrLn "Running VC Formal..."
+  result <- runVCFormal experiment
+  case result.proofFound of
+    Just True -> putStrLn "  It says they are equivalent"
+    Just False -> putStrLn "  It says they are NOT equivalent"
+    Nothing -> putStrLn "  It is inconclusive"
+  let fullOutputFilename = "vcf.log"
+  putStrLn ("Writing full output to " ++ fullOutputFilename)
+  writeFile fullOutputFilename (T.unpack result.fullOutput)
+  where
+    designSourceFromFile :: FilePath -> IO DesignSource
+    designSourceFromFile path = do
+      let extension = tailDef "" (takeExtension path)
+      let language =
+            fromJustNote
+              ("Unrecognised file extension: '" ++ extension ++ "'")
+              (languageFromExtension extension)
+      let topName = T.pack (takeBaseName path)
+      source <- T.pack <$> readFile path
+      pure DesignSource {..}
+
 main :: IO ()
 main =
   parseArgs >>= \case
     Tui generator -> tuiMain generator
     Generate generator -> genMain generator
+    Check path1 path2 -> checkMain path1 path2
 
 --------------------------- CLI Parser -----------------------------------------
 
@@ -46,14 +87,26 @@ type Generator = IO Experiment
 data Command
   = Tui Generator
   | Generate Generator
+  | Check FilePath FilePath
 
 commandParser :: Opt.Parser Command
 commandParser =
   Opt.hsubparser . mconcat $
     [ Opt.command "tui" $
-        Opt.info (Tui <$> generatorNameArg) (Opt.progDesc "Run the equifuzz TUI, connected to ee-mill3"),
+        Opt.info
+          (Tui <$> generatorNameArg)
+          (Opt.progDesc "Run the equifuzz TUI, connected to ee-mill3"),
       Opt.command "generate" $
-        Opt.info (Generate <$> generatorNameArg) (Opt.progDesc "Generate a sample of a generator")
+        Opt.info
+          (Generate <$> generatorNameArg)
+          (Opt.progDesc "Generate a sample of a generator"),
+      Opt.command "check" $
+        Opt.info
+          ( Check
+              <$> Opt.strArgument (Opt.metavar "FILE1")
+              <*> Opt.strArgument (Opt.metavar "FILE2")
+          )
+          (Opt.progDesc "Generate a sample of a generator")
     ]
   where
     generatorNameArg =
