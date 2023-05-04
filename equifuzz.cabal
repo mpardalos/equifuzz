@@ -42,6 +42,7 @@ executable equifuzz
                     , prettyprinter
                     , data-default-class
                     , safe
+                    , optparse-applicative
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions:

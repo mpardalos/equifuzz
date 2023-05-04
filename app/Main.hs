@@ -1,14 +1,15 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Main where
 
 import Brick.BChan qualified as B
+import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally)
 import Control.Monad (replicateM_, void)
 import Data.Text.IO qualified as T
 import Experiments
-import System.Environment (getArgs, getProgName)
-import System.Exit (exitFailure)
+import Options.Applicative qualified as Opt
 import TUI (AppEvent (..), runTUI)
-import Text.Printf (printf)
 
 tuiMain :: IO Experiment -> IO ()
 tuiMain generator = do
@@ -30,33 +31,54 @@ genMain generator = do
   putStrLn "---------"
   T.putStrLn design2.source
 
-getExperimentGenerator :: String -> Maybe (IO Experiment)
-getExperimentGenerator "systemc-constant" = Just mkSystemCConstantExperiment
-getExperimentGenerator "systemc-verilog" = Just mkSystemCVerilogExperiment
-getExperimentGenerator _ = Nothing
-
-usageAndExit :: IO a
-usageAndExit = do
-  name <- getProgName
-  printf "Usage: %s <command> <generate-type>\n" name
-  printf "Commands:\n"
-  printf "  tui                Run the TUI\n"
-  printf "  generate           Generate an experiment and write it to stdout\n"
-  printf "Generate types:\n"
-  printf "  systemc-verilog\n"
-  printf "  systemc-constant\n"
-  exitFailure
-
 main :: IO ()
-main = do
-  args <- getArgs
-  (command, genType) <- case args of
-    [command, genType] -> pure (command, genType)
-    _ -> usageAndExit
-  generator <- case getExperimentGenerator genType of
-    Just generator -> pure generator
-    Nothing -> usageAndExit
-  case command of
-    "tui" -> tuiMain generator
-    "generate" -> genMain generator
-    _ -> usageAndExit
+main =
+  parseArgs >>= \case
+    Tui generator -> tuiMain generator
+    Generate generator -> genMain generator
+
+--------------------------- CLI Parser -----------------------------------------
+
+type GeneratorName = String
+
+type Generator = IO Experiment
+
+data Command
+  = Tui Generator
+  | Generate Generator
+
+commandParser :: Opt.Parser Command
+commandParser =
+  Opt.hsubparser . mconcat $
+    [ Opt.command "tui" $
+        Opt.info (Tui <$> generatorNameArg) (Opt.progDesc "Run the equifuzz TUI, connected to ee-mill3"),
+      Opt.command "generate" $
+        Opt.info (Generate <$> generatorNameArg) (Opt.progDesc "Generate a sample of a generator")
+    ]
+  where
+    generatorNameArg =
+      Opt.option
+        ( Opt.maybeReader $ \case
+            "systemc-constant" -> Just mkSystemCConstantExperiment
+            "systemc-verilog" -> Just mkSystemCVerilogExperiment
+            _ -> Nothing
+        )
+        ( mconcat
+            [ Opt.long "generator",
+              Opt.short 'g',
+              Opt.metavar "GEN-NAME",
+              Opt.help "The experiment generator to use. One of: systemc-constant (default), systemc-verilog",
+              Opt.value mkSystemCConstantExperiment
+            ]
+        )
+
+parseArgs :: IO Command
+parseArgs =
+  Opt.execParser $
+    Opt.info
+      (commandParser <**> Opt.helper)
+      ( mconcat
+          [ Opt.fullDesc,
+            Opt.progDesc "Fuzzer for formal equivalence checkers"
+          ]
+      )
