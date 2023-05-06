@@ -8,6 +8,7 @@ import Brick.BChan qualified as B
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally)
 import Control.Monad (replicateM_, void)
+import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.UUID.V4 qualified as UUID
@@ -44,20 +45,26 @@ checkMain path1 path2 = do
   -- We have to set expectedResult, but it doesn't actually matter
   let experiment = Experiment {expectedResult = True, uuid, design1, design2}
 
-  printf "Running VC Formal on %s and %s ...\n" path1 path2
+  printf "> Running VC Formal on %s and %s...\n" path1 path2
   result <- runVCFormal experiment
 
   case result.proofFound of
-    Just True -> putStrLn "  It says they are equivalent"
-    Just False -> putStrLn "  It says they are NOT equivalent"
-    Nothing -> putStrLn "  It is inconclusive"
+    Just True -> putStrLn "✔️ It says they are equivalent"
+    Just False -> putStrLn "❌ It says they are NOT equivalent"
+    Nothing -> putStrLn "❔ It is inconclusive"
+
   case result.counterExample of
     Nothing -> pure ()
     Just txt -> do
-      putStrLn "It also produced a counter-example:"
-      putStrLn "-----"
-      putStrLn (T.unpack txt)
-      putStrLn "-----"
+      printf "╭─ Counter Example ───\n"
+      putStrLn
+        . T.unpack
+        . ("│ " <>)
+        . T.intercalate "\n│ "
+        . T.lines
+        $ txt
+      printf "╰─────────────────────\n"
+
   let fullOutputFilename = "vcf.log"
   putStrLn ("Writing full output to " ++ fullOutputFilename)
   writeFile fullOutputFilename (T.unpack result.fullOutput)
