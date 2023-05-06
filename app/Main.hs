@@ -13,8 +13,6 @@ import Data.Text.IO qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments
 import Options.Applicative qualified as Opt
-import Safe (fromJustNote, tailDef)
-import System.FilePath (takeBaseName, takeExtension)
 import TUI (AppEvent (..), runTUI)
 
 tuiMain :: IO Experiment -> IO ()
@@ -59,17 +57,6 @@ checkMain path1 path2 = do
   let fullOutputFilename = "vcf.log"
   putStrLn ("Writing full output to " ++ fullOutputFilename)
   writeFile fullOutputFilename (T.unpack result.fullOutput)
-  where
-    designSourceFromFile :: FilePath -> IO DesignSource
-    designSourceFromFile path = do
-      let extension = tailDef "" (takeExtension path)
-      let language =
-            fromJustNote
-              ("Unrecognised file extension: '" ++ extension ++ "'")
-              (languageFromExtension extension)
-      let topName = T.pack (takeBaseName path)
-      source <- T.pack <$> readFile path
-      pure DesignSource {..}
 
 main :: IO ()
 main =

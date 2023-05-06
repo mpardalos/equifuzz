@@ -23,8 +23,10 @@ import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Hedgehog.Gen qualified as Hog
 import Optics (makeFieldLabelsNoPrefix, traversed, view, (%), (&), (<&>), (^.), (^..), _2)
+import Safe (fromJustNote, tailDef)
 import Shelly ((</>), (<.>))
 import Shelly qualified as Sh
+import System.FilePath (takeBaseName, takeExtension)
 import SystemC qualified as SC
 import Text.Printf (printf)
 import Verismith.Verilog.CodeGen (Source (genSource))
@@ -359,3 +361,16 @@ experimentLoop generator runner progress = forever $ do
         _ -> pure ()
 
       progress (Completed result)
+
+-- | Read a design from a file into a DesignSource. Guesses the language from
+-- the file extension. It raises an error if it cannot recognise the language.
+designSourceFromFile :: FilePath -> IO DesignSource
+designSourceFromFile path = do
+  let extension = tailDef "" (takeExtension path)
+  let language =
+        fromJustNote
+          ("Unrecognised file extension: '" ++ extension ++ "'")
+          (languageFromExtension extension)
+  let topName = T.pack (takeBaseName path)
+  source <- T.pack <$> readFile path
+  pure DesignSource {..}
