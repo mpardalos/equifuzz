@@ -143,11 +143,6 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
       Verilog -> [i|vcs -sverilog #{file}|]
       SystemC -> [i|cppan #{file}|]
 
-    designTopName :: DesignSource -> Text
-    designTopName design = case design.language of
-      Verilog -> design.topName
-      SystemC -> hectorWrapperName
-
     compareScript :: Text
     compareScript =
       -- TODO: Add input assumptions by hand instead of map_by_name (use DesignSource.inputNames)
@@ -155,11 +150,11 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
                 set_custom_solve_script "orch_multipliers"
                 set_user_assumes_lemmas_procedure "miter"
 
-                create_design -name spec -top #{designTopName design1}
+                create_design -name spec -top #{design1 ^. #topName}
                 #{compileCommand (design1 ^. #language) design1Filename}
                 compile_design spec
 
-                create_design -name impl -top #{designTopName design2}
+                create_design -name impl -top #{design2 ^. #topName}
                 #{compileCommand (design2 ^. #language) design2Filename}
                 compile_design impl
 
@@ -217,7 +212,7 @@ mkSystemCVerilogExperiment = do
   let design1 =
         DesignSource
           { language = SystemC,
-            topName = "mod1",
+            topName = hectorWrapperName,
             source =
               SC.includeHeader
                 <> "\n\n"
@@ -240,7 +235,7 @@ mkSystemCConstantExperiment = do
   let design1 =
         DesignSource
           { language = SystemC,
-            topName = "mod1",
+            topName = hectorWrapperName,
             source =
               SC.includeHeader
                 <> "\n\n"
