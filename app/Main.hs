@@ -14,6 +14,7 @@ import Data.UUID.V4 qualified as UUID
 import Experiments
 import Options.Applicative qualified as Opt
 import TUI (AppEvent (..), runTUI)
+import Text.Printf (printf)
 
 tuiMain :: IO Experiment -> IO ()
 tuiMain generator = do
@@ -40,16 +41,12 @@ checkMain path1 path2 = do
   uuid <- UUID.nextRandom
   design1 <- designSourceFromFile path1
   design2 <- designSourceFromFile path2
+  -- We have to set expectedResult, but it doesn't actually matter
+  let experiment = Experiment {expectedResult = True, uuid, design1, design2}
 
-  let experiment =
-        Experiment
-          { expectedResult = True, -- We have to set this, but it doesn't actually matter
-            uuid,
-            design1,
-            design2
-          }
-  putStrLn "Running VC Formal..."
+  printf "Running VC Formal on %s and %s ...\n" path1 path2
   result <- runVCFormal experiment
+
   case result.proofFound of
     Just True -> putStrLn "  It says they are equivalent"
     Just False -> putStrLn "  It says they are NOT equivalent"
