@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -24,11 +25,12 @@ import GHC.Generics (Generic)
 import Hedgehog.Gen qualified as Hog
 import Optics (makeFieldLabelsNoPrefix, traversed, view, (%), (&), (<&>), (^.), (^..), _2)
 import Safe (fromJustNote, tailDef)
-import Shelly ((</>), (<.>))
+import Shelly ((<.>), (</>))
 import Shelly qualified as Sh
 import System.FilePath (takeBaseName, takeExtension)
 import SystemC qualified as SC
 import Text.Printf (printf)
+import Verismith.Verilog.AST as V (Expr (Number))
 import Verismith.Verilog.CodeGen (Source (genSource))
 
 data Experiment = Experiment
@@ -71,6 +73,7 @@ instance Ord Experiment where
 
 data ExperimentResult = ExperimentResult
   { proofFound :: Maybe Bool,
+    counterExample :: Maybe Text,
     fullOutput :: Text,
     uuid :: UUID
   }
@@ -108,6 +111,16 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
 
   fullOutput <- Sh.silently $ Sh.run "ssh" [vcfHost, sshCommand]
 
+  void . Sh.errExit False $
+    Sh.bash "scp" [vcfHost <> ":" <> remoteDir <> "/" <> T.pack (show uuid) <> "/counter_example.txt", dir <> "/counter_example.txt"]
+
+  void $ Sh.bash "ssh" [vcfHost, [i|"cd ~ && rm -rf ./#{experimentDir}"|]]
+
+  counterExample <-
+    Sh.test_f (T.unpack dir <> "/counter_example.txt") >>= \case
+      False -> pure Nothing
+      True -> Just <$> Sh.readfile (T.unpack dir <> "/counter_example.txt")
+
   let proofSuccessful =
         fullOutput
           & T.lines
@@ -123,7 +136,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
         (False, True) -> Just False
         _ -> Nothing
 
-  return ExperimentResult {proofFound, fullOutput, uuid}
+  return ExperimentResult {proofFound, counterExample, fullOutput, uuid}
   where
     remoteDir :: Text
     remoteDir = "equifuzz_vcf_experiment"
@@ -138,7 +151,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     experimentDir = remoteDir <> "/" <> T.pack (show uuid)
 
     sshCommand :: Text
-    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl && cd ~ && rm -rf ./#{experimentDir}|]
+    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl|]
 
     compileCommand :: DesignLanguage -> Text -> Text
     compileCommand language file = case language of
@@ -162,13 +175,14 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
 
                 proc miter {} {
                         map_by_name -inputs -implphase 1 -specphase 1
-                        lemma spec.out(1) == impl.out(1)
+                        lemma out_equiv = spec.out(1) == impl.out(1)
                 }
 
                 compose
                 solveNB proof
                 proofwait
                 listproof
+                simcex -txt counter_example.txt out_equiv
                 quit
     |]
 

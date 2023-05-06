@@ -51,6 +51,13 @@ checkMain path1 path2 = do
     Just True -> putStrLn "  It says they are equivalent"
     Just False -> putStrLn "  It says they are NOT equivalent"
     Nothing -> putStrLn "  It is inconclusive"
+  case result.counterExample of
+    Nothing -> pure ()
+    Just txt -> do
+      putStrLn "It also produced a counter-example:"
+      putStrLn "-----"
+      putStrLn (T.unpack txt)
+      putStrLn "-----"
   let fullOutputFilename = "vcf.log"
   putStrLn ("Writing full output to " ++ fullOutputFilename)
   writeFile fullOutputFilename (T.unpack result.fullOutput)
