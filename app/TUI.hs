@@ -5,6 +5,9 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Replace case with maybe" #-}
 
 module TUI (runTUI, AppEvent (..)) where
 
@@ -134,6 +137,11 @@ appDraw st =
               [ B.borderWithLabel (B.str " Design 1 ") $ B.txtWrap experiment.design1.source,
                 B.borderWithLabel (B.str " Design 2 ") $ B.txtWrap experiment.design2.source
               ]
+          counterExampleDisplay = case mResult ^? _Just % #counterExample % _Just of
+            Just counterExample ->
+              B.borderWithLabel (B.str " Counter Example ") $
+                B.txtWrap counterExample
+            Nothing -> B.emptyWidget
           outputDisplay =
             maybe
               B.emptyWidget
@@ -147,6 +155,7 @@ appDraw st =
        in B.padBottom B.Max . B.vBox $
             [ B.border $ B.padRight B.Max $ start B.<=> resultStuff,
               diffDisplay,
+              counterExampleDisplay,
               outputDisplay
             ]
 
