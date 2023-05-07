@@ -123,35 +123,36 @@ appDraw st =
               [ B.str ("UUID:            " <> show experiment.uuid),
                 B.str ("Expected result: " <> if experiment.expectedResult then "Equivalent" else "Non-equivalent")
               ]
-          resultStuff = case mResult of
-            Just result ->
-              B.str
-                ( "Actual result:   " <> case result.proofFound of
-                    Just True -> "Equivalent"
-                    Just False -> "Non-equivalent"
-                    Nothing -> "Unknown"
-                )
-            Nothing -> B.emptyWidget
+          resultStuff =
+            case mResult of
+              Just result ->
+                B.str
+                  ( "Actual result:   " <> case result.proofFound of
+                      Just True -> "Equivalent"
+                      Just False -> "Non-equivalent"
+                      Nothing -> "Unknown"
+                  )
+              Nothing -> B.emptyWidget
           diffDisplay =
             B.hBox
               [ B.borderWithLabel (B.str " Design 1 ") $ B.txtWrap experiment.design1.source,
                 B.borderWithLabel (B.str " Design 2 ") $ B.txtWrap experiment.design2.source
               ]
-          counterExampleDisplay = case mResult ^? _Just % #counterExample % _Just of
-            Just counterExample ->
-              B.borderWithLabel (B.str " Counter Example ") $
-                B.txtWrap counterExample
-            Nothing -> B.emptyWidget
+          counterExampleDisplay =
+            case mResult ^? _Just % #counterExample % _Just of
+              Just counterExample ->
+                B.borderWithLabel (B.str " Counter Example ") $
+                  B.txtWrap counterExample
+              Nothing -> B.emptyWidget
           outputDisplay =
-            maybe
-              B.emptyWidget
-              ( B.borderWithLabel (B.str " Output ")
+            case mResult of
+              Just result ->
+                B.borderWithLabel (B.str " Output ")
                   . B.withVScrollBars B.OnRight
                   . B.viewport OutputViewport B.Vertical
                   . B.txtWrap
-                  . view #fullOutput
-              )
-              mResult
+                  $ result.fullOutput
+              Nothing -> B.emptyWidget
        in B.padBottom B.Max . B.vBox $
             [ B.border $ B.padRight B.Max $ start B.<=> resultStuff,
               diffDisplay,
