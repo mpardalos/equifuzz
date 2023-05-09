@@ -1,6 +1,4 @@
 packages:
     .
-    libverismith
 
-package libverismith
 package equifuzz

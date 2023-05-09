@@ -16,16 +16,10 @@ executable equifuzz
     other-modules: Experiments
                  , TUI
                  , BuildOut
-                 , BuildOut.Verilog
-                 , BuildOut.SystemC
-                 , BuildOut.VerilogVerilog
-                 , BuildOut.SystemCVerilog
-                 , BuildOut.SystemCConstant
-                 , BuildOut.Internal
                  , SystemC
+                 , GenSystemC
     -- other-extensions:
     build-depends:    base ==4.16.*
-                    , libverismith
                     , text
                     , hedgehog
                     , shelly

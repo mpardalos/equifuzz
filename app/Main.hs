@@ -17,8 +17,8 @@ import Options.Applicative qualified as Opt
 import TUI (AppEvent (..), runTUI)
 import Text.Printf (printf)
 
-tuiMain :: IO Experiment -> IO ()
-tuiMain generator = do
+tuiMain :: IO ()
+tuiMain = do
   eventChan <- B.newBChan 20
   replicateM_ 10 $ experimentThread eventChan
   runTUI eventChan
@@ -27,12 +27,16 @@ tuiMain generator = do
     experimentThread eventChan =
       void $
         forkFinally
-          (experimentLoop generator runVCFormal (B.writeBChan eventChan . ExperimentProgress))
+          ( experimentLoop
+              mkSystemCConstantExperiment
+              runVCFormal
+              (B.writeBChan eventChan . ExperimentProgress)
+          )
           (const $ experimentThread eventChan)
 
-genMain :: IO Experiment -> IO ()
-genMain generator = do
-  Experiment {design1, design2} <- generator
+genMain :: IO ()
+genMain = do
+  Experiment {design1, design2} <- mkSystemCConstantExperiment
   T.putStrLn design1.source
   putStrLn "---------"
   T.putStrLn design2.source
@@ -72,8 +76,8 @@ checkMain path1 path2 = do
 main :: IO ()
 main =
   parseArgs >>= \case
-    Tui generator -> tuiMain generator
-    Generate generator -> genMain generator
+    Tui -> tuiMain
+    Generate -> genMain
     Check path1 path2 -> checkMain path1 path2
 
 --------------------------- CLI Parser -----------------------------------------
@@ -83,8 +87,8 @@ type GeneratorName = String
 type Generator = IO Experiment
 
 data Command
-  = Tui Generator
-  | Generate Generator
+  = Tui
+  | Generate
   | Check FilePath FilePath
 
 commandParser :: Opt.Parser Command
@@ -92,11 +96,11 @@ commandParser =
   Opt.hsubparser . mconcat $
     [ Opt.command "tui" $
         Opt.info
-          (Tui <$> generatorNameArg)
+          (pure Tui)
           (Opt.progDesc "Run the equifuzz TUI, connected to ee-mill3"),
       Opt.command "generate" $
         Opt.info
-          (Generate <$> generatorNameArg)
+          (pure Generate)
           (Opt.progDesc "Generate a sample of a generator"),
       Opt.command "check" $
         Opt.info
@@ -106,22 +110,6 @@ commandParser =
           )
           (Opt.progDesc "Generate a sample of a generator")
     ]
-  where
-    generatorNameArg =
-      Opt.option
-        ( Opt.maybeReader $ \case
-            "systemc-constant" -> Just mkSystemCConstantExperiment
-            "systemc-verilog" -> Just mkSystemCVerilogExperiment
-            _ -> Nothing
-        )
-        ( mconcat
-            [ Opt.long "generator",
-              Opt.short 'g',
-              Opt.metavar "GEN-NAME",
-              Opt.help "The experiment generator to use. One of: systemc-constant (default), systemc-verilog",
-              Opt.value mkSystemCConstantExperiment
-            ]
-        )
 
 parseArgs :: IO Command
 parseArgs =

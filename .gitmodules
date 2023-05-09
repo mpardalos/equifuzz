@@ -1,3 +1,0 @@
-[submodule "libverismith"]
-	path = libverismith
-	url = git@github.com:mpardalos/libverismith.git

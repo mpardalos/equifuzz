@@ -28,7 +28,6 @@ import Prettyprinter
     (<+>),
   )
 import Prettyprinter.Render.Text (renderStrict)
-import Verismith.Verilog.CodeGen (Source (..))
 
 type AnnConstraint (c :: Type -> Constraint) ann =
   ( c (AnnExpr ann),
@@ -50,6 +49,9 @@ class
 instance Annotation () where
   type AnnExpr () = ()
   type AnnStatement () = ()
+
+class Source a where
+  genSource :: a -> Text
 
 data BinOp = Plus | Minus | Multiply | Divide | BitwiseOr
   deriving (Eq, Show, Generic, Data)
@@ -192,11 +194,11 @@ instance Pretty BinOp where
   pretty Divide = "/"
   pretty BitwiseOr = "|"
 
-instance Source BinOp where
-  genSource =
-    renderStrict
-      . layoutPretty defaultLayoutOptions
-      . pretty
+-- instance Source BinOp where
+--   genSource =
+--     renderStrict
+--       . layoutPretty defaultLayoutOptions
+--       . pretty
 
 annComment :: Doc a -> Doc a
 annComment ann = "/* " <> ann <> " */"
@@ -231,11 +233,11 @@ instance Annotation ann => Pretty (Expr ann) where
     pretty castType <> parens (pretty expr)
   pretty (Range ann e hi lo) = pretty e <+> ".range(" <> pretty hi <> ", " <> pretty lo <> ")"
 
-instance Annotation ann => Source (Expr ann) where
-  genSource =
-    renderStrict
-      . layoutPretty defaultLayoutOptions
-      . pretty
+-- instance Annotation ann => Source (Expr ann) where
+--   genSource =
+--     renderStrict
+--       . layoutPretty defaultLayoutOptions
+--       . pretty
 
 prettyBlock :: Annotation ann => [Statement ann] -> Doc a
 prettyBlock statements = vsep ["{", indent 4 . vsep $ pretty <$> statements, "}"]

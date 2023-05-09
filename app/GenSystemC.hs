@@ -1,30 +1,55 @@
 {-# LANGUAGE DataKinds #-}
-{-# OPTIONS -fdefer-typed-holes #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -Wno-unused-matches #-}
 
-module BuildOut.SystemCConstant where
+module GenSystemC (genSystemCConstant) where
 
-import BuildOut.Internal (BuildOutM, iterateM)
-import BuildOut.SystemC qualified as SC
+import BuildOut (BuildOutM, BuildOutState (..), InputPort (..), initState, iterateM, runBuildOutM)
+import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
-import Hedgehog (MonadGen)
+import Hedgehog (Gen, MonadGen)
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
-import Optics (makePrismLabels, use, (%))
+import Optics (use, (%))
 import Optics.State.Operators ((%=))
-import SystemC qualified as SC
+import SystemC as SC
+
+genSystemCConstant :: Text -> Gen (SC.FunctionDeclaration BuildOut)
+genSystemCConstant name = do
+  (expr, state) <- runBuildOutM genExpr (initState initSCConstState)
+  return $
+    SC.FunctionDeclaration
+      { returnType = expr.annotation,
+        name,
+        args = map inputPortAsSystemC state.inputPorts,
+        body = state.extraState.statements ++ [SC.Return () expr]
+      }
+
+genExpr :: BuildOutM SCConstState (SC.Expr BuildOut)
+genExpr = seedExpr >>= grow
+
+inputPortAsSystemC :: InputPort -> (SC.SCType, Text)
+inputPortAsSystemC InputPort {width, name} = (SC.SCUInt width, name)
+
+data BuildOut
+
+instance SC.Annotation BuildOut where
+  type AnnExpr BuildOut = SC.SCType
+  type AnnStatement BuildOut = ()
 
 data SCConstState = SCConstState
-  { statements :: [SC.Statement SC.BuildOut],
+  { statements :: [SC.Statement BuildOut],
     nextVarIdx :: Int
   }
   deriving (Generic)
 
-makePrismLabels ''SCConstState
+constant :: Int -> SC.Expr BuildOut
+constant = SC.Constant SC.CInt
+
+someWidth :: MonadGen m => m Int
+someWidth = Hog.int (Hog.Range.constant 1 64)
 
 initSCConstState :: SCConstState
 initSCConstState =
@@ -33,13 +58,10 @@ initSCConstState =
       nextVarIdx = 0
     }
 
-genExpr :: BuildOutM SCConstState (SC.Expr SC.BuildOut)
-genExpr = seedExpr >>= grow
+seedExpr :: BuildOutM SCConstState (SC.Expr BuildOut)
+seedExpr = constant <$> Hog.int (Hog.Range.constant (-128) 128)
 
-seedExpr :: BuildOutM SCConstState (SC.Expr SC.BuildOut)
-seedExpr = SC.constant <$> Hog.int (Hog.Range.constant (-128) 128)
-
-grow :: SC.Expr SC.BuildOut -> BuildOutM SCConstState (SC.Expr SC.BuildOut)
+grow :: SC.Expr BuildOut -> BuildOutM SCConstState (SC.Expr BuildOut)
 grow scExpr = do
   count <- Hog.int (Hog.Range.linear 1 20)
   grownScExpr <- iterateM count (\e -> Hog.choice [castWithDeclaration e, range e]) scExpr
@@ -47,7 +69,7 @@ grow scExpr = do
     then return grownScExpr
     else castToFinalType grownScExpr
 
-castWithDeclaration :: SC.Expr SC.BuildOut -> BuildOutM SCConstState (SC.Expr SC.BuildOut)
+castWithDeclaration :: SC.Expr BuildOut -> BuildOutM SCConstState (SC.Expr BuildOut)
 castWithDeclaration e = do
   varType <- castToType e.annotation
   varIdx <- use (#extraState % #nextVarIdx)
@@ -56,7 +78,7 @@ castWithDeclaration e = do
   #extraState % #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
   return (SC.Variable varType varName)
 
-castToFinalType :: SC.Expr SC.BuildOut -> BuildOutM SCConstState (SC.Expr SC.BuildOut)
+castToFinalType :: SC.Expr BuildOut -> BuildOutM SCConstState (SC.Expr BuildOut)
 castToFinalType e = do
   -- TODO Change this to specify the actually allowed "final" types. This works
   -- for now because all of the types in `castToType` are allowed as final
@@ -71,10 +93,10 @@ castToFinalType e = do
 castToType :: MonadGen m => SC.SCType -> m SC.SCType
 castToType t =
   Hog.choice
-    [ SC.SCInt <$> SC.someWidth,
-      SC.SCUInt <$> SC.someWidth,
+    [ SC.SCInt <$> someWidth,
+      SC.SCUInt <$> someWidth,
       do
-        w <- SC.someWidth
+        w <- someWidth
         i <- Hog.int (Hog.Range.constant 0 w)
         return (SC.SCFixed w i)
     ]
@@ -90,7 +112,7 @@ isFinalType SC.SCFxnumSubref = False
 isFinalType SC.SCIntSubref = False
 isFinalType SC.SCUIntSubref = False
 
-range :: SC.Expr SC.BuildOut -> BuildOutM SCConstState (SC.Expr SC.BuildOut)
+range :: SC.Expr BuildOut -> BuildOutM SCConstState (SC.Expr BuildOut)
 range e = case (SC.specifiedWidth e.annotation, SC.supportsRange e.annotation) of
   (Just width, Just subrefType) -> do
     hi <- Hog.int (Hog.Range.constant 0 (width - 1))

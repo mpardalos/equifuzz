@@ -9,7 +9,7 @@
 
 module Experiments where
 
-import BuildOut (buildOutSystemCConstant, buildOutSystemCVerilog, buildOutVerilogVerilog)
+import GenSystemC (genSystemCConstant)
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, void)
 import Data.Data (Data)
@@ -30,8 +30,6 @@ import Shelly qualified as Sh
 import System.FilePath (takeBaseName, takeExtension)
 import SystemC qualified as SC
 import Text.Printf (printf)
-import Verismith.Verilog.AST as V (Expr (Number))
-import Verismith.Verilog.CodeGen (Source (genSource))
 
 data Experiment = Experiment
   { uuid :: UUID,
@@ -188,54 +186,11 @@ saveExperiment category Experiment {design1, design2, uuid, expectedResult} Expe
   Sh.writefile (dir </> ("full_output.txt" :: Text)) fullOutput
   Sh.writefile (dir </> ("info.txt" :: Text)) info
 
--- | Make an experiment using the Verilog-Verilog buildout generator.
-mkVerilogVerilogExperiment :: IO Experiment
-mkVerilogVerilogExperiment = do
-  (mod1, mod2) <- Hog.sample (buildOutVerilogVerilog "mod1" "mod2")
-  let design1 =
-        DesignSource
-          { language = Verilog,
-            topName = "mod1",
-            source = genSource mod1
-          }
-  let design2 =
-        DesignSource
-          { language = Verilog,
-            topName = "mod2",
-            source = genSource mod2
-          }
-  uuid <- UUID.nextRandom
-  return Experiment {expectedResult = False, ..}
-
--- | Make an experiment using the SystemC-Verilog generator
-mkSystemCVerilogExperiment :: IO Experiment
-mkSystemCVerilogExperiment = do
-  (systemcModule, verilogModule) <- Hog.sample (buildOutSystemCVerilog "mod1" "mod2")
-  let design1 =
-        DesignSource
-          { language = SystemC,
-            topName = hectorWrapperName,
-            source =
-              SC.includeHeader
-                <> "\n\n"
-                <> genSource systemcModule
-                <> "\n\n"
-                <> systemCHectorWrapper systemcModule
-          }
-  let design2 =
-        DesignSource
-          { language = Verilog,
-            topName = "mod2",
-            source = genSource verilogModule
-          }
-  uuid <- UUID.nextRandom
-  return Experiment {expectedResult = False, ..}
-
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
 mkSystemCConstantExperiment :: IO Experiment
 mkSystemCConstantExperiment = do
-  systemcModule <- Hog.sample (buildOutSystemCConstant "mod1")
+  systemcModule <- Hog.sample (genSystemCConstant "mod1")
   let design1 =
         DesignSource
           { language = SystemC,
@@ -243,7 +198,7 @@ mkSystemCConstantExperiment = do
             source =
               SC.includeHeader
                 <> "\n\n"
-                <> genSource systemcModule
+                <> SC.genSource systemcModule
                 <> "\n\n"
                 <> systemCHectorWrapper systemcModule
           }
@@ -298,12 +253,12 @@ systemCHectorWrapper SC.FunctionDeclaration {returnType, args, name} =
     inputDeclarations =
       T.intercalate
         "\n    "
-        [ genSource argType <> " " <> argName <> ";"
+        [ SC.genSource argType <> " " <> argName <> ";"
           | (argType, argName) <- args
         ]
 
     outType :: Text
-    outType = genSource returnType
+    outType = SC.genSource returnType
 
     inputsHectorRegister :: Text
     inputsHectorRegister =
@@ -328,7 +283,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {name} = Sh.shelly . Sh.sile
         [__i|
             #{SC.includeHeader}
 
-            #{genSource decl}
+            #{SC.genSource decl}
 
             int sc_main(int argc, char **argv) {
                 std::cout << #{name}().to_string(sc_dt::SC_BIN) << std::endl;
