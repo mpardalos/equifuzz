@@ -113,7 +113,11 @@ castToType t =
       do
         w <- someWidth
         i <- Hog.int (Hog.Range.constant 0 w)
-        return (SC.SCFixed w i)
+        return (SC.SCFixed w i),
+      do
+        w <- someWidth
+        i <- Hog.int (Hog.Range.constant 0 w)
+        return (SC.SCUFixed w i)
     ]
 
 isFinalType :: SC.SCType -> Bool
