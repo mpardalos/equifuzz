@@ -35,12 +35,6 @@ data BuildOutState s = BuildOutState
 
 makeFieldLabelsNoPrefix ''BuildOutState
 
--- | Monad for building out test programs inside-out. It provides `MonadGen` and
--- `MonadAccum`. The idea
---
--- What we really want here is AccumT, but there are no instances for `AccumT w
--- Gen`, so we instead we use StateT (which is isomorphic to AccumT) and provide
--- MonadAccum instance
 newtype BuildOutM s a = BuildOutM (StateT (BuildOutState s) Gen a)
   deriving newtype (Applicative, Monad, Alternative, Hog.MonadGen)
   deriving stock (Functor)
