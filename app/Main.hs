@@ -7,7 +7,6 @@ import Brick.BChan qualified as B
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally)
 import Control.Monad (replicateM_, void)
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.UUID.V4 qualified as UUID
@@ -81,10 +80,6 @@ main =
 
 --------------------------- CLI Parser -----------------------------------------
 
-type GeneratorName = String
-
-type Generator = IO Experiment
-
 data Command
   = Tui SSHHost
   | Generate
@@ -114,7 +109,7 @@ commandParser =
     hostArg :: Opt.Parser SSHHost
     hostArg =
       Opt.strOption
-        (Opt.long "host"
+        ( Opt.long "host"
             <> Opt.value "mp5617@ee-mill3.ee.ic.ac.uk"
             <> Opt.showDefault
             <> Opt.help "Host to run equivalence checker on"
