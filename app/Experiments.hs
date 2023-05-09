@@ -79,9 +79,12 @@ type ProgressNotify = ExperimentProgress -> IO ()
 -- | SSH host, including username (e.g. "user@host")
 type SSHHost = Text
 
+-- | Full path to an executable (e.g. "/usr/bin/echo")
+type CommandPath = Text
+
 -- | Run an experiment using VC Formal on a remote host
-runVCFormal :: SSHHost -> Experiment -> IO ExperimentResult
-runVCFormal vcfHost Experiment {designSpec, designImpl, uuid} = Sh.shelly . Sh.silently $ do
+runVCFormal :: SSHHost -> CommandPath -> Experiment -> IO ExperimentResult
+runVCFormal vcfHost vcfPath Experiment {designSpec, designImpl, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile (dir </> ("compare.tcl" :: Text)) compareScript
   Sh.writefile (dir </> design1Filename) designSpec.source
@@ -131,7 +134,7 @@ runVCFormal vcfHost Experiment {designSpec, designImpl, uuid} = Sh.shelly . Sh.s
     experimentDir = remoteDir <> "/" <> T.pack (show uuid)
 
     sshCommand :: Text
-    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && vcf -fmode DPV -f compare.tcl|]
+    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && #{vcfPath} -fmode DPV -f compare.tcl|]
 
     compileCommand :: DesignLanguage -> Text -> Text
     compileCommand language file = case language of

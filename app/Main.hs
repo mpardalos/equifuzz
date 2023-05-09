@@ -15,8 +15,8 @@ import Options.Applicative qualified as Opt
 import TUI (AppEvent (..), runTUI)
 import Text.Printf (printf)
 
-tuiMain :: SSHHost -> IO ()
-tuiMain host = do
+tuiMain :: SSHHost -> CommandPath -> IO ()
+tuiMain host vcfPath = do
   eventChan <- B.newBChan 20
   replicateM_ 10 $ experimentThread eventChan
   runTUI eventChan
@@ -27,7 +27,7 @@ tuiMain host = do
         forkFinally
           ( experimentLoop
               mkSystemCConstantExperiment
-              (runVCFormal host)
+              (runVCFormal host vcfPath)
               (B.writeBChan eventChan . ExperimentProgress)
           )
           (const $ experimentThread eventChan)
@@ -39,8 +39,8 @@ genMain = do
   putStrLn "---------"
   T.putStrLn designImpl.source
 
-checkMain :: SSHHost -> FilePath -> FilePath -> IO ()
-checkMain host path1 path2 = do
+checkMain :: SSHHost -> CommandPath -> FilePath -> FilePath -> IO ()
+checkMain host vcfPath path1 path2 = do
   uuid <- UUID.nextRandom
   designSpec <- designSourceFromFile path1
   designImpl <- designSourceFromFile path2
@@ -48,7 +48,7 @@ checkMain host path1 path2 = do
   let experiment = Experiment {expectedResult = True, uuid, designSpec, designImpl}
 
   printf "> Running VC Formal on %s and %s...\n" path1 path2
-  result <- runVCFormal host experiment
+  result <- runVCFormal host vcfPath experiment
 
   case result.proofFound of
     Just True -> putStrLn "✔️ It says they are equivalent"
@@ -74,23 +74,26 @@ checkMain host path1 path2 = do
 main :: IO ()
 main =
   parseArgs >>= \case
-    Tui host -> tuiMain host
+    Tui host vcfPath -> tuiMain host vcfPath
     Generate -> genMain
-    Check host path1 path2 -> checkMain host path1 path2
+    Check host vcfPath path1 path2 -> checkMain host vcfPath path1 path2
 
 --------------------------- CLI Parser -----------------------------------------
 
 data Command
-  = Tui SSHHost
+  = Tui SSHHost CommandPath
   | Generate
-  | Check SSHHost FilePath FilePath
+  | Check SSHHost CommandPath FilePath FilePath
 
 commandParser :: Opt.Parser Command
 commandParser =
   Opt.hsubparser . mconcat $
     [ Opt.command "tui" $
         Opt.info
-          (Tui <$> hostArg)
+          ( Tui
+              <$> hostArg
+              <*> vcfPathArg
+          )
           (Opt.progDesc "Run the equifuzz TUI, connected to a remote host"),
       Opt.command "generate" $
         Opt.info
@@ -100,6 +103,7 @@ commandParser =
         Opt.info
           ( Check
               <$> hostArg
+              <*> vcfPathArg
               <*> Opt.strArgument (Opt.metavar "FILE1")
               <*> Opt.strArgument (Opt.metavar "FILE2")
           )
@@ -114,6 +118,16 @@ commandParser =
             <> Opt.showDefault
             <> Opt.help "Host to run equivalence checker on"
             <> Opt.metavar "HOST"
+        )
+
+    vcfPathArg :: Opt.Parser SSHHost
+    vcfPathArg =
+      Opt.strOption
+        ( Opt.long "vcf-path"
+            <> Opt.value "/eda/synopsys/2022-23/RHELx86/VC-STATIC_2022.06-SP2/bin/vcf"
+            <> Opt.showDefault
+            <> Opt.help "Path to vcf on the remote host"
+            <> Opt.metavar "PATH"
         )
 
 parseArgs :: IO Command
