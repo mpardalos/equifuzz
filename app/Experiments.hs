@@ -23,7 +23,7 @@ import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Hedgehog.Gen qualified as Hog
-import Optics (makeFieldLabelsNoPrefix, traversed, view, (%), (&), (<&>), (^.), (^..), _2)
+import Optics (makeFieldLabelsNoPrefix, (&), (<&>), (^.))
 import Safe (fromJustNote, tailDef)
 import Shelly ((<.>), (</>))
 import Shelly qualified as Sh
@@ -41,23 +41,6 @@ data Experiment = Experiment
     design2 :: DesignSource
   }
 
-data DesignLanguage = SystemC | Verilog
-
-languageFromExtension :: (Eq a, IsString a) => a -> Maybe DesignLanguage
-languageFromExtension "c" = Just SystemC
-languageFromExtension "cpp" = Just SystemC
-languageFromExtension "v" = Just Verilog
-languageFromExtension _ = Nothing
-
-data DesignSource = DesignSource
-  { language :: DesignLanguage,
-    topName :: Text,
-    source :: Text
-  }
-
-makeFieldLabelsNoPrefix ''Experiment
-makeFieldLabelsNoPrefix ''DesignSource
-
 instance Show Experiment where
   show e =
     printf
@@ -71,6 +54,14 @@ instance Eq Experiment where
 instance Ord Experiment where
   compare e1 e2 = compare e1.uuid e2.uuid
 
+data DesignLanguage = SystemC | Verilog
+
+data DesignSource = DesignSource
+  { language :: DesignLanguage,
+    topName :: Text,
+    source :: Text
+  }
+
 data ExperimentResult = ExperimentResult
   { proofFound :: Maybe Bool,
     counterExample :: Maybe Text,
@@ -79,6 +70,8 @@ data ExperimentResult = ExperimentResult
   }
   deriving (Show, Eq, Generic, Data)
 
+makeFieldLabelsNoPrefix ''Experiment
+makeFieldLabelsNoPrefix ''DesignSource
 makeFieldLabelsNoPrefix ''ExperimentResult
 
 data ExperimentProgress
@@ -89,17 +82,7 @@ data ExperimentProgress
 
 type ProgressNotify = ExperimentProgress -> IO ()
 
-isCompleted :: ExperimentProgress -> Bool
-isCompleted Completed {} = True
-isCompleted _ = False
-
-hectorWrapperName :: Text
-hectorWrapperName = "hector_wrapper"
-
-languageFileExtension :: DesignLanguage -> Text
-languageFileExtension Verilog = "v"
-languageFileExtension SystemC = "cpp"
-
+-- | Run an experiment using VC Formal on a fixed remote host (ee-mill3)
 runVCFormal :: Experiment -> IO ExperimentResult
 runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
@@ -189,6 +172,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     vcfHost :: Text
     vcfHost = "mp5617@ee-mill3.ee.ic.ac.uk"
 
+-- | Save information about the experiment to the experiments/ directory
 saveExperiment :: String -> Experiment -> ExperimentResult -> IO ()
 saveExperiment category Experiment {design1, design2, uuid, expectedResult} ExperimentResult {fullOutput, proofFound} = Sh.shelly . Sh.silently $ do
   let dir = "experiments/" <> category <> "/" <> UUID.toString uuid
@@ -204,6 +188,7 @@ saveExperiment category Experiment {design1, design2, uuid, expectedResult} Expe
   Sh.writefile (dir </> ("full_output.txt" :: Text)) fullOutput
   Sh.writefile (dir </> ("info.txt" :: Text)) info
 
+-- | Make an experiment using the Verilog-Verilog buildout generator.
 mkVerilogVerilogExperiment :: IO Experiment
 mkVerilogVerilogExperiment = do
   (mod1, mod2) <- Hog.sample (buildOutVerilogVerilog "mod1" "mod2")
@@ -222,6 +207,7 @@ mkVerilogVerilogExperiment = do
   uuid <- UUID.nextRandom
   return Experiment {expectedResult = False, ..}
 
+-- | Make an experiment using the SystemC-Verilog generator
 mkSystemCVerilogExperiment :: IO Experiment
 mkSystemCVerilogExperiment = do
   (systemcModule, verilogModule) <- Hog.sample (buildOutSystemCVerilog "mod1" "mod2")
@@ -245,6 +231,8 @@ mkSystemCVerilogExperiment = do
   uuid <- UUID.nextRandom
   return Experiment {expectedResult = False, ..}
 
+-- | Make an experiment using the SystemC-constant generator. Needs to have
+-- icarus verilog (`iverilog`) available locally
 mkSystemCConstantExperiment :: IO Experiment
 mkSystemCConstantExperiment = do
   systemcModule <- Hog.sample (buildOutSystemCConstant "mod1")
@@ -388,3 +376,20 @@ designSourceFromFile path = do
   let topName = T.pack (takeBaseName path)
   source <- T.pack <$> readFile path
   pure DesignSource {..}
+
+languageFromExtension :: (Eq a, IsString a) => a -> Maybe DesignLanguage
+languageFromExtension "c" = Just SystemC
+languageFromExtension "cpp" = Just SystemC
+languageFromExtension "v" = Just Verilog
+languageFromExtension _ = Nothing
+
+isCompleted :: ExperimentProgress -> Bool
+isCompleted Completed {} = True
+isCompleted _ = False
+
+hectorWrapperName :: Text
+hectorWrapperName = "hector_wrapper"
+
+languageFileExtension :: DesignLanguage -> Text
+languageFileExtension Verilog = "v"
+languageFileExtension SystemC = "cpp"
