@@ -1,37 +1,70 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module GenSystemC (genSystemCConstant) where
 
-import BuildOut (BuildOutM, BuildOutState (..), InputPort (..), initState, iterateM, runBuildOutM)
+import Control.Applicative (Alternative)
+import Control.Monad.State (MonadState (..), StateT (..))
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Hedgehog (Gen, MonadGen)
 import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
-import Optics (use, (%))
+import Optics (use)
 import Optics.State.Operators ((%=))
 import SystemC as SC
+import Util (iterateM)
 
 genSystemCConstant :: Text -> Gen (SC.FunctionDeclaration BuildOut)
 genSystemCConstant name = do
-  (expr, state) <- runBuildOutM genExpr (initState initSCConstState)
+  (expr, finalState) <- runBuildOutM genExpr
   return $
     SC.FunctionDeclaration
       { returnType = expr.annotation,
         name,
-        args = map inputPortAsSystemC state.inputPorts,
-        body = state.extraState.statements ++ [SC.Return () expr]
+        args = [],
+        body = finalState.statements ++ [SC.Return () expr]
       }
 
-genExpr :: BuildOutM SCConstState (SC.Expr BuildOut)
+genExpr :: BuildOutM (SC.Expr BuildOut)
 genExpr = seedExpr >>= grow
 
-inputPortAsSystemC :: InputPort -> (SC.SCType, Text)
-inputPortAsSystemC InputPort {width, name} = (SC.SCUInt width, name)
+seedExpr :: BuildOutM (SC.Expr BuildOut)
+seedExpr = constant <$> Hog.int (Hog.Range.constant (-128) 128)
+
+grow :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
+grow scExpr = do
+  count <- Hog.int (Hog.Range.linear 1 20)
+  grownScExpr <-
+    iterateM
+      count
+      ( \e ->
+          Hog.choice
+            [ castWithDeclaration e,
+              range e
+            ]
+      )
+      scExpr
+  if isFinalType grownScExpr.annotation
+    then return grownScExpr
+    else castToFinalType grownScExpr
+
+newtype BuildOutM a = BuildOutM (StateT SCConstState Gen a)
+  deriving newtype (Applicative, Monad, Alternative, MonadState SCConstState, MonadGen)
+  deriving stock (Functor)
+
+runBuildOutM :: BuildOutM a -> Gen (a, SCConstState)
+runBuildOutM (BuildOutM m) =
+  runStateT
+    m
+    SCConstState
+      { statements = [],
+        nextVarIdx = 0
+      }
 
 data BuildOut
 
@@ -51,42 +84,24 @@ constant = SC.Constant SC.CInt
 someWidth :: MonadGen m => m Int
 someWidth = Hog.int (Hog.Range.constant 1 64)
 
-initSCConstState :: SCConstState
-initSCConstState =
-  SCConstState
-    { statements = [],
-      nextVarIdx = 0
-    }
-
-seedExpr :: BuildOutM SCConstState (SC.Expr BuildOut)
-seedExpr = constant <$> Hog.int (Hog.Range.constant (-128) 128)
-
-grow :: SC.Expr BuildOut -> BuildOutM SCConstState (SC.Expr BuildOut)
-grow scExpr = do
-  count <- Hog.int (Hog.Range.linear 1 20)
-  grownScExpr <- iterateM count (\e -> Hog.choice [castWithDeclaration e, range e]) scExpr
-  if isFinalType grownScExpr.annotation
-    then return grownScExpr
-    else castToFinalType grownScExpr
-
-castWithDeclaration :: SC.Expr BuildOut -> BuildOutM SCConstState (SC.Expr BuildOut)
+castWithDeclaration :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
 castWithDeclaration e = do
   varType <- castToType e.annotation
-  varIdx <- use (#extraState % #nextVarIdx)
+  varIdx <- use #nextVarIdx
   let varName = "x" <> T.pack (show varIdx)
-  #extraState % #nextVarIdx %= (+ 1)
-  #extraState % #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
+  #nextVarIdx %= (+ 1)
+  #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
   return (SC.Variable varType varName)
 
-castToFinalType :: SC.Expr BuildOut -> BuildOutM SCConstState (SC.Expr BuildOut)
+castToFinalType :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
 castToFinalType e = do
   -- TODO Change this to specify the actually allowed "final" types. This works
   -- for now because all of the types in `castToType` are allowed as final
   varType <- castToType e.annotation
-  varIdx <- use (#extraState % #nextVarIdx)
+  varIdx <- use #nextVarIdx
   let varName = "x" <> T.pack (show varIdx)
-  #extraState % #nextVarIdx %= (+ 1)
-  #extraState % #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
+  #nextVarIdx %= (+ 1)
+  #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
   return (SC.Variable varType varName)
 
 -- | Generate a type that the input type can be cast to
@@ -112,7 +127,7 @@ isFinalType SC.SCFxnumSubref = False
 isFinalType SC.SCIntSubref = False
 isFinalType SC.SCUIntSubref = False
 
-range :: SC.Expr BuildOut -> BuildOutM SCConstState (SC.Expr BuildOut)
+range :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
 range e = case (SC.specifiedWidth e.annotation, SC.supportsRange e.annotation) of
   (Just width, Just subrefType) -> do
     hi <- Hog.int (Hog.Range.constant 0 (width - 1))

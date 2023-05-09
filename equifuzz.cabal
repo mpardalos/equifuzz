@@ -15,9 +15,9 @@ executable equifuzz
     main-is:          Main.hs
     other-modules: Experiments
                  , TUI
-                 , BuildOut
                  , SystemC
                  , GenSystemC
+                 , Util
     -- other-extensions:
     build-depends:    base ==4.16.*
                     , text
