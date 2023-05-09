@@ -135,8 +135,8 @@ appDraw st =
               Nothing -> B.emptyWidget
           diffDisplay =
             B.hBox
-              [ B.borderWithLabel (B.str " Design 1 ") $ B.txtWrap experiment.design1.source,
-                B.borderWithLabel (B.str " Design 2 ") $ B.txtWrap experiment.design2.source
+              [ B.borderWithLabel (B.str " Spec ") $ B.txtWrap experiment.designSpec.source,
+                B.borderWithLabel (B.str " Impl ") $ B.txtWrap experiment.designImpl.source
               ]
           counterExampleDisplay =
             case mResult ^? _Just % #counterExample % _Just of

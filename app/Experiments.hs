@@ -9,10 +9,10 @@
 
 module Experiments where
 
-import GenSystemC (genSystemCConstant)
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, void)
 import Data.Data (Data)
+import Data.Function (on)
 import Data.Maybe (fromJust)
 import Data.String (IsString)
 import Data.String.Interpolate (i, __i)
@@ -22,43 +22,39 @@ import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
+import GenSystemC (genSystemCConstant)
 import Hedgehog.Gen qualified as Hog
-import Optics (makeFieldLabelsNoPrefix, (&), (<&>), (^.))
+import Optics (makeFieldLabelsNoPrefix, view, (&), (<&>), (^.))
 import Safe (fromJustNote, tailDef)
 import Shelly ((<.>), (</>))
 import Shelly qualified as Sh
 import System.FilePath (takeBaseName, takeExtension)
 import SystemC qualified as SC
-import Text.Printf (printf)
 
 data Experiment = Experiment
   { uuid :: UUID,
     -- | True if we expect the modules to be equivalent, False if we expect them not to be
     expectedResult :: Bool,
-    design1 :: DesignSource,
-    design2 :: DesignSource
+    designSpec :: DesignSource,
+    designImpl :: DesignSource
   }
-
-instance Show Experiment where
-  show e =
-    printf
-      "Experiment { uuid=\"%s\", expectedResult = \"%s\", design1 = ..., design2 = ... }"
-      (show e.uuid)
-      (show e.expectedResult)
+  deriving (Generic, Show)
 
 instance Eq Experiment where
-  e1 == e2 = e1.uuid == e2.uuid
+  (==) = (==) `on` view #uuid
 
 instance Ord Experiment where
-  compare e1 e2 = compare e1.uuid e2.uuid
+  compare = compare `on` view #uuid
 
 data DesignLanguage = SystemC | Verilog
+  deriving (Show)
 
 data DesignSource = DesignSource
   { language :: DesignLanguage,
     topName :: Text,
     source :: Text
   }
+  deriving (Show)
 
 data ExperimentResult = ExperimentResult
   { proofFound :: Maybe Bool,
@@ -82,11 +78,11 @@ type ProgressNotify = ExperimentProgress -> IO ()
 
 -- | Run an experiment using VC Formal on a fixed remote host (ee-mill3)
 runVCFormal :: Experiment -> IO ExperimentResult
-runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
+runVCFormal Experiment {designSpec, designImpl, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile (dir </> ("compare.tcl" :: Text)) compareScript
-  Sh.writefile (dir </> design1Filename) design1.source
-  Sh.writefile (dir </> design2Filename) design2.source
+  Sh.writefile (dir </> design1Filename) designSpec.source
+  Sh.writefile (dir </> design2Filename) designImpl.source
   void $ Sh.bash "ssh" [vcfHost, "mkdir -p " <> remoteDir <> "/"]
   void $ Sh.bash "scp" ["-r", dir <> "/*", vcfHost <> ":" <> remoteDir <> "/" <> T.pack (show uuid)]
 
@@ -123,10 +119,10 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
     remoteDir = "equifuzz_vcf_experiment"
 
     design1Filename :: Text
-    design1Filename = "design1." <> languageFileExtension design1.language
+    design1Filename = "spec." <> languageFileExtension designSpec.language
 
     design2Filename :: Text
-    design2Filename = "design2." <> languageFileExtension design2.language
+    design2Filename = "impl." <> languageFileExtension designImpl.language
 
     experimentDir :: Text
     experimentDir = remoteDir <> "/" <> T.pack (show uuid)
@@ -146,12 +142,12 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
                 set_custom_solve_script "orch_multipliers"
                 set_user_assumes_lemmas_procedure "miter"
 
-                create_design -name spec -top #{design1 ^. #topName}
-                #{compileCommand (design1 ^. #language) design1Filename}
+                create_design -name spec -top #{designSpec ^. #topName}
+                #{compileCommand (designSpec ^. #language) design1Filename}
                 compile_design spec
 
-                create_design -name impl -top #{design2 ^. #topName}
-                #{compileCommand (design2 ^. #language) design2Filename}
+                create_design -name impl -top #{designImpl ^. #topName}
+                #{compileCommand (designImpl ^. #language) design2Filename}
                 compile_design impl
 
                 proc miter {} {
@@ -172,7 +168,7 @@ runVCFormal Experiment {design1, design2, uuid} = Sh.shelly . Sh.silently $ do
 
 -- | Save information about the experiment to the experiments/ directory
 saveExperiment :: String -> Experiment -> ExperimentResult -> IO ()
-saveExperiment category Experiment {design1, design2, uuid, expectedResult} ExperimentResult {fullOutput, proofFound} = Sh.shelly . Sh.silently $ do
+saveExperiment category Experiment {designSpec, designImpl, uuid, expectedResult} ExperimentResult {fullOutput, proofFound} = Sh.shelly . Sh.silently $ do
   let dir = "experiments/" <> category <> "/" <> UUID.toString uuid
   let info :: Text =
         [__i|
@@ -181,8 +177,8 @@ saveExperiment category Experiment {design1, design2, uuid, expectedResult} Expe
             |]
 
   Sh.mkdir_p dir
-  Sh.writefile (dir </> ("design1" :: Text) <.> languageFileExtension design1.language) design1.source
-  Sh.writefile (dir </> ("design2" :: Text) <.> languageFileExtension design2.language) design2.source
+  Sh.writefile (dir </> ("spec" :: Text) <.> languageFileExtension designSpec.language) designSpec.source
+  Sh.writefile (dir </> ("impl" :: Text) <.> languageFileExtension designImpl.language) designImpl.source
   Sh.writefile (dir </> ("full_output.txt" :: Text)) fullOutput
   Sh.writefile (dir </> ("info.txt" :: Text)) info
 
@@ -191,7 +187,7 @@ saveExperiment category Experiment {design1, design2, uuid, expectedResult} Expe
 mkSystemCConstantExperiment :: IO Experiment
 mkSystemCConstantExperiment = do
   systemcModule <- Hog.sample (genSystemCConstant "mod1")
-  let design1 =
+  let designImpl =
         DesignSource
           { language = SystemC,
             topName = hectorWrapperName,
@@ -219,7 +215,7 @@ mkSystemCConstantExperiment = do
             assign out = #{outWidth}'b#{expectedResult};
           endmodule
             |]
-  let design2 =
+  let designSpec =
         DesignSource
           { language = Verilog,
             topName = "mod2",

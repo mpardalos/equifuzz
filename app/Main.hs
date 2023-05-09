@@ -36,18 +36,18 @@ tuiMain = do
 
 genMain :: IO ()
 genMain = do
-  Experiment {design1, design2} <- mkSystemCConstantExperiment
-  T.putStrLn design1.source
+  Experiment {designSpec, designImpl} <- mkSystemCConstantExperiment
+  T.putStrLn designSpec.source
   putStrLn "---------"
-  T.putStrLn design2.source
+  T.putStrLn designImpl.source
 
 checkMain :: FilePath -> FilePath -> IO ()
 checkMain path1 path2 = do
   uuid <- UUID.nextRandom
-  design1 <- designSourceFromFile path1
-  design2 <- designSourceFromFile path2
+  designSpec <- designSourceFromFile path1
+  designImpl <- designSourceFromFile path2
   -- We have to set expectedResult, but it doesn't actually matter
-  let experiment = Experiment {expectedResult = True, uuid, design1, design2}
+  let experiment = Experiment {expectedResult = True, uuid, designSpec, designImpl}
 
   printf "> Running VC Formal on %s and %s...\n" path1 path2
   result <- runVCFormal experiment
