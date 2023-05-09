@@ -76,9 +76,12 @@ data ExperimentProgress
 
 type ProgressNotify = ExperimentProgress -> IO ()
 
--- | Run an experiment using VC Formal on a fixed remote host (ee-mill3)
-runVCFormal :: Experiment -> IO ExperimentResult
-runVCFormal Experiment {designSpec, designImpl, uuid} = Sh.shelly . Sh.silently $ do
+-- | SSH host, including username (e.g. "user@host")
+type SSHHost = Text
+
+-- | Run an experiment using VC Formal on a remote host
+runVCFormal :: SSHHost -> Experiment -> IO ExperimentResult
+runVCFormal vcfHost Experiment {designSpec, designImpl, uuid} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile (dir </> ("compare.tcl" :: Text)) compareScript
   Sh.writefile (dir </> design1Filename) designSpec.source
@@ -137,7 +140,6 @@ runVCFormal Experiment {designSpec, designImpl, uuid} = Sh.shelly . Sh.silently 
 
     compareScript :: Text
     compareScript =
-      -- TODO: Add input assumptions by hand instead of map_by_name (use DesignSource.inputNames)
       [__i|
                 set_custom_solve_script "orch_multipliers"
                 set_user_assumes_lemmas_procedure "miter"
@@ -162,9 +164,6 @@ runVCFormal Experiment {designSpec, designImpl, uuid} = Sh.shelly . Sh.silently 
                 simcex -txt counter_example.txt out_equiv
                 quit
     |]
-
-    vcfHost :: Text
-    vcfHost = "mp5617@ee-mill3.ee.ic.ac.uk"
 
 -- | Save information about the experiment to the experiments/ directory
 saveExperiment :: String -> Experiment -> ExperimentResult -> IO ()

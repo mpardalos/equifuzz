@@ -1,6 +1,5 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module Main where
 
@@ -17,8 +16,8 @@ import Options.Applicative qualified as Opt
 import TUI (AppEvent (..), runTUI)
 import Text.Printf (printf)
 
-tuiMain :: IO ()
-tuiMain = do
+tuiMain :: SSHHost -> IO ()
+tuiMain host = do
   eventChan <- B.newBChan 20
   replicateM_ 10 $ experimentThread eventChan
   runTUI eventChan
@@ -29,7 +28,7 @@ tuiMain = do
         forkFinally
           ( experimentLoop
               mkSystemCConstantExperiment
-              runVCFormal
+              (runVCFormal host)
               (B.writeBChan eventChan . ExperimentProgress)
           )
           (const $ experimentThread eventChan)
@@ -41,8 +40,8 @@ genMain = do
   putStrLn "---------"
   T.putStrLn designImpl.source
 
-checkMain :: FilePath -> FilePath -> IO ()
-checkMain path1 path2 = do
+checkMain :: SSHHost -> FilePath -> FilePath -> IO ()
+checkMain host path1 path2 = do
   uuid <- UUID.nextRandom
   designSpec <- designSourceFromFile path1
   designImpl <- designSourceFromFile path2
@@ -50,7 +49,7 @@ checkMain path1 path2 = do
   let experiment = Experiment {expectedResult = True, uuid, designSpec, designImpl}
 
   printf "> Running VC Formal on %s and %s...\n" path1 path2
-  result <- runVCFormal experiment
+  result <- runVCFormal host experiment
 
   case result.proofFound of
     Just True -> putStrLn "✔️ It says they are equivalent"
@@ -76,9 +75,9 @@ checkMain path1 path2 = do
 main :: IO ()
 main =
   parseArgs >>= \case
-    Tui -> tuiMain
+    Tui host -> tuiMain host
     Generate -> genMain
-    Check path1 path2 -> checkMain path1 path2
+    Check host path1 path2 -> checkMain host path1 path2
 
 --------------------------- CLI Parser -----------------------------------------
 
@@ -87,17 +86,17 @@ type GeneratorName = String
 type Generator = IO Experiment
 
 data Command
-  = Tui
+  = Tui SSHHost
   | Generate
-  | Check FilePath FilePath
+  | Check SSHHost FilePath FilePath
 
 commandParser :: Opt.Parser Command
 commandParser =
   Opt.hsubparser . mconcat $
     [ Opt.command "tui" $
         Opt.info
-          (pure Tui)
-          (Opt.progDesc "Run the equifuzz TUI, connected to ee-mill3"),
+          (Tui <$> hostArg)
+          (Opt.progDesc "Run the equifuzz TUI, connected to a remote host"),
       Opt.command "generate" $
         Opt.info
           (pure Generate)
@@ -105,11 +104,22 @@ commandParser =
       Opt.command "check" $
         Opt.info
           ( Check
-              <$> Opt.strArgument (Opt.metavar "FILE1")
+              <$> hostArg
+              <*> Opt.strArgument (Opt.metavar "FILE1")
               <*> Opt.strArgument (Opt.metavar "FILE2")
           )
-          (Opt.progDesc "Generate a sample of a generator")
+          (Opt.progDesc "Run the equivalence checker on a pair of programs")
     ]
+  where
+    hostArg :: Opt.Parser SSHHost
+    hostArg =
+      Opt.strOption
+        (Opt.long "host"
+            <> Opt.value "mp5617@ee-mill3.ee.ic.ac.uk"
+            <> Opt.showDefault
+            <> Opt.help "Host to run equivalence checker on"
+            <> Opt.metavar "HOST"
+        )
 
 parseArgs :: IO Command
 parseArgs =
