@@ -5,7 +5,7 @@ module Main where
 
 import Brick.BChan qualified as B
 import Control.Applicative ((<**>))
-import Control.Concurrent (forkFinally)
+import Control.Concurrent (forkFinally, newChan, writeChan)
 import Control.Monad (replicateM_, void)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
@@ -14,23 +14,32 @@ import Experiments
 import Options.Applicative qualified as Opt
 import TUI (AppEvent (..), runTUI)
 import Text.Printf (printf)
+import WebUI (runWebUI)
+
+experimentThread :: SSHHost -> CommandPath -> (ExperimentProgress -> IO ()) -> IO ()
+experimentThread host vcfPath reportProgress =
+  void $
+    forkFinally
+      ( experimentLoop
+          mkSystemCConstantExperiment
+          (runVCFormal host vcfPath)
+          reportProgress
+      )
+      (const $ experimentThread host vcfPath reportProgress)
 
 tuiMain :: SSHHost -> CommandPath -> IO ()
 tuiMain host vcfPath = do
   eventChan <- B.newBChan 20
-  replicateM_ 10 $ experimentThread eventChan
+  replicateM_ 10 $
+    experimentThread host vcfPath (B.writeBChan eventChan . ExperimentProgress)
   runTUI eventChan
-  where
-    experimentThread :: B.BChan AppEvent -> IO ()
-    experimentThread eventChan =
-      void $
-        forkFinally
-          ( experimentLoop
-              mkSystemCConstantExperiment
-              (runVCFormal host vcfPath)
-              (B.writeBChan eventChan . ExperimentProgress)
-          )
-          (const $ experimentThread eventChan)
+
+webMain :: SSHHost -> CommandPath -> IO ()
+webMain host vcfPath = do
+  eventChan <- newChan
+  -- replicateM_ 10 $
+  --   experimentThread host vcfPath (writeChan eventChan)
+  runWebUI eventChan
 
 genMain :: IO ()
 genMain = do
@@ -75,6 +84,7 @@ main :: IO ()
 main =
   parseArgs >>= \case
     Tui host vcfPath -> tuiMain host vcfPath
+    Web host vcfPath -> webMain host vcfPath
     Generate -> genMain
     Check host vcfPath path1 path2 -> checkMain host vcfPath path1 path2
 
@@ -82,6 +92,7 @@ main =
 
 data Command
   = Tui SSHHost CommandPath
+  | Web SSHHost CommandPath
   | Generate
   | Check SSHHost CommandPath FilePath FilePath
 
@@ -91,6 +102,13 @@ commandParser =
     [ Opt.command "tui" $
         Opt.info
           ( Tui
+              <$> hostArg
+              <*> vcfPathArg
+          )
+          (Opt.progDesc "Run the equifuzz TUI, connected to a remote host"),
+      Opt.command "web" $
+        Opt.info
+          ( Web
               <$> hostArg
               <*> vcfPathArg
           )

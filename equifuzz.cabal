@@ -18,6 +18,7 @@ executable equifuzz
                  , SystemC
                  , GenSystemC
                  , Util
+                 , WebUI
     -- other-extensions:
     build-depends:    base ==4.16.*
                     , text
@@ -38,6 +39,7 @@ executable equifuzz
                     , safe
                     , optparse-applicative
                     , filepath
+                    , scotty == 0.12.*
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions:
