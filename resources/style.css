@@ -1,0 +1,30 @@
+.list-section {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    justify-content: stretch;
+    width: 100%;
+}
+
+.experiment-list-title {
+    text-align: center;
+}
+
+.experiment-list-container {
+    flex-grow: 1;
+}
+
+.experiment-list {
+    border: 2px solid black;
+    border-radius: 2px;
+    overflow: scroll;
+}
+
+.experiment-list-item {
+    padding-left: 20px;
+    line-height: 2;
+}
+
+.experiment-list-item:hover {
+    background-color: gray;
+}

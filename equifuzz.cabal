@@ -40,6 +40,7 @@ executable equifuzz
                     , optparse-applicative
                     , filepath
                     , scotty == 0.12.*
+                    , blaze-html == 0.9.*
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions:

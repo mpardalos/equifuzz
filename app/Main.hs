@@ -5,8 +5,9 @@ module Main where
 
 import Brick.BChan qualified as B
 import Control.Applicative ((<**>))
-import Control.Concurrent (forkFinally, newChan, writeChan)
-import Control.Monad (replicateM_, void)
+import Control.Concurrent (forkFinally, forkIO, modifyMVar, newMVar, threadDelay)
+import Control.Exception (SomeException, try)
+import Control.Monad (forM_, forever, replicateM_, void)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.UUID.V4 qualified as UUID
@@ -14,7 +15,7 @@ import Experiments
 import Options.Applicative qualified as Opt
 import TUI (AppEvent (..), runTUI)
 import Text.Printf (printf)
-import WebUI (runWebUI)
+import WebUI (handleProgress, newWebUIState, runWebUI)
 
 experimentThread :: SSHHost -> CommandPath -> (ExperimentProgress -> IO ()) -> IO ()
 experimentThread host vcfPath reportProgress =
@@ -36,10 +37,11 @@ tuiMain host vcfPath = do
 
 webMain :: SSHHost -> CommandPath -> IO ()
 webMain host vcfPath = do
-  eventChan <- newChan
+  stateVar <- newMVar newWebUIState
   -- replicateM_ 10 $
-  --   experimentThread host vcfPath (writeChan eventChan)
-  runWebUI eventChan
+  --   experimentThread host vcfPath (handleProgress stateVar)
+
+  runWebUI stateVar
 
 genMain :: IO ()
 genMain = do
