@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -106,19 +107,22 @@ castToFinalType e = do
 
 -- | Generate a type that the input type can be cast to
 castToType :: MonadGen m => SC.SCType -> m SC.SCType
-castToType t =
-  Hog.choice
-    [ SC.SCInt <$> someWidth,
-      SC.SCUInt <$> someWidth,
-      do
-        w <- someWidth
-        i <- Hog.int (Hog.Range.constant 0 w)
-        return (SC.SCFixed w i),
-      do
-        w <- someWidth
-        i <- Hog.int (Hog.Range.constant 0 w)
-        return (SC.SCUFixed w i)
-    ]
+castToType = \case
+  -- FIXME: fixed-to-uint is broken for the version of vcf I am currently
+  -- testing. This workaround should be an option at the top level.
+  SC.SCFixed {} -> Hog.choice [someInt, someFixed, someUFixed]
+  _ -> Hog.choice [someInt, someUInt, someFixed, someUFixed]
+  where
+    someInt = SC.SCInt <$> someWidth
+    someUInt = SC.SCUInt <$> someWidth
+    someFixed = do
+      w <- someWidth
+      i <- Hog.int (Hog.Range.constant 0 w)
+      return (SC.SCFixed w i)
+    someUFixed = do
+      w <- someWidth
+      i <- Hog.int (Hog.Range.constant 0 w)
+      return (SC.SCUFixed w i)
 
 isFinalType :: SC.SCType -> Bool
 isFinalType SC.SCInt {} = True
