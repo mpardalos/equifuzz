@@ -47,6 +47,7 @@ main {
 .experiment-list {
     border: var(--border);
     border-radius: var(--border-radius);
+    height: 100%;
     overflow: scroll;
 }
 
