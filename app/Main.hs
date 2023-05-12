@@ -1,5 +1,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NumDecimals #-}
 
 module Main where
 
@@ -28,11 +29,53 @@ experimentThread host vcfPath reportProgress =
       )
       (const $ experimentThread host vcfPath reportProgress)
 
+testThread :: (ExperimentProgress -> IO ()) -> IO ()
+testThread reportProgress = void . forkIO $ do
+  forM_ [1 .. 10] . const . try @SomeException $ do
+    experiment <- mkTestExperiment
+    reportProgress (Began experiment)
+
+  forM_ [1 .. 10] . const $ do
+    forM_ [Just True, Just False, Nothing] $ \proofFound -> try @SomeException $ do
+      experiment <- mkTestExperiment
+      reportProgress (Began experiment)
+      reportProgress
+        ( Completed
+            ExperimentResult
+              { proofFound,
+                counterExample = Just "counter example goes here",
+                fullOutput = "blah\nblah\nblah",
+                uuid = experiment.uuid
+              }
+        )
+  where
+    mkTestExperiment :: IO Experiment
+    mkTestExperiment = do
+      uuid <- UUID.nextRandom
+      return
+        Experiment
+          { uuid,
+            designSpec =
+              DesignSource
+                { language = Verilog,
+                  topName = "top",
+                  source = "/* I would write some Verilog here, but it's late */"
+                },
+            designImpl =
+              DesignSource
+                { language = SystemC,
+                  topName = "main",
+                  source = "int main() { return 0; }"
+                },
+            expectedResult = False
+          }
+
 tuiMain :: SSHHost -> CommandPath -> IO ()
 tuiMain host vcfPath = do
   eventChan <- B.newBChan 20
-  replicateM_ 10 $
-    experimentThread host vcfPath (B.writeBChan eventChan . ExperimentProgress)
+  -- replicateM_ 10 $
+  --   experimentThread host vcfPath (B.writeBChan eventChan . ExperimentProgress)
+  testThread (B.writeBChan eventChan . ExperimentProgress)
   runTUI eventChan
 
 webMain :: SSHHost -> CommandPath -> IO ()
@@ -40,6 +83,7 @@ webMain host vcfPath = do
   stateVar <- newMVar newWebUIState
   -- replicateM_ 10 $
   --   experimentThread host vcfPath (handleProgress stateVar)
+  testThread (handleProgress stateVar)
 
   runWebUI stateVar
 
