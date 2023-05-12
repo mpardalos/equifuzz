@@ -1,22 +1,33 @@
-.list-section {
-    display: flex;
-    flex-direction: row;
+:root {
+    --body-margin: 10px;
+    --border-radius: 10px;
+}
+
+body {
+    margin: var(--body-margin);
+}
+
+main {
+    display: grid;
+    grid:
+        'running       info' 32%
+        'interesting   info' 32%
+        'uninteresting info' 32%
+        / 50ch         2fr;
+        /* 'running interesting uninteresting' */
+        /* 'info    info        info         '; */
     gap: 10px;
-    justify-content: stretch;
-    width: 100%;
+    height: calc(100vh - 2*var(--body-margin));
 }
 
 .experiment-list-title {
     text-align: center;
-}
-
-.experiment-list-container {
-    flex-grow: 1;
+    margin: 0;
 }
 
 .experiment-list {
     border: 2px solid black;
-    border-radius: 2px;
+    border-radius: var(--border-radius);
     overflow: scroll;
 }
 
@@ -27,4 +38,38 @@
 
 .experiment-list-item:hover {
     background-color: gray;
+}
+
+#running-list, #interesting-list, #uninteresting-list {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+#running-list { grid-area: running; }
+#interesting-list { grid-area: interesting; }
+#uninteresting-list { grid-area: uninteresting; }
+#experiment-info {
+    grid-area: info;
+    /* border: 2px solid black; */
+    /* border-radius: var(--border-radius); */
+    padding: 10px;
+}
+
+.experiment-details {
+    padding: 10px;
+    border: 2px solid black;
+    border-radius: var(--border-radius);
+}
+
+table {
+    border-collapse: collapse;
+}
+table td:not(:last-child) {
+    padding-right: 1ch;
+    border-right: 1px solid black;
+}
+table td:not(:first-child) {
+    padding-left: 1ch;
+    border-left: 1px solid black;
 }
