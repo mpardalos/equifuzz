@@ -1,10 +1,29 @@
+@media(prefers-color-scheme: light) {
+    :root {
+        --bg-color: #ececec;
+        --fg-color: #202020;
+        --visited-link-color: #cc0066;
+    }
+}
+
+@media(prefers-color-scheme: dark) {
+    :root {
+        --bg-color: #202020;
+        --fg-color: #ececec;
+        --visited-link-color: #cc0066;
+    }
+}
+
 :root {
     --body-margin: 10px;
     --border-radius: 10px;
+    --border: 2px solid var(--fg-color);
 }
 
 body {
     margin: var(--body-margin);
+    background-color: var(--bg-color);
+    color: var(--fg-color);
 }
 
 main {
@@ -26,7 +45,7 @@ main {
 }
 
 .experiment-list {
-    border: 2px solid black;
+    border: var(--border);
     border-radius: var(--border-radius);
     overflow: scroll;
 }
@@ -51,14 +70,12 @@ main {
 #uninteresting-list { grid-area: uninteresting; }
 .experiment-info {
     grid-area: info;
-    /* border: 2px solid black; */
-    /* border-radius: var(--border-radius); */
     padding: 10px;
 }
 
 .experiment-details {
     padding: 10px;
-    border: 2px solid black;
+    border: var(--border);
     border-radius: var(--border-radius);
 }
 
@@ -67,14 +84,14 @@ table {
 }
 table td:not(:last-child) {
     padding-right: 1ch;
-    border-right: 1px solid black;
+    border-right: 1px solid var(--fg-color);
 }
 table td:not(:first-child) {
     padding-left: 1ch;
-    border-left: 1px solid black;
+    border-left: 1px solid var(--fg-color);
 }
 
 .source {
-    border: 2px solid black;
+    border: var(--border);
     border-radius: var(--border-radius);
 }
