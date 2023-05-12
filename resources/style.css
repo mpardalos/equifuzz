@@ -33,8 +33,6 @@ main {
         'interesting   info' 32%
         'uninteresting info' 32%
         / 50ch         2fr;
-        /* 'running interesting uninteresting' */
-        /* 'info    info        info         '; */
     gap: 10px;
     height: calc(100vh - 2*var(--body-margin));
 }
