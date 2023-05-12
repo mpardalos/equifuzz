@@ -21,7 +21,7 @@ import Data.Text (Text)
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
-import Experiments (Experiment (..), ExperimentProgress (..), ExperimentResult (..))
+import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..))
 import GHC.Generics (Generic)
 import Network.HTTP.Types.Status (status404)
 import Optics (At (at), makeFieldLabelsNoPrefix, traversed, (%), (&), (.~), (?~), (^..))
@@ -29,7 +29,7 @@ import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
-import Text.Blaze.Htmx (hxGet, hxTarget)
+import Text.Blaze.Htmx (hxGet, hxSwap, hxTarget)
 import Web.Scotty (addHeader, file, get, html, next, param, scotty, status)
 
 data ExperimentInfo = ExperimentInfo
@@ -145,10 +145,11 @@ experimentList name uuids = do
       H.! A.class_ "experiment-list-item"
       H.! hxGet ("/experiments/" <> fromString (show uuid))
       H.! hxTarget "#experiment-info"
+      H.! hxSwap "outerHTML"
       $ H.toHtml (show uuid)
 
 experimentDetails :: ExperimentInfo -> Html
-experimentDetails info = do
+experimentDetails info = H.div H.! A.id "experiment-info" $ do
   H.div H.! A.class_ "experiment-details" $
     H.table $ do
       H.tr $ do
@@ -169,3 +170,11 @@ experimentDetails info = do
               Just True -> "Equivalent"
               Just False -> "Non-equivalent"
               Nothing -> "Inconclusive"
+  H.div H.! A.class_ "source" $
+    H.pre $
+      H.toHtml $
+        info.experiment.designSpec.source
+  H.div H.! A.class_ "source" $
+    H.pre $
+      H.toHtml $
+        info.experiment.designImpl.source

@@ -49,7 +49,7 @@ main {
 #running-list { grid-area: running; }
 #interesting-list { grid-area: interesting; }
 #uninteresting-list { grid-area: uninteresting; }
-#experiment-info {
+.experiment-info {
     grid-area: info;
     /* border: 2px solid black; */
     /* border-radius: var(--border-radius); */
@@ -72,4 +72,9 @@ table td:not(:last-child) {
 table td:not(:first-child) {
     padding-left: 1ch;
     border-left: 1px solid black;
+}
+
+.source {
+    border: 2px solid black;
+    border-radius: var(--border-radius);
 }
