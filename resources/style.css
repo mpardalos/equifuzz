@@ -67,12 +67,26 @@ main {
 #running-list { grid-area: running; }
 #interesting-list { grid-area: interesting; }
 #uninteresting-list { grid-area: uninteresting; }
-.experiment-info {
+
+#experiment-info {
     grid-area: info;
     padding: 10px;
+
+    display: grid;
+    grid:
+        "details details"
+        "spec    impl   "
+        "log     log    ";
+    grid-gap: 10px;
+
 }
 
-.experiment-details {
+#experiment-info .experiment-details {grid-area: details;}
+#experiment-info .experiment-source-impl {grid-area: impl;}
+#experiment-info .experiment-source-spec {grid-area: spec;}
+#experiment-info .experiment-log {grid-area: log;}
+
+.info-box {
     padding: 10px;
     border: var(--border);
     border-radius: var(--border-radius);
@@ -88,9 +102,4 @@ table td:not(:last-child) {
 table td:not(:first-child) {
     padding-left: 1ch;
     border-left: 1px solid var(--fg-color);
-}
-
-.source {
-    border: var(--border);
-    border-radius: var(--border-radius);
 }

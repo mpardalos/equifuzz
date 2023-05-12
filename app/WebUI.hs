@@ -150,7 +150,7 @@ experimentList name uuids = do
 
 experimentDetails :: ExperimentInfo -> Html
 experimentDetails info = H.div H.! A.id "experiment-info" $ do
-  H.div H.! A.class_ "experiment-details" $
+  (H.div H.! A.class_ "experiment-details info-box") $
     H.table $ do
       H.tr $ do
         H.td "UUID"
@@ -170,11 +170,21 @@ experimentDetails info = H.div H.! A.id "experiment-info" $ do
               Just True -> "Equivalent"
               Just False -> "Non-equivalent"
               Nothing -> "Inconclusive"
-  H.div H.! A.class_ "source" $
+  H.div H.! A.class_ "info-box experiment-source-spec" $
     H.pre $
       H.toHtml $
         info.experiment.designSpec.source
-  H.div H.! A.class_ "source" $
+  H.div H.! A.class_ "info-box experiment-source-impl" $
     H.pre $
       H.toHtml $
         info.experiment.designImpl.source
+
+  whenJust info.result $ \result -> do
+    H.div H.! A.class_ "info-box experiment-log" $
+      H.pre $
+        H.toHtml $
+          result.fullOutput
+
+whenJust :: Applicative f => Maybe a -> (a -> f ()) -> f ()
+whenJust Nothing _ = pure ()
+whenJust (Just x) f = f x
