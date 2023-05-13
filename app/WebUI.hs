@@ -170,20 +170,17 @@ experimentDetails info = H.div H.! A.id "experiment-info" $ do
               Just True -> "Equivalent"
               Just False -> "Non-equivalent"
               Nothing -> "Inconclusive"
-  H.div H.! A.class_ "info-box experiment-source-spec" $
+  H.div H.! A.class_ "info-box long experiment-source-spec" $
     H.pre $
-      H.toHtml $
-        info.experiment.designSpec.source
-  H.div H.! A.class_ "info-box experiment-source-impl" $
+      H.text ("\n" <> info.experiment.designSpec.source)
+  H.div H.! A.class_ "info-box long experiment-source-impl" $
     H.pre $
-      H.toHtml $
-        info.experiment.designImpl.source
+      H.text ("\n" <> info.experiment.designImpl.source)
 
   whenJust info.result $ \result -> do
-    H.div H.! A.class_ "info-box experiment-log" $
+    H.div H.! A.class_ "info-box long experiment-log" $
       H.pre $
-        H.toHtml $
-          result.fullOutput
+        H.text ("\n" <> result.fullOutput)
 
 whenJust :: Applicative f => Maybe a -> (a -> f ()) -> f ()
 whenJust Nothing _ = pure ()

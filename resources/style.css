@@ -32,7 +32,7 @@ main {
         'running       info' 32%
         'interesting   info' 32%
         'uninteresting info' 32%
-        / 50ch         2fr;
+        / fit-content(100%) auto;
     gap: 10px;
     height: calc(100vh - 2*var(--body-margin));
 }
@@ -50,7 +50,8 @@ main {
 }
 
 .experiment-list-item {
-    padding-left: 20px;
+    padding-left: 10px;
+    padding-right: 10px;
     line-height: 2;
 }
 
@@ -74,11 +75,12 @@ main {
 
     display: grid;
     grid:
-        "details details"
-        "spec    impl   "
-        "log     log    ";
+        "details details" min-content
+        "spec    impl   " 1fr
+        "log     log    " 1fr
+        / 1fr 1fr
+    ;
     grid-gap: 10px;
-
 }
 
 #experiment-info .experiment-details {grid-area: details;}
@@ -91,6 +93,8 @@ main {
     border: var(--border);
     border-radius: var(--border-radius);
 }
+
+.long {overflow: scroll;}
 
 table {
     border-collapse: collapse;
