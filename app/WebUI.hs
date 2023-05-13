@@ -19,13 +19,11 @@ import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String (IsString (fromString))
-import Data.Text (Text)
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..))
 import GHC.Generics (Generic)
-import Network.HTTP.Types.Status (status404)
 import Optics (At (at), makeFieldLabelsNoPrefix, (%), (%?))
 import Optics.State.Operators ((.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
@@ -33,7 +31,7 @@ import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxGet, hxSwap, hxTarget, hxTrigger)
-import Web.Scotty (ActionM, ScottyM, addHeader, file, get, html, next, param, raw, scotty, status)
+import Web.Scotty (ActionM, addHeader, get, html, next, param, raw, scotty)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
@@ -81,22 +79,21 @@ runWebUI stateVar = scotty 8888 $ do
         Nothing -> next
     state <- liftIO (readMVar stateVar)
 
-    case Map.lookup uuid state.experiments of
-      Just experimentInfo ->
-        html
-          . LT.pack
-          . H.renderHtml
-          $ experimentDetails experimentInfo
-      Nothing -> status status404
+    whenJust (Map.lookup uuid state.experiments) $ \info ->
+      blazeHtml (experimentInfo info)
+
   get "/running-list" $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (runningList state)
+
   get "/interesting-list" $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (interestingList state)
+
   get "/uninteresting-list" $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (uninterestingList state)
+
   get "/" $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (indexPage state)
@@ -115,58 +112,49 @@ indexPage state = H.docTypeHtml $ do
       uninterestingList state
       H.div H.! A.id "experiment-info" $ pure ()
 
-hxReloadFrom :: H.AttributeValue -> H.Attribute
-hxReloadFrom url = hxGet url <> hxTrigger "load delay:5s" <> hxSwap "outerHTML"
-
 runningList :: WebUIState -> Html
-runningList state =
-  H.div
-    H.! A.id "running-list"
-    H.! hxReloadFrom "/running-list"
-    $ experimentList
-      "Running"
-      [ uuid
-        | (uuid, experiment) <- Map.toList state.experiments,
-          experimentBucket experiment == Running
-      ]
+runningList =
+  experimentUUIDList
+    "Running"
+    "running-list"
+    "/running-list"
+    Running
 
 interestingList :: WebUIState -> Html
-interestingList state =
-  H.div
-    H.! A.id "interesting-list"
-    H.! hxReloadFrom "/interesting-list"
-    $ experimentList
-      "Interesting"
-      [ uuid
-        | (uuid, experiment) <- Map.toList state.experiments,
-          experimentBucket experiment == Interesting
-      ]
+interestingList =
+  experimentUUIDList
+    "Interesting"
+    "interesting-list"
+    "/interesting-list"
+    Interesting
 
 uninterestingList :: WebUIState -> Html
-uninterestingList state =
-  H.div
-    H.! A.id "uninteresting-list"
-    H.! hxReloadFrom "/uninteresting-list"
-    $ experimentList
-      "Uninteresting"
-      [ uuid
-        | (uuid, experiment) <- Map.toList state.experiments,
-          experimentBucket experiment == Uninteresting
-      ]
+uninterestingList =
+  experimentUUIDList
+    "Uninteresting"
+    "uninteresting-list"
+    "/uninteresting-list"
+    Uninteresting
 
-experimentList :: Text -> [UUID] -> Html
-experimentList name uuids = do
-  H.h2 H.! A.class_ "experiment-list-title" $ H.toHtml name
-  H.div H.! A.class_ "experiment-list" $ forM_ uuids $ \uuid -> do
-    H.div
-      H.! A.class_ "experiment-list-item"
-      H.! hxGet ("/experiments/" <> fromString (show uuid))
-      H.! hxTarget "#experiment-info"
-      H.! hxSwap "outerHTML"
-      $ H.toHtml (show uuid)
+experimentUUIDList :: Html -> H.AttributeValue -> H.AttributeValue -> ExperimentBucket -> WebUIState -> Html
+experimentUUIDList title elementId updateUrl bucket state =
+  H.div H.! A.id elementId H.! hxReloadFrom updateUrl $ do
+    H.h2 H.! A.class_ "experiment-list-title" $ title
+    let uuids =
+          [ uuid
+            | (uuid, experiment) <- Map.toList state.experiments,
+              experimentBucket experiment == bucket
+          ]
+    H.div H.! A.class_ "experiment-list" $ forM_ uuids $ \uuid -> do
+      H.div
+        H.! A.class_ "experiment-list-item"
+        H.! hxGet ("/experiments/" <> fromString (show uuid))
+        H.! hxTarget "#experiment-info"
+        H.! hxSwap "outerHTML"
+        $ H.toHtml (show uuid)
 
-experimentDetails :: ExperimentInfo -> Html
-experimentDetails info = H.div
+experimentInfo :: ExperimentInfo -> Html
+experimentInfo info = H.div
   H.! A.id "experiment-info"
   H.! hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid))
   $ do
@@ -201,6 +189,9 @@ experimentDetails info = H.div
       H.div H.! A.class_ "info-box long experiment-log" $
         H.pre $
           H.text ("\n" <> result.fullOutput)
+
+hxReloadFrom :: H.AttributeValue -> H.Attribute
+hxReloadFrom url = hxGet url <> hxTrigger "load delay:5s" <> hxSwap "outerHTML"
 
 whenJust :: Applicative f => Maybe a -> (a -> f ()) -> f ()
 whenJust Nothing _ = pure ()
