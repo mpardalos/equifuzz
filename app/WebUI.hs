@@ -113,13 +113,14 @@ indexPage state = H.docTypeHtml $ do
       uninterestingList state
       H.div H.! A.id "experiment-info" $ pure ()
 
+hxReloadFrom :: H.AttributeValue -> H.Attribute
+hxReloadFrom url = hxGet url <> hxTrigger "load delay:5s" <> hxSwap "outerHTML"
+
 runningList :: WebUIState -> Html
 runningList state =
   H.div
     H.! A.id "running-list"
-    H.! hxGet "/running-list"
-    H.! hxTrigger "load delay:5s"
-    H.! hxSwap "outerHTML"
+    H.! hxReloadFrom "/running-list"
     $ experimentList
       "Running"
       [ uuid
@@ -131,9 +132,7 @@ interestingList :: WebUIState -> Html
 interestingList state =
   H.div
     H.! A.id "interesting-list"
-    H.! hxGet "/interesting-list"
-    H.! hxTrigger "load delay:5s"
-    H.! hxSwap "outerHTML"
+    H.! hxReloadFrom "/interesting-list"
     $ experimentList
       "Interesting"
       [ uuid
@@ -145,9 +144,7 @@ uninterestingList :: WebUIState -> Html
 uninterestingList state =
   H.div
     H.! A.id "uninteresting-list"
-    H.! hxGet "/uninteresting-list"
-    H.! hxTrigger "load delay:5s"
-    H.! hxSwap "outerHTML"
+    H.! hxReloadFrom "/uninteresting-list"
     $ experimentList
       "Uninteresting"
       [ uuid
@@ -169,9 +166,7 @@ experimentList name uuids = do
 experimentDetails :: ExperimentInfo -> Html
 experimentDetails info = H.div
   H.! A.id "experiment-info"
-  H.! hxGet ("/experiments/" <> fromString (show info.experiment.uuid))
-  H.! hxTrigger "load delay:5s"
-  H.! hxSwap "outerHTML"
+  H.! hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid))
   $ do
     (H.div H.! A.class_ "experiment-details info-box") $
       H.table $ do
