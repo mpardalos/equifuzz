@@ -72,7 +72,6 @@ main {
 
 #experiment-info {
     grid-area: info;
-    padding: 10px;
 
     display: grid;
     grid:
