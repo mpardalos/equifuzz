@@ -14,6 +14,8 @@ import Control.Concurrent (MVar, modifyMVar_, readMVar)
 import Control.Monad (forM_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (execStateT)
+import Data.ByteString.Lazy qualified as LB
+import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String (IsString (fromString))
@@ -31,7 +33,7 @@ import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxGet, hxSwap, hxTarget, hxTrigger)
-import Web.Scotty (ActionM, ScottyM, addHeader, file, get, html, next, param, scotty, status)
+import Web.Scotty (ActionM, ScottyM, addHeader, file, get, html, next, param, raw, scotty, status)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
@@ -64,10 +66,14 @@ handleProgress stateVar progress =
 runWebUI :: MVar WebUIState -> IO ()
 runWebUI stateVar = scotty 8888 $ do
   get "/resources/style.css" $
-    file "resources/style.css"
+    raw $
+      LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/style.css")
+
   get "/resources/htmx.js" $ do
     addHeader "Content-Type" "application/javascript"
-    file "resources/htmx.js"
+    raw $
+      LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/htmx.js")
+
   get "/experiments/:uuid" $ do
     uuid <-
       UUID.fromString <$> param "uuid" >>= \case

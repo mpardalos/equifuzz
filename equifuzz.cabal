@@ -9,6 +9,7 @@ author:             Michalis Pardalos
 maintainer:         me@mpardalos.com
 category:           Testing
 build-type:         Simple
+extra-source-files: resources/style.css, resources/htmx.js
 
 executable equifuzz
     ghc-options: -Wall -threaded
@@ -22,6 +23,7 @@ executable equifuzz
     -- other-extensions:
     build-depends:    base ==4.16.*
                     , text
+                    , bytestring == 0.11.*
                     , hedgehog
                     , shelly
                     , optics
@@ -43,6 +45,7 @@ executable equifuzz
                     , blaze-html == 0.9.*
                     , blaze-htmx == 0.1.*
                     , http-types == 0.12.*
+                    , file-embed == 0.0.15.*
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions:
