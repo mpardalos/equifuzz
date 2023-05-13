@@ -144,52 +144,59 @@ uninterestingList =
 
 experimentUUIDList :: Html -> H.AttributeValue -> H.AttributeValue -> ExperimentBucket -> WebUIState -> Html
 experimentUUIDList title elementId updateUrl bucket state =
-  H.div H.! A.id elementId H.! hxReloadFrom updateUrl $ do
-    H.h2 H.! A.class_ "experiment-list-title" $ title
+  H.div H.! A.class_ "info-box" H.! A.id elementId H.! hxReloadFrom updateUrl $ do
+    H.h2 H.! A.class_ "info-box-title" $ title
+
     let uuids =
           [ uuid
             | (uuid, experiment) <- Map.toList state.experiments,
               experimentBucket experiment == bucket
           ]
-    H.div H.! A.class_ "experiment-list" $ forM_ uuids $ \uuid -> do
-      H.div
-        H.! A.class_ "experiment-list-item"
-        H.! hxGet ("/experiments/" <> fromString (show uuid))
-        H.! hxTarget "#experiment-info"
-        H.! hxSwap "outerHTML"
-        $ H.toHtml (show uuid)
+    H.div H.! A.class_ "info-box-content long" $
+      forM_ uuids $ \uuid -> do
+        H.div
+          H.! A.class_ "experiment-list-item"
+          H.! hxGet ("/experiments/" <> fromString (show uuid))
+          H.! hxTarget "#experiment-info"
+          H.! hxSwap "outerHTML"
+          $ H.toHtml (show uuid)
 
 experimentInfo :: ExperimentInfo -> Html
 experimentInfo info = H.div
   H.! A.id "experiment-info"
   H.!? (experimentBucket info == Running, hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid)))
   $ do
-    (H.div H.! A.class_ "experiment-details info-box") $
-      H.table $ do
-        H.tr $ do
-          H.td "UUID"
-          H.td $ fromString $ show info.experiment.uuid
-        H.tr $ do
-          H.td "Expected Result"
-          H.td $
-            if info.experiment.expectedResult
-              then "Equivalent"
-              else "Non-equivalent"
-        case info.result of
-          Nothing -> pure ()
-          Just result -> do
-            H.tr $ do
-              H.td "Actual Result"
-              H.td $ case result.proofFound of
-                Just True -> "Equivalent"
-                Just False -> "Non-equivalent"
-                Nothing -> "Inconclusive"
-    H.div H.! A.class_ "info-box long experiment-source-spec" $
-      H.pre $
-        H.text ("\n" <> info.experiment.designSpec.source)
-    H.div H.! A.class_ "info-box long experiment-source-impl" $
-      H.pre $
-        H.text ("\n" <> info.experiment.designImpl.source)
+    H.div H.! A.class_ "experiment-details info-box" $
+      H.div H.! A.class_ "info-box-content" $
+        H.table $ do
+          H.tr $ do
+            H.td "UUID"
+            H.td $ fromString $ show info.experiment.uuid
+          H.tr $ do
+            H.td "Expected Result"
+            H.td $
+              if info.experiment.expectedResult
+                then "Equivalent"
+                else "Non-equivalent"
+          case info.result of
+            Nothing -> pure ()
+            Just result -> do
+              H.tr $ do
+                H.td "Actual Result"
+                H.td $ case result.proofFound of
+                  Just True -> "Equivalent"
+                  Just False -> "Non-equivalent"
+                  Nothing -> "Inconclusive"
+    H.div H.! A.class_ "info-box long experiment-source-spec" $ do
+      H.h2 H.! A.class_ "info-box-title" $ "Source"
+      H.div H.! A.class_ "info-box-content" $
+        H.pre $
+          H.text ("\n" <> info.experiment.designSpec.source)
+    H.div H.! A.class_ "info-box experiment-source-impl" $ do
+      H.h2 H.! A.class_ "info-box-title" $ "Implementation"
+      H.div H.! A.class_ "info-box-content long" $
+        H.pre $
+          H.text ("\n" <> info.experiment.designImpl.source)
 
     experimentExtraOutput CounterExample info
 

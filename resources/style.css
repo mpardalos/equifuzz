@@ -92,9 +92,21 @@ main {
 #experiment-info .experiment-extra-output {grid-area: output;}
 
 .info-box {
-    padding: 10px;
     border: var(--border);
     border-radius: var(--border-radius);
+}
+
+.info-box-title {
+    background: var(--fg-color);
+    color: var(--bg-color);
+    margin: 0;
+    padding-left: 10px;
+    padding-right: 10px;
+    border-bottom: 1px solid var(--fg-color);
+}
+
+.info-box-content {
+    padding: 10px;
 }
 
 .long {overflow: scroll;}
@@ -125,6 +137,8 @@ table td:not(:first-child) {
 .tab-box .tabs {
     font-size: 1.5em;
     border-bottom: 1px solid var(--fg-color);
+    background: var(--fg-color);
+    color: var(--bg-color);
 }
 
 .tab-box .tabs .tab {
@@ -134,6 +148,6 @@ table td:not(:first-child) {
 }
 
 .tab-box .selected {
-    background-color: var(--fg-color);
-    color: var(--bg-color);
+    background: var(--bg-color);
+    color: var(--fg-color);
 }
