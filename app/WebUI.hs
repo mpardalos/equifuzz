@@ -30,8 +30,8 @@ import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
-import Text.Blaze.Htmx (hxGet, hxSwap, hxTarget)
-import Web.Scotty (addHeader, file, get, html, next, param, scotty, status)
+import Text.Blaze.Htmx (hxGet, hxSwap, hxTarget, hxTrigger)
+import Web.Scotty (ActionM, ScottyM, addHeader, file, get, html, next, param, scotty, status)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
@@ -86,12 +86,18 @@ runWebUI stateVar = scotty 8888 $ do
           . H.renderHtml
           $ experimentDetails experimentInfo
       Nothing -> status status404
+  get "/running-list" $ do
+    state <- liftIO (readMVar stateVar)
+    blazeHtml (runningList state)
+  get "/interesting-list" $ do
+    state <- liftIO (readMVar stateVar)
+    blazeHtml (interestingList state)
+  get "/uninteresting-list" $ do
+    state <- liftIO (readMVar stateVar)
+    blazeHtml (uninterestingList state)
   get "/" $ do
     state <- liftIO (readMVar stateVar)
-    html
-      . LT.pack
-      . H.renderHtml
-      $ indexPage state
+    blazeHtml (indexPage state)
 
 indexPage :: WebUIState -> Html
 indexPage state = H.docTypeHtml $ do
@@ -102,29 +108,52 @@ indexPage state = H.docTypeHtml $ do
     H.script H.! A.src "/resources/htmx.js" $ ""
   H.body $ do
     H.main $ do
-      H.div H.! A.id "running-list" $
-        experimentList
-          "Running"
-          [ uuid
-            | (uuid, experiment) <- Map.toList state.experiments,
-              experimentBucket experiment == Running
-          ]
-      H.div H.! A.id "interesting-list" $
-        experimentList
-          "Interesting"
-          [ uuid
-            | (uuid, experiment) <- Map.toList state.experiments,
-              experimentBucket experiment == Interesting
-          ]
-      H.div H.! A.id "uninteresting-list" $
-        experimentList
-          "Uninteresting"
-          [ uuid
-            | (uuid, experiment) <- Map.toList state.experiments,
-              experimentBucket experiment == Uninteresting
-          ]
-      H.div H.! A.id "experiment-info" $
-        pure ()
+      runningList state
+      interestingList state
+      uninterestingList state
+      H.div H.! A.id "experiment-info" $ pure ()
+
+runningList :: WebUIState -> Html
+runningList state =
+  H.div
+    H.! A.id "running-list"
+    H.! hxGet "/running-list"
+    H.! hxTrigger "load delay:5s"
+    H.! hxSwap "outerHTML"
+    $ experimentList
+      "Running"
+      [ uuid
+        | (uuid, experiment) <- Map.toList state.experiments,
+          experimentBucket experiment == Running
+      ]
+
+interestingList :: WebUIState -> Html
+interestingList state =
+  H.div
+    H.! A.id "interesting-list"
+    H.! hxGet "/interesting-list"
+    H.! hxTrigger "load delay:5s"
+    H.! hxSwap "outerHTML"
+    $ experimentList
+      "Interesting"
+      [ uuid
+        | (uuid, experiment) <- Map.toList state.experiments,
+          experimentBucket experiment == Interesting
+      ]
+
+uninterestingList :: WebUIState -> Html
+uninterestingList state =
+  H.div
+    H.! A.id "uninteresting-list"
+    H.! hxGet "/uninteresting-list"
+    H.! hxTrigger "load delay:5s"
+    H.! hxSwap "outerHTML"
+    $ experimentList
+      "Uninteresting"
+      [ uuid
+        | (uuid, experiment) <- Map.toList state.experiments,
+          experimentBucket experiment == Uninteresting
+      ]
 
 experimentList :: Text -> [UUID] -> Html
 experimentList name uuids = do
@@ -138,38 +167,43 @@ experimentList name uuids = do
       $ H.toHtml (show uuid)
 
 experimentDetails :: ExperimentInfo -> Html
-experimentDetails info = H.div H.! A.id "experiment-info" $ do
-  (H.div H.! A.class_ "experiment-details info-box") $
-    H.table $ do
-      H.tr $ do
-        H.td "UUID"
-        H.td $ fromString $ show info.experiment.uuid
-      H.tr $ do
-        H.td "Expected Result"
-        H.td $
-          if info.experiment.expectedResult
-            then "Equivalent"
-            else "Non-equivalent"
-      case info.result of
-        Nothing -> pure ()
-        Just result -> do
-          H.tr $ do
-            H.td "Actual Result"
-            H.td $ case result.proofFound of
-              Just True -> "Equivalent"
-              Just False -> "Non-equivalent"
-              Nothing -> "Inconclusive"
-  H.div H.! A.class_ "info-box long experiment-source-spec" $
-    H.pre $
-      H.text ("\n" <> info.experiment.designSpec.source)
-  H.div H.! A.class_ "info-box long experiment-source-impl" $
-    H.pre $
-      H.text ("\n" <> info.experiment.designImpl.source)
-
-  whenJust info.result $ \result -> do
-    H.div H.! A.class_ "info-box long experiment-log" $
+experimentDetails info = H.div
+  H.! A.id "experiment-info"
+  H.! hxGet ("/experiments/" <> fromString (show info.experiment.uuid))
+  H.! hxTrigger "load delay:5s"
+  H.! hxSwap "outerHTML"
+  $ do
+    (H.div H.! A.class_ "experiment-details info-box") $
+      H.table $ do
+        H.tr $ do
+          H.td "UUID"
+          H.td $ fromString $ show info.experiment.uuid
+        H.tr $ do
+          H.td "Expected Result"
+          H.td $
+            if info.experiment.expectedResult
+              then "Equivalent"
+              else "Non-equivalent"
+        case info.result of
+          Nothing -> pure ()
+          Just result -> do
+            H.tr $ do
+              H.td "Actual Result"
+              H.td $ case result.proofFound of
+                Just True -> "Equivalent"
+                Just False -> "Non-equivalent"
+                Nothing -> "Inconclusive"
+    H.div H.! A.class_ "info-box long experiment-source-spec" $
       H.pre $
-        H.text ("\n" <> result.fullOutput)
+        H.text ("\n" <> info.experiment.designSpec.source)
+    H.div H.! A.class_ "info-box long experiment-source-impl" $
+      H.pre $
+        H.text ("\n" <> info.experiment.designImpl.source)
+
+    whenJust info.result $ \result -> do
+      H.div H.! A.class_ "info-box long experiment-log" $
+        H.pre $
+          H.text ("\n" <> result.fullOutput)
 
 whenJust :: Applicative f => Maybe a -> (a -> f ()) -> f ()
 whenJust Nothing _ = pure ()
@@ -183,3 +217,6 @@ experimentBucket ExperimentInfo {result = Nothing} = Running
 experimentBucket (ExperimentInfo experiment (Just result))
   | Just experiment.expectedResult == result.proofFound = Uninteresting
   | otherwise = Interesting
+
+blazeHtml :: Html -> ActionM ()
+blazeHtml = html . LT.pack . H.renderHtml
