@@ -79,7 +79,7 @@ main {
     grid:
         "details details" min-content
         "spec    impl   " 1fr
-        "log     log    " 1fr
+        "output  output " 32%
         / 1fr 1fr
     ;
     grid-gap: 10px;
@@ -88,7 +88,7 @@ main {
 #experiment-info .experiment-details {grid-area: details;}
 #experiment-info .experiment-source-impl {grid-area: impl;}
 #experiment-info .experiment-source-spec {grid-area: spec;}
-#experiment-info .experiment-log {grid-area: log;}
+#experiment-info .experiment-extra-output {grid-area: output;}
 
 .info-box {
     padding: 10px;
@@ -108,4 +108,31 @@ table td:not(:last-child) {
 table td:not(:first-child) {
     padding-left: 1ch;
     border-left: 1px solid var(--fg-color);
+}
+
+/* Move padding to .tab-box-content if using tabs so that the tabs go all the
+ * way to the outer edge of the box */
+.info-box.tab-box {padding: 0;}
+.info-box.tab-box .tab-box-content {padding: 10px;}
+
+/* Needed to prevent overflow if a child has overflow: scroll */
+.tab-box {
+    display: flex;
+    flex-direction: column;
+}
+
+.tab-box .tabs {
+    font-size: 1.5em;
+    border-bottom: 1px solid var(--fg-color);
+}
+
+.tab-box .tabs .tab {
+    padding-left: 10px;
+    padding-right: 10px;
+    cursor: pointer;
+}
+
+.tab-box .selected {
+    background-color: var(--fg-color);
+    color: var(--bg-color);
 }

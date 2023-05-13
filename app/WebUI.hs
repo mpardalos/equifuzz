@@ -18,6 +18,7 @@ import Data.ByteString.Lazy qualified as LB
 import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.String (IsString (fromString))
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
@@ -78,6 +79,14 @@ runWebUI stateVar = scotty 8888 $ do
 
     whenJust (Map.lookup uuid state.experiments) $ \info ->
       blazeHtml (experimentInfo info)
+
+  get "/experiments/:uuid/outputs/:output-type" $ do
+    UUIDParam uuid <- param "uuid"
+    outputType <- param "output-type"
+    state <- liftIO (readMVar stateVar)
+
+    whenJust (Map.lookup uuid state.experiments) $ \info ->
+      blazeHtml (experimentExtraOutput outputType info)
 
   get "/running-list" $ do
     state <- liftIO (readMVar stateVar)
@@ -182,11 +191,42 @@ experimentInfo info = H.div
       H.pre $
         H.text ("\n" <> info.experiment.designImpl.source)
 
-    whenJust info.result $ \result -> do
-      H.div H.! A.class_ "info-box long experiment-log" $
-        H.pre $
-          H.text ("\n" <> result.fullOutput)
+    experimentExtraOutput CounterExample info
 
+data OutputType = Log | CounterExample
+  deriving (Show, Eq, Ord)
+
+instance Parsable OutputType where
+  parseParam "log" = Right Log
+  parseParam "counter-example" = Right CounterExample
+  parseParam txt = Left ("'" <> txt <> "' is not a valid output type")
+
+experimentExtraOutput :: OutputType -> ExperimentInfo -> Html
+experimentExtraOutput tab info = whenJust info.result $ \result -> do
+  let text = case tab of
+        Log -> result.fullOutput
+        CounterExample -> fromMaybe "" (result.counterExample)
+
+  H.div H.! A.class_ "info-box tab-box experiment-extra-output" $ do
+    H.div H.! A.class_ "tabs" $ do
+      let uuid = fromString (show info.experiment.uuid)
+      H.span
+        H.! hxGet ("/experiments/" <> uuid <> "/outputs/log")
+        H.! hxTarget "closest .experiment-extra-output"
+        H.! hxSwap "outerHTML"
+        H.! (if tab == Log then A.class_ "tab selected" else A.class_ "tab")
+        $ "Log"
+      H.span
+        H.! hxGet ("/experiments/" <> uuid <> "/outputs/counter-example")
+        H.! hxTarget "closest .experiment-extra-output"
+        H.! hxSwap "outerHTML"
+        H.! (if tab == CounterExample then A.class_ "tab selected" else A.class_ "tab")
+        $ "Counter Example"
+    H.div H.! A.class_ "tab-box-content long" $
+      H.pre $
+        H.text ("\n" <> text)
+
+-- | htmx attributes to make an element continuously poll-reload from a URL
 hxReloadFrom :: H.AttributeValue -> H.Attribute
 hxReloadFrom url = hxGet url <> hxTrigger "load delay:5s" <> hxSwap "outerHTML"
 
