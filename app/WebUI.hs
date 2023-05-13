@@ -65,10 +65,6 @@ runWebUI :: MVar WebUIState -> IO ()
 runWebUI stateVar = scotty 8888 $ do
   get "/resources/style.css" $
     file "resources/style.css"
-  get "/resources/htmx.min.js.gz" $ do
-    addHeader "Content-Type" "application/javascript"
-    addHeader "Content-Encoding" "gzip"
-    file "resources/htmx.min.js.gz"
   get "/resources/htmx.js" $ do
     addHeader "Content-Type" "application/javascript"
     file "resources/htmx.js"
