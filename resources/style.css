@@ -24,6 +24,7 @@ body {
     margin: var(--body-margin);
     background-color: var(--bg-color);
     color: var(--fg-color);
+    font-family: sans-serif;
 }
 
 main {
