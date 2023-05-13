@@ -10,10 +10,10 @@
 
 module WebUI (WebUIState, newWebUIState, handleProgress, runWebUI) where
 
-import Control.Applicative ((<|>))
 import Control.Concurrent (MVar, modifyMVar_, readMVar)
 import Control.Monad (forM_)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.State (execStateT)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String (IsString (fromString))
@@ -24,7 +24,8 @@ import Data.UUID qualified as UUID
 import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..))
 import GHC.Generics (Generic)
 import Network.HTTP.Types.Status (status404)
-import Optics (At (at), makeFieldLabelsNoPrefix, traversed, (%), (&), (.~), (?~), (^..))
+import Optics (At (at), makeFieldLabelsNoPrefix, (%), (%?))
+import Optics.State.Operators ((.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
@@ -40,50 +41,25 @@ data ExperimentInfo = ExperimentInfo
 
 makeFieldLabelsNoPrefix ''ExperimentInfo
 
-data WebUIState = WebUIState
-  { running :: Map UUID ExperimentInfo,
-    interesting :: Map UUID ExperimentInfo,
-    uninteresting :: Map UUID ExperimentInfo
+newtype WebUIState = WebUIState
+  { experiments :: Map UUID ExperimentInfo
   }
   deriving (Generic)
 
 makeFieldLabelsNoPrefix ''WebUIState
 
 newWebUIState :: WebUIState
-newWebUIState =
-  WebUIState
-    { running = Map.empty,
-      interesting = Map.empty,
-      uninteresting = Map.empty
-    }
-
-lookupPopKey :: Ord k => k -> Map k v -> Maybe (v, Map k v)
-lookupPopKey k m = do
-  v <- Map.lookup k m
-  Just (v, Map.delete k m)
+newWebUIState = WebUIState {experiments = Map.empty}
 
 handleProgress :: MVar WebUIState -> ExperimentProgress -> IO ()
 handleProgress stateVar progress =
-  modifyMVar_ stateVar $
-    pure . \state ->
-      case progress of
-        Began experiment ->
-          state & #running % at (experiment.uuid) ?~ ExperimentInfo experiment Nothing
-        Aborted experiment ->
-          case lookupPopKey experiment.uuid state.running of
-            Nothing -> state
-            Just (_, runningWithoutAborted) ->
-              state & #running .~ runningWithoutAborted
-        Completed result ->
-          case lookupPopKey result.uuid state.running of
-            Just (experimentInfo, runningWithoutCompleted) ->
-              state
-                & #running .~ runningWithoutCompleted
-                & if result.proofFound == Just experimentInfo.experiment.expectedResult
-                  then #uninteresting % at result.uuid ?~ (experimentInfo {result = Just result})
-                  else #interesting % at result.uuid ?~ (experimentInfo {result = Just result})
-            -- FIXME: Report this as an error. An experiment was completed but it is not in running
-            Nothing -> state
+  modifyMVar_ stateVar . execStateT $ case progress of
+    Began experiment ->
+      #experiments % at experiment.uuid .= Just (ExperimentInfo experiment Nothing)
+    Aborted experiment ->
+      #experiments % at experiment.uuid .= Nothing
+    Completed result ->
+      #experiments % at result.uuid %? #result .= Just result
 
 runWebUI :: MVar WebUIState -> IO ()
 runWebUI stateVar = scotty 8888 $ do
@@ -103,9 +79,7 @@ runWebUI stateVar = scotty 8888 $ do
         Nothing -> next
     state <- liftIO (readMVar stateVar)
 
-    case Map.lookup uuid state.running
-      <|> Map.lookup uuid state.interesting
-      <|> Map.lookup uuid state.uninteresting of
+    case Map.lookup uuid state.experiments of
       Just experimentInfo ->
         html
           . LT.pack
@@ -129,11 +103,26 @@ indexPage state = H.docTypeHtml $ do
   H.body $ do
     H.main $ do
       H.div H.! A.id "running-list" $
-        experimentList "Running" (state ^.. (#running % traversed % #experiment % #uuid))
+        experimentList
+          "Running"
+          [ uuid
+            | (uuid, experiment) <- Map.toList state.experiments,
+              experimentBucket experiment == Running
+          ]
       H.div H.! A.id "interesting-list" $
-        experimentList "Interesting" (state ^.. (#interesting % traversed % #experiment % #uuid))
+        experimentList
+          "Interesting"
+          [ uuid
+            | (uuid, experiment) <- Map.toList state.experiments,
+              experimentBucket experiment == Interesting
+          ]
       H.div H.! A.id "uninteresting-list" $
-        experimentList "Uninteresting" (state ^.. (#uninteresting % traversed % #experiment % #uuid))
+        experimentList
+          "Uninteresting"
+          [ uuid
+            | (uuid, experiment) <- Map.toList state.experiments,
+              experimentBucket experiment == Uninteresting
+          ]
       H.div H.! A.id "experiment-info" $
         pure ()
 
@@ -185,3 +174,12 @@ experimentDetails info = H.div H.! A.id "experiment-info" $ do
 whenJust :: Applicative f => Maybe a -> (a -> f ()) -> f ()
 whenJust Nothing _ = pure ()
 whenJust (Just x) f = f x
+
+data ExperimentBucket = Running | Interesting | Uninteresting
+  deriving (Show, Eq, Ord)
+
+experimentBucket :: ExperimentInfo -> ExperimentBucket
+experimentBucket ExperimentInfo {result = Nothing} = Running
+experimentBucket (ExperimentInfo experiment (Just result))
+  | Just experiment.expectedResult == result.proofFound = Uninteresting
+  | otherwise = Interesting
