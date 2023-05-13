@@ -55,6 +55,7 @@ main {
     padding-right: 10px;
     line-height: 2;
     font-family: monospace;
+    cursor: pointer;
 }
 
 .experiment-list-item:hover {
