@@ -189,7 +189,7 @@ experimentInfo info = H.div
                   Nothing -> "Inconclusive"
     H.div H.! A.class_ "info-box long experiment-source-spec" $ do
       H.h2 H.! A.class_ "info-box-title" $ "Source"
-      H.div H.! A.class_ "info-box-content" $
+      H.div H.! A.class_ "info-box-content long" $
         H.pre $
           H.text ("\n" <> info.experiment.designSpec.source)
     H.div H.! A.class_ "info-box experiment-source-impl" $ do

@@ -63,8 +63,6 @@ main {
 }
 
 #running-list, #interesting-list, #uninteresting-list {
-    display: flex;
-    flex-direction: column;
     height: 100%;
 }
 
@@ -94,6 +92,8 @@ main {
 .info-box {
     border: var(--border);
     border-radius: var(--border-radius);
+    display: flex;
+    flex-direction: column;
 }
 
 .info-box-title {
@@ -107,6 +107,7 @@ main {
 
 .info-box-content {
     padding: 10px;
+    flex-grow: 1;
 }
 
 .long {overflow: scroll;}
@@ -129,11 +130,6 @@ table td:not(:first-child) {
 .info-box.tab-box .tab-box-content {padding: 10px;}
 
 /* Needed to prevent overflow if a child has overflow: scroll */
-.tab-box {
-    display: flex;
-    flex-direction: column;
-}
-
 .tab-box .tabs {
     font-size: 1.5em;
     border-bottom: 1px solid var(--fg-color);
