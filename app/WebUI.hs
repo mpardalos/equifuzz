@@ -153,7 +153,7 @@ experimentUUIDList title elementId updateUrl bucket state =
 experimentInfo :: ExperimentInfo -> Html
 experimentInfo info = H.div
   H.! A.id "experiment-info"
-  H.! hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid))
+  H.!? (experimentBucket info == Running, hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid)))
   $ do
     (H.div H.! A.class_ "experiment-details info-box") $
       H.table $ do
