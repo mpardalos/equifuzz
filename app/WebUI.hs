@@ -31,7 +31,7 @@ import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxGet, hxSwap, hxTarget, hxTrigger)
-import Web.Scotty (ActionM, addHeader, get, html, next, param, raw, scotty)
+import Web.Scotty (ActionM, Parsable (..), addHeader, get, html, next, param, raw, scotty)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
@@ -73,10 +73,7 @@ runWebUI stateVar = scotty 8888 $ do
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/htmx.js")
 
   get "/experiments/:uuid" $ do
-    uuid <-
-      UUID.fromString <$> param "uuid" >>= \case
-        Just uuid -> pure uuid
-        Nothing -> next
+    UUIDParam uuid <- param "uuid"
     state <- liftIO (readMVar stateVar)
 
     whenJust (Map.lookup uuid state.experiments) $ \info ->
@@ -208,3 +205,10 @@ experimentBucket (ExperimentInfo experiment (Just result))
 
 blazeHtml :: Html -> ActionM ()
 blazeHtml = html . LT.pack . H.renderHtml
+
+newtype UUIDParam = UUIDParam UUID
+
+instance Parsable UUIDParam where
+  parseParam txt = case UUID.fromText (LT.toStrict txt) of
+    Just uuid -> Right (UUIDParam uuid)
+    Nothing -> Left ("'" <> txt <> "' is not a valid UUID")
