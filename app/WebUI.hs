@@ -183,7 +183,7 @@ runningList state =
   experimentUUIDList
     "Running"
     "running-list"
-    "sse:running-list"
+    "sse:running-list delay:1s"
     "/running-list"
     (Map.keys state.running)
 
@@ -192,7 +192,7 @@ interestingList state =
   experimentUUIDList
     "Interesting"
     "interesting-list"
-    "sse:interesting-list"
+    "sse:interesting-list delay:1s"
     "/interesting-list"
     (Map.keys state.interesting)
 
@@ -201,7 +201,7 @@ uninterestingList state =
   experimentUUIDList
     "Uninteresting"
     "uninteresting-list"
-    "sse:uninteresting-list"
+    "sse:uninteresting-list delay:5s"
     "/uninteresting-list"
     (Map.keys state.uninteresting)
 
