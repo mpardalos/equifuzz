@@ -143,15 +143,18 @@ uninterestingList =
     Uninteresting
 
 experimentUUIDList :: Html -> H.AttributeValue -> H.AttributeValue -> ExperimentBucket -> WebUIState -> Html
-experimentUUIDList title elementId updateUrl bucket state =
-  H.div H.! A.class_ "info-box" H.! A.id elementId H.! hxReloadFrom updateUrl $ do
-    H.h2 H.! A.class_ "info-box-title" $ title
+experimentUUIDList title elementId updateUrl bucket state = do
+  let uuids =
+        [ uuid
+          | (uuid, experiment) <- Map.toList state.experiments,
+            experimentBucket experiment == bucket
+        ]
 
-    let uuids =
-          [ uuid
-            | (uuid, experiment) <- Map.toList state.experiments,
-              experimentBucket experiment == bucket
-          ]
+  H.div H.! A.class_ "info-box" H.! A.id elementId H.! hxReloadFrom updateUrl $ do
+    H.h2 H.! A.class_ "info-box-title flex-spread" $ do
+      H.span title
+      H.span (H.toHtml (length uuids))
+
     H.div H.! A.class_ "info-box-content long" $
       forM_ uuids $ \uuid -> do
         H.div
