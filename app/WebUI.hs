@@ -32,11 +32,10 @@ import Network.Wai (StreamingBody)
 import Optics (At (at), makeFieldLabelsNoPrefix, (%), (%?))
 import Optics.State.Operators ((.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
-import Text.Blaze.Html.Renderer.Utf8 qualified as HUtf8
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
-import Text.Blaze.Htmx (hxExt, hxGet, hxSse_, hxSwap, hxTarget, hxTrigger)
+import Text.Blaze.Htmx (hxExt, hxGet, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, html, param, raw, scotty, setHeader, status, stream)
 
