@@ -27,53 +27,12 @@ experimentThread host vcfPath reportProgress =
       )
       (const $ experimentThread host vcfPath reportProgress)
 
-testThread :: (ExperimentProgress -> IO ()) -> IO ()
-testThread reportProgress = void . forkIO $ do
-  replicateM_ 10 . try @SomeException $ do
-    experiment <- mkTestExperiment
-    reportProgress (Began experiment)
-
-  replicateM_ 10 $ do
-    forM_ [Just True, Just False, Nothing] $ \proofFound -> try @SomeException $ do
-      experiment <- mkTestExperiment
-      reportProgress (Began experiment)
-      reportProgress
-        ( Completed
-            ExperimentResult
-              { proofFound,
-                counterExample = Just "counter example goes here",
-                fullOutput = "blah\nblah\nblah",
-                uuid = experiment.uuid
-              }
-        )
-  where
-    mkTestExperiment :: IO Experiment
-    mkTestExperiment = do
-      uuid <- UUID.nextRandom
-      return
-        Experiment
-          { uuid,
-            designSpec =
-              DesignSource
-                { language = Verilog,
-                  topName = "top",
-                  source = "/* I would write some Verilog here, but it's late */"
-                },
-            designImpl =
-              DesignSource
-                { language = SystemC,
-                  topName = "main",
-                  source = "int main() { return 0; }"
-                },
-            expectedResult = False
-          }
-
-webMain :: SSHHost -> CommandPath -> IO ()
-webMain host vcfPath = do
+webMain :: Bool -> SSHHost -> CommandPath -> IO ()
+webMain test host vcfPath = do
   stateVar <- newMVar newWebUIState
-  replicateM_ 10 $
-    experimentThread host vcfPath (handleProgress stateVar)
-  -- testThread (handleProgress stateVar)
+  if test
+    then testThread (handleProgress stateVar)
+    else replicateM_ 10 $ experimentThread host vcfPath (handleProgress stateVar)
 
   runWebUI stateVar
 
@@ -119,14 +78,18 @@ checkMain host vcfPath path1 path2 = do
 main :: IO ()
 main =
   parseArgs >>= \case
-    Web host vcfPath -> webMain host vcfPath
+    Web {test, sshHost, vcfPath} -> webMain test sshHost vcfPath
     Generate -> genMain
     Check host vcfPath path1 path2 -> checkMain host vcfPath path1 path2
 
 --------------------------- CLI Parser -----------------------------------------
 
 data Command
-  = Web SSHHost CommandPath
+  = Web
+      { test :: Bool,
+        sshHost :: SSHHost,
+        vcfPath :: CommandPath
+      }
   | Generate
   | Check SSHHost CommandPath FilePath FilePath
 
@@ -136,7 +99,8 @@ commandParser =
     [ Opt.command "web" $
         Opt.info
           ( Web
-              <$> hostArg
+              <$> testFlag
+              <*> hostArg
               <*> vcfPathArg
           )
           (Opt.progDesc "Run the equifuzz TUI, connected to a remote host"),
@@ -155,6 +119,12 @@ commandParser =
           (Opt.progDesc "Run the equivalence checker on a pair of programs")
     ]
   where
+    testFlag =
+      Opt.switch
+        ( Opt.long "test"
+            <> Opt.help "Show test data on the interface, don't run any fuzzing"
+        )
+
     hostArg :: Opt.Parser SSHHost
     hostArg =
       Opt.strOption
@@ -185,3 +155,46 @@ parseArgs =
             Opt.progDesc "Fuzzer for formal equivalence checkers"
           ]
       )
+
+--------------------------- Testing --------------------------------------------
+
+testThread :: (ExperimentProgress -> IO ()) -> IO ()
+testThread reportProgress = void . forkIO $ do
+  replicateM_ 10 . try @SomeException $ do
+    experiment <- mkTestExperiment
+    reportProgress (Began experiment)
+
+  replicateM_ 10 $ do
+    forM_ [Just True, Just False, Nothing] $ \proofFound -> try @SomeException $ do
+      experiment <- mkTestExperiment
+      reportProgress (Began experiment)
+      reportProgress
+        ( Completed
+            ExperimentResult
+              { proofFound,
+                counterExample = Just "counter example goes here",
+                fullOutput = "blah\nblah\nblah",
+                uuid = experiment.uuid
+              }
+        )
+  where
+    mkTestExperiment :: IO Experiment
+    mkTestExperiment = do
+      uuid <- UUID.nextRandom
+      return
+        Experiment
+          { uuid,
+            designSpec =
+              DesignSource
+                { language = Verilog,
+                  topName = "top",
+                  source = "/* I would write some Verilog here, but it's late */"
+                },
+            designImpl =
+              DesignSource
+                { language = SystemC,
+                  topName = "main",
+                  source = "int main() { return 0; }"
+                },
+            expectedResult = False
+          }
