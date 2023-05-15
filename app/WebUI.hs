@@ -186,7 +186,20 @@ uninterestingList =
     "/uninteresting-list"
     Uninteresting
 
-experimentUUIDList :: Html -> H.AttributeValue -> H.AttributeValue -> H.AttributeValue -> ExperimentBucket -> WebUIState -> Html
+experimentUUIDList ::
+  -- | Title
+  Html ->
+  -- | id for the info-box
+  H.AttributeValue ->
+  -- | hxTrigger value for reloading
+  H.AttributeValue ->
+  -- | hxGet value for reloading
+  H.AttributeValue ->
+  -- | Will only show experiments fitting into this bucket
+  ExperimentBucket ->
+  -- | Current state
+  WebUIState ->
+  Html
 experimentUUIDList title elementId trigger updateUrl bucket state = do
   let uuids =
         [ uuid
