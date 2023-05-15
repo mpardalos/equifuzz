@@ -15,7 +15,6 @@ executable equifuzz
     ghc-options: -Wall -threaded
     main-is:          Main.hs
     other-modules: Experiments
-                 , TUI
                  , SystemC
                  , GenSystemC
                  , Util
@@ -31,7 +30,6 @@ executable equifuzz
                     , uniplate
                     , recursion-schemes
                     , uuid
-                    , brick == 1.6
                     , vty == 5.38
                     , containers
                     , mtl == 2.3.*

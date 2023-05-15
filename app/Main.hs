@@ -4,17 +4,15 @@
 
 module Main where
 
-import Brick.BChan qualified as B
 import Control.Applicative ((<**>))
-import Control.Concurrent (forkFinally, forkIO, modifyMVar, newMVar, threadDelay)
+import Control.Concurrent (forkFinally, forkIO, newMVar)
 import Control.Exception (SomeException, try)
-import Control.Monad (forM_, forever, replicateM_, void)
+import Control.Monad (forM_, replicateM_, void)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments
 import Options.Applicative qualified as Opt
-import TUI (AppEvent (..), runTUI)
 import Text.Printf (printf)
 import WebUI (handleProgress, newWebUIState, runWebUI)
 
@@ -31,11 +29,11 @@ experimentThread host vcfPath reportProgress =
 
 testThread :: (ExperimentProgress -> IO ()) -> IO ()
 testThread reportProgress = void . forkIO $ do
-  forM_ [1 .. 10] . const . try @SomeException $ do
+  replicateM_ 10 . try @SomeException $ do
     experiment <- mkTestExperiment
     reportProgress (Began experiment)
 
-  forM_ [1 .. 10] . const $ do
+  replicateM_ 10 $ do
     forM_ [Just True, Just False, Nothing] $ \proofFound -> try @SomeException $ do
       experiment <- mkTestExperiment
       reportProgress (Began experiment)
@@ -70,20 +68,12 @@ testThread reportProgress = void . forkIO $ do
             expectedResult = False
           }
 
-tuiMain :: SSHHost -> CommandPath -> IO ()
-tuiMain host vcfPath = do
-  eventChan <- B.newBChan 20
-  -- replicateM_ 10 $
-  --   experimentThread host vcfPath (B.writeBChan eventChan . ExperimentProgress)
-  testThread (B.writeBChan eventChan . ExperimentProgress)
-  runTUI eventChan
-
 webMain :: SSHHost -> CommandPath -> IO ()
 webMain host vcfPath = do
   stateVar <- newMVar newWebUIState
-  -- replicateM_ 10 $
-  --   experimentThread host vcfPath (handleProgress stateVar)
-  testThread (handleProgress stateVar)
+  replicateM_ 10 $
+    experimentThread host vcfPath (handleProgress stateVar)
+  -- testThread (handleProgress stateVar)
 
   runWebUI stateVar
 
@@ -129,7 +119,6 @@ checkMain host vcfPath path1 path2 = do
 main :: IO ()
 main =
   parseArgs >>= \case
-    Tui host vcfPath -> tuiMain host vcfPath
     Web host vcfPath -> webMain host vcfPath
     Generate -> genMain
     Check host vcfPath path1 path2 -> checkMain host vcfPath path1 path2
@@ -137,22 +126,14 @@ main =
 --------------------------- CLI Parser -----------------------------------------
 
 data Command
-  = Tui SSHHost CommandPath
-  | Web SSHHost CommandPath
+  = Web SSHHost CommandPath
   | Generate
   | Check SSHHost CommandPath FilePath FilePath
 
 commandParser :: Opt.Parser Command
 commandParser =
   Opt.hsubparser . mconcat $
-    [ Opt.command "tui" $
-        Opt.info
-          ( Tui
-              <$> hostArg
-              <*> vcfPathArg
-          )
-          (Opt.progDesc "Run the equifuzz TUI, connected to a remote host"),
-      Opt.command "web" $
+    [ Opt.command "web" $
         Opt.info
           ( Web
               <$> hostArg
