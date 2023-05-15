@@ -10,8 +10,10 @@
 
 module WebUI (WebUIState, newWebUIState, handleProgress, runWebUI) where
 
-import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar, takeMVar, tryPutMVar)
-import Control.Monad (forM_, forever, void)
+import Control.Applicative ((<|>))
+import Control.Concurrent (MVar, modifyMVar_, readMVar)
+import Control.Concurrent.STM (STM, TMVar, atomically, isEmptyTMVar, newTMVar, retry, takeTMVar, tryPutTMVar)
+import Control.Monad (forM, forM_, forever, void)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (execStateT)
 import Data.Binary.Builder qualified as Binary
@@ -20,7 +22,7 @@ import Data.ByteString.Lazy.Char8 qualified as LB
 import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.String (IsString (fromString))
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
@@ -29,7 +31,7 @@ import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..),
 import GHC.Generics (Generic)
 import Network.HTTP.Types (status200)
 import Network.Wai (StreamingBody)
-import Optics (At (at), makeFieldLabelsNoPrefix, (%), (%?))
+import Optics (At (at), makeFieldLabelsNoPrefix, use, (%))
 import Optics.State.Operators ((.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
@@ -48,36 +50,56 @@ data ExperimentInfo = ExperimentInfo
 makeFieldLabelsNoPrefix ''ExperimentInfo
 
 data WebUIState = WebUIState
-  { experiments :: Map UUID ExperimentInfo,
-    experimentsSem :: MVar ()
+  { running :: Map UUID ExperimentInfo,
+    runningSem :: Semaphore,
+    interesting :: Map UUID ExperimentInfo,
+    interestingSem :: Semaphore,
+    uninteresting :: Map UUID ExperimentInfo,
+    uninterestingSem :: Semaphore
   }
   deriving (Generic)
 
--- makeFieldLabelsNoPrefix ''WebUIState
-
 newWebUIState :: IO WebUIState
 newWebUIState = do
-  experimentsSem <- newMVar ()
+  runningSem <- atomically newSemaphore
+  interestingSem <- atomically newSemaphore
+  uninterestingSem <- atomically newSemaphore
   return
     WebUIState
-      { experiments = Map.empty,
-        experimentsSem
+      { running = Map.empty,
+        runningSem,
+        interesting = Map.empty,
+        interestingSem,
+        uninteresting = Map.empty,
+        uninterestingSem
       }
 
 handleProgress :: MVar WebUIState -> ExperimentProgress -> IO ()
 handleProgress stateVar progress = do
   state <- readMVar stateVar
-  -- tryPutMVar to avoid blocking. If this is signalled already then we will
-  -- reload eventually anyway.
-  void $ tryPutMVar state.experimentsSem ()
 
   modifyMVar_ stateVar . execStateT $ case progress of
-    Began experiment ->
-      #experiments % at experiment.uuid .= Just (ExperimentInfo experiment Nothing)
-    Aborted experiment ->
-      #experiments % at experiment.uuid .= Nothing
-    Completed result ->
-      #experiments % at result.uuid %? #result .= Just result
+    Began experiment -> do
+      #running % at experiment.uuid .= Just (ExperimentInfo experiment Nothing)
+      liftIO . atomically $ signalSemaphore state.runningSem
+    Aborted experiment -> do
+      #running % at experiment.uuid .= Nothing
+      liftIO . atomically $ signalSemaphore state.runningSem
+    Completed result -> do
+      use (#running % at result.uuid) >>= \case
+        Nothing -> pure () -- FIXME: Report this as an error
+        Just (ExperimentInfo experiment _) -> do
+          #running % at experiment.uuid .= Nothing
+          liftIO . atomically $ signalSemaphore state.runningSem
+          if Just experiment.expectedResult == result.proofFound
+            then do
+              #uninteresting % at result.uuid .= Just (ExperimentInfo experiment (Just result))
+              liftIO . atomically $ signalSemaphore state.uninterestingSem
+            else do
+              #interesting % at result.uuid .= Just (ExperimentInfo experiment (Just result))
+              liftIO . atomically $ signalSemaphore state.interestingSem
+
+-- #experiments % at result.uuid %? #result .= Just result
 
 runWebUI :: MVar WebUIState -> IO ()
 runWebUI stateVar = scotty 8888 $ do
@@ -94,39 +116,36 @@ runWebUI stateVar = scotty 8888 $ do
     UUIDParam uuid <- param "uuid"
     state <- liftIO (readMVar stateVar)
 
-    whenJust (Map.lookup uuid state.experiments) $ \info ->
-      blazeHtml (experimentInfo info)
+    whenJust
+      ( Map.lookup uuid state.running
+          <|> Map.lookup uuid state.interesting
+          <|> Map.lookup uuid state.uninteresting
+      )
+      $ \info ->
+        blazeHtml (experimentInfo info)
 
   get "/experiments/:uuid/outputs/:output-type" $ do
     UUIDParam uuid <- param "uuid"
     outputType <- param "output-type"
     state <- liftIO (readMVar stateVar)
 
-    whenJust (Map.lookup uuid state.experiments) $ \info ->
-      blazeHtml (experimentExtraOutput outputType info)
+    whenJust
+      ( Map.lookup uuid state.running
+          <|> Map.lookup uuid state.interesting
+          <|> Map.lookup uuid state.uninteresting
+      )
+      $ \info ->
+        blazeHtml (experimentExtraOutput outputType info)
 
   get "/experiments/stream" $ do
     state <- liftIO (readMVar stateVar)
     status status200
     setHeader "Content-Type" "text/event-stream"
-    stream . eventStreamFromIO $ do
-      () <- takeMVar state.experimentsSem
-      return
-        -- These events are just used to tell the client to trigger a refresh,
-        -- but it's mandatory to have data, so we just use a dummy string
-        [ EventStreamEvent
-            { event = "running-list",
-              data_ = "update"
-            },
-          EventStreamEvent
-            { event = "interesting-list",
-              data_ = "update"
-            },
-          EventStreamEvent
-            { event = "uninteresting-list",
-              data_ = "update"
-            }
-        ]
+    stream . eventStreamFromIO . atomically . chooseSemaphore $
+      [ (state.runningSem, pure [EventStreamEvent {event = "running-list", data_ = "update"}]),
+        (state.interestingSem, pure [EventStreamEvent {event = "interesting-list", data_ = "update"}]),
+        (state.uninterestingSem, pure [EventStreamEvent {event = "uninteresting-list", data_ = "update"}])
+      ]
 
   get "/running-list" $ do
     state <- liftIO (readMVar stateVar)
@@ -160,33 +179,34 @@ indexPage state = H.docTypeHtml $ do
       H.div H.! A.id "experiment-info" $ pure ()
 
 runningList :: WebUIState -> Html
-runningList =
+runningList state =
   experimentUUIDList
     "Running"
     "running-list"
     "sse:running-list"
     "/running-list"
-    Running
+    (Map.keys state.running)
 
 interestingList :: WebUIState -> Html
-interestingList =
+interestingList state =
   experimentUUIDList
     "Interesting"
     "interesting-list"
     "sse:interesting-list"
     "/interesting-list"
-    Interesting
+    (Map.keys state.interesting)
 
 uninterestingList :: WebUIState -> Html
-uninterestingList =
+uninterestingList state =
   experimentUUIDList
     "Uninteresting"
     "uninteresting-list"
     "sse:uninteresting-list"
     "/uninteresting-list"
-    Uninteresting
+    (Map.keys state.uninteresting)
 
 experimentUUIDList ::
+  Foldable t =>
   -- | Title
   Html ->
   -- | id for the info-box
@@ -195,18 +215,10 @@ experimentUUIDList ::
   H.AttributeValue ->
   -- | hxGet value for reloading
   H.AttributeValue ->
-  -- | Will only show experiments fitting into this bucket
-  ExperimentBucket ->
-  -- | Current state
-  WebUIState ->
+  -- | Experiment list to show from
+  t UUID ->
   Html
-experimentUUIDList title elementId trigger updateUrl bucket state = do
-  let uuids =
-        [ uuid
-          | (uuid, experiment) <- Map.toList state.experiments,
-            experimentBucket experiment == bucket
-        ]
-
+experimentUUIDList title elementId trigger updateUrl uuids =
   H.div
     H.! A.class_ "info-box"
     H.! A.id elementId
@@ -359,3 +371,31 @@ eventStreamFromIO produceEvent send flush = do
     events <- produceEvent
     forM_ events $ \event ->
       send (eventStreamEventToBuilder event)
+
+newtype Semaphore = Semaphore (TMVar ())
+
+newSemaphore :: STM Semaphore
+newSemaphore = Semaphore <$> newTMVar ()
+
+waitForSemaphore :: Semaphore -> STM ()
+waitForSemaphore (Semaphore mvar) = takeTMVar mvar
+
+checkSemaphore :: Semaphore -> STM Bool
+checkSemaphore (Semaphore mvar) = not <$> isEmptyTMVar mvar
+
+signalSemaphore :: Semaphore -> STM ()
+signalSemaphore (Semaphore mvar) = void $ tryPutTMVar mvar ()
+
+chooseSemaphore :: [(Semaphore, STM a)] -> STM a
+chooseSemaphore choices = do
+  signalledChoices <- forM choices $ \(s, x) -> do
+    isSignalled <- checkSemaphore s
+    return $
+      if isSignalled
+        then Just (s, x)
+        else Nothing
+  case catMaybes signalledChoices of
+    (s, x) : _ -> do
+      waitForSemaphore s -- Cleared the signal (and only this signal)
+      x
+    [] -> retry
