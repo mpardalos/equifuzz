@@ -1,5 +1,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NumDecimals #-}
 
 module Main where
@@ -169,11 +170,11 @@ testThread reportProgress = void . forkIO . forever . try @SomeException $ do
   threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
 
   proofFound <-
-    getStdRandom (uniformR (0 :: Int, 2)) <&> \case
-      0 -> Nothing
-      1 -> Just True
-      2 -> Just False
-      _ -> error "Invalid value when generating random proofFound"
+    getStdRandom (uniformR (1 :: Int, 100)) <&> \x ->
+      if
+          | x < 10 -> Nothing
+          | x < 20 -> Just True
+          | otherwise -> Just False
 
   reportProgress
     ( Completed
