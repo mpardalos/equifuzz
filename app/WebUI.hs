@@ -224,6 +224,7 @@ experimentUUIDList title elementId trigger updateUrl uuids =
     H.! A.id elementId
     H.! hxTrigger trigger
     H.! hxGet updateUrl
+    H.! hxSwap "outerHTML"
     $ do
       H.h2 H.! A.class_ "info-box-title flex-spread" $ do
         H.span title
