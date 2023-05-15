@@ -5,14 +5,16 @@
 module Main where
 
 import Control.Applicative ((<**>))
-import Control.Concurrent (forkFinally, forkIO, newMVar)
+import Control.Concurrent (forkFinally, forkIO, newMVar, threadDelay)
 import Control.Exception (SomeException, try)
-import Control.Monad (forM_, replicateM_, void)
+import Control.Monad (forever, replicateM_, void)
+import Data.Functor ((<&>))
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments
 import Options.Applicative qualified as Opt
+import System.Random (getStdRandom, uniformR)
 import Text.Printf (printf)
 import WebUI (handleProgress, newWebUIState, runWebUI)
 
@@ -30,9 +32,10 @@ experimentThread host vcfPath reportProgress =
 webMain :: Bool -> SSHHost -> CommandPath -> IO ()
 webMain test host vcfPath = do
   stateVar <- newMVar newWebUIState
-  if test
-    then testThread (handleProgress stateVar)
-    else replicateM_ 10 $ experimentThread host vcfPath (handleProgress stateVar)
+  replicateM_ 10 $
+    if test
+      then testThread (handleProgress stateVar)
+      else experimentThread host vcfPath (handleProgress stateVar)
 
   runWebUI stateVar
 
@@ -159,24 +162,29 @@ parseArgs =
 --------------------------- Testing --------------------------------------------
 
 testThread :: (ExperimentProgress -> IO ()) -> IO ()
-testThread reportProgress = void . forkIO $ do
-  replicateM_ 10 . try @SomeException $ do
-    experiment <- mkTestExperiment
-    reportProgress (Began experiment)
+testThread reportProgress = void . forkIO . forever . try @SomeException $ do
+  experiment <- mkTestExperiment
+  reportProgress (Began experiment)
 
-  replicateM_ 10 $ do
-    forM_ [Just True, Just False, Nothing] $ \proofFound -> try @SomeException $ do
-      experiment <- mkTestExperiment
-      reportProgress (Began experiment)
-      reportProgress
-        ( Completed
-            ExperimentResult
-              { proofFound,
-                counterExample = Just "counter example goes here",
-                fullOutput = "blah\nblah\nblah",
-                uuid = experiment.uuid
-              }
-        )
+  threadDelay 5e6
+
+  proofFound <-
+    getStdRandom (uniformR (0 :: Int, 2)) <&> \case
+      0 -> Nothing
+      1 -> Just True
+      2 -> Just False
+      _ -> error "Invalid value when generating random proofFound"
+
+  reportProgress
+    ( Completed
+        ExperimentResult
+          { proofFound,
+            counterExample = Just "counter example goes here",
+            fullOutput = "blah\nblah\nblah",
+            uuid = experiment.uuid
+          }
+    )
+  return ()
   where
     mkTestExperiment :: IO Experiment
     mkTestExperiment = do
