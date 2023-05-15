@@ -166,7 +166,7 @@ testThread reportProgress = void . forkIO . forever . try @SomeException $ do
   experiment <- mkTestExperiment
   reportProgress (Began experiment)
 
-  threadDelay 5e6
+  threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
 
   proofFound <-
     getStdRandom (uniformR (0 :: Int, 2)) <&> \case
