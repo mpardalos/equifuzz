@@ -10,11 +10,13 @@
 
 module WebUI (WebUIState, newWebUIState, handleProgress, runWebUI) where
 
-import Control.Concurrent (MVar, modifyMVar_, readMVar)
-import Control.Monad (forM_)
+import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar, takeMVar, tryPutMVar)
+import Control.Monad (forM_, forever, void)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (execStateT)
+import Data.Binary.Builder qualified as Binary
 import Data.ByteString.Lazy qualified as LB
+import Data.ByteString.Lazy.Char8 qualified as LB
 import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -25,14 +27,17 @@ import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..))
 import GHC.Generics (Generic)
+import Network.Wai (StreamingBody)
 import Optics (At (at), makeFieldLabelsNoPrefix, (%), (%?))
 import Optics.State.Operators ((.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
+import Text.Blaze.Html.Renderer.Utf8 qualified as HUtf8
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
-import Text.Blaze.Htmx (hxGet, hxSwap, hxTarget, hxTrigger)
-import Web.Scotty (ActionM, Parsable (..), addHeader, get, html, next, param, raw, scotty)
+import Text.Blaze.Htmx (hxExt, hxGet, hxSse_, hxSwap, hxTarget, hxTrigger)
+import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
+import Web.Scotty (ActionM, Parsable (..), addHeader, get, html, param, raw, scotty, setHeader, stream)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
@@ -42,18 +47,30 @@ data ExperimentInfo = ExperimentInfo
 
 makeFieldLabelsNoPrefix ''ExperimentInfo
 
-newtype WebUIState = WebUIState
-  { experiments :: Map UUID ExperimentInfo
+data WebUIState = WebUIState
+  { experiments :: Map UUID ExperimentInfo,
+    experimentsSem :: MVar ()
   }
   deriving (Generic)
 
-makeFieldLabelsNoPrefix ''WebUIState
+-- makeFieldLabelsNoPrefix ''WebUIState
 
-newWebUIState :: WebUIState
-newWebUIState = WebUIState {experiments = Map.empty}
+newWebUIState :: IO WebUIState
+newWebUIState = do
+  experimentsSem <- newMVar ()
+  return
+    WebUIState
+      { experiments = Map.empty,
+        experimentsSem
+      }
 
 handleProgress :: MVar WebUIState -> ExperimentProgress -> IO ()
-handleProgress stateVar progress =
+handleProgress stateVar progress = do
+  state <- readMVar stateVar
+  -- tryPutMVar to avoid blocking. If this is signalled already then we will
+  -- reload eventually anyway.
+  void $ tryPutMVar state.experimentsSem ()
+
   modifyMVar_ stateVar . execStateT $ case progress of
     Began experiment ->
       #experiments % at experiment.uuid .= Just (ExperimentInfo experiment Nothing)
@@ -88,6 +105,28 @@ runWebUI stateVar = scotty 8888 $ do
     whenJust (Map.lookup uuid state.experiments) $ \info ->
       blazeHtml (experimentExtraOutput outputType info)
 
+  get "/experiments/stream" $ do
+    state <- liftIO (readMVar stateVar)
+    setHeader "Transfer-Encoding" "chunked"
+    setHeader "Connection" "Transfer-Encoding"
+    setHeader "Content-Type" "text/event-stream"
+    stream . eventStreamFromIO $ do
+      () <- takeMVar state.experimentsSem
+      return
+        [ EventStreamEvent
+            { event = "running-list",
+              data_ = ""
+            },
+          EventStreamEvent
+            { event = "interesting-list",
+              data_ = ""
+            },
+          EventStreamEvent
+            { event = "uninteresting-list",
+              data_ = ""
+            }
+        ]
+
   get "/running-list" $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (runningList state)
@@ -111,7 +150,8 @@ indexPage state = H.docTypeHtml $ do
     H.link H.! A.rel "stylesheet" H.! A.href "/resources/style.css"
     -- H.script H.! A.src "/resources/htmx.min.js.gz" $ ""
     H.script H.! A.src "/resources/htmx.js" $ ""
-  H.body $ do
+    H.script H.! A.src "https://unpkg.com/htmx.org/dist/ext/sse.js" $ ""
+  H.body H.! hxExt "sse" H.! sseConnect "/experiments/stream" $ do
     H.main $ do
       runningList state
       interestingList state
@@ -123,6 +163,7 @@ runningList =
   experimentUUIDList
     "Running"
     "running-list"
+    "sse:running-list"
     "/running-list"
     Running
 
@@ -131,6 +172,7 @@ interestingList =
   experimentUUIDList
     "Interesting"
     "interesting-list"
+    "sse:interesting-list"
     "/interesting-list"
     Interesting
 
@@ -139,30 +181,39 @@ uninterestingList =
   experimentUUIDList
     "Uninteresting"
     "uninteresting-list"
+    "sse:uninteresting-list"
     "/uninteresting-list"
     Uninteresting
 
-experimentUUIDList :: Html -> H.AttributeValue -> H.AttributeValue -> ExperimentBucket -> WebUIState -> Html
-experimentUUIDList title elementId updateUrl bucket state = do
+experimentUUIDList :: Html -> H.AttributeValue -> H.AttributeValue -> H.AttributeValue -> ExperimentBucket -> WebUIState -> Html
+experimentUUIDList title elementId trigger updateUrl bucket state = do
   let uuids =
         [ uuid
           | (uuid, experiment) <- Map.toList state.experiments,
             experimentBucket experiment == bucket
         ]
 
-  H.div H.! A.class_ "info-box" H.! A.id elementId H.! hxReloadFrom updateUrl $ do
-    H.h2 H.! A.class_ "info-box-title flex-spread" $ do
-      H.span title
-      H.span (H.toHtml (length uuids))
+  H.div
+    H.! A.class_ "info-box"
+    H.! A.id elementId
+    H.! hxTrigger trigger
+    H.! hxGet updateUrl
+    $ do
+      H.h2 H.! A.class_ "info-box-title flex-spread" $ do
+        H.span title
+        H.span (H.toHtml (length uuids))
 
-    H.div H.! A.class_ "info-box-content long" $
-      forM_ uuids $ \uuid -> do
-        H.div
-          H.! A.class_ "experiment-list-item"
-          H.! hxGet ("/experiments/" <> fromString (show uuid))
-          H.! hxTarget "#experiment-info"
-          H.! hxSwap "outerHTML"
-          $ H.toHtml (show uuid)
+      H.div H.! A.class_ "info-box-content long" $
+        mapM_ experimentUUIDItem uuids
+
+experimentUUIDItem :: UUID -> Html
+experimentUUIDItem uuid =
+  H.div
+    H.! A.class_ "experiment-list-item"
+    H.! hxGet ("/experiments/" <> fromString (show uuid))
+    H.! hxTarget "#experiment-info"
+    H.! hxSwap "outerHTML"
+    $ H.toHtml (show uuid)
 
 experimentInfo :: ExperimentInfo -> Html
 experimentInfo info = H.div
@@ -262,3 +313,35 @@ instance Parsable UUIDParam where
   parseParam txt = case UUID.fromText (LT.toStrict txt) of
     Just uuid -> Right (UUIDParam uuid)
     Nothing -> Left ("'" <> txt <> "' is not a valid UUID")
+
+--------------------------- Event Streams -----------------------------------------
+
+type EventStream = StreamingBody
+
+data EventStreamEvent = EventStreamEvent
+  { event :: LB.ByteString,
+    data_ :: LB.ByteString
+  }
+
+eventStreamEventToBuilder :: EventStreamEvent -> Binary.Builder
+eventStreamEventToBuilder EventStreamEvent {event, data_} =
+  Binary.fromLazyByteString eventBS
+  where
+    eventValue :: LB.ByteString
+    eventValue = eventEncode "event: " event
+
+    eventData :: LB.ByteString
+    eventData = eventEncode "data: " data_
+
+    eventEncode :: LB.ByteString -> LB.ByteString -> LB.ByteString
+    eventEncode label bs = LB.unlines [label <> line | line <- LB.lines bs]
+
+    eventBS = eventValue <> eventData <> "\n"
+
+eventStreamFromIO :: IO [EventStreamEvent] -> EventStream
+eventStreamFromIO produceEvent send flush = do
+  forever $ do
+    flush
+    events <- produceEvent
+    forM_ events $ \event ->
+      send (eventStreamEventToBuilder event)

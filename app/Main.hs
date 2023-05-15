@@ -31,7 +31,7 @@ experimentThread host vcfPath reportProgress =
 
 webMain :: Bool -> SSHHost -> CommandPath -> IO ()
 webMain test host vcfPath = do
-  stateVar <- newMVar newWebUIState
+  stateVar <- newMVar =<< newWebUIState
   replicateM_ 10 $
     if test
       then testThread (handleProgress stateVar)
