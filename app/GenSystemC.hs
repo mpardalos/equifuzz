@@ -110,7 +110,8 @@ castToType :: MonadGen m => SC.SCType -> m SC.SCType
 castToType = \case
   -- FIXME: fixed-to-uint is broken for the version of vcf I am currently
   -- testing. This workaround should be an option at the top level.
-  SC.SCFixed {} -> Hog.choice [someInt, someFixed, someUFixed]
+  SC.SCFixed {} -> Hog.choice [someFixed, someUFixed]
+  SC.SCUFixed {} -> Hog.choice [someFixed, someUFixed]
   _ -> Hog.choice [someInt, someUInt, someFixed, someUFixed]
   where
     someInt = SC.SCInt <$> someWidth
