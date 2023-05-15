@@ -27,6 +27,7 @@ import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..))
 import GHC.Generics (Generic)
+import Network.HTTP.Types (status200)
 import Network.Wai (StreamingBody)
 import Optics (At (at), makeFieldLabelsNoPrefix, (%), (%?))
 import Optics.State.Operators ((.=))
@@ -37,7 +38,7 @@ import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxSse_, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
-import Web.Scotty (ActionM, Parsable (..), addHeader, get, html, param, raw, scotty, setHeader, stream)
+import Web.Scotty (ActionM, Parsable (..), addHeader, get, html, param, raw, scotty, setHeader, status, stream)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
@@ -107,23 +108,24 @@ runWebUI stateVar = scotty 8888 $ do
 
   get "/experiments/stream" $ do
     state <- liftIO (readMVar stateVar)
-    setHeader "Transfer-Encoding" "chunked"
-    setHeader "Connection" "Transfer-Encoding"
+    status status200
     setHeader "Content-Type" "text/event-stream"
     stream . eventStreamFromIO $ do
       () <- takeMVar state.experimentsSem
       return
+        -- These events are just used to tell the client to trigger a refresh,
+        -- but it's mandatory to have data, so we just use a dummy string
         [ EventStreamEvent
             { event = "running-list",
-              data_ = ""
+              data_ = "update"
             },
           EventStreamEvent
             { event = "interesting-list",
-              data_ = ""
+              data_ = "update"
             },
           EventStreamEvent
             { event = "uninteresting-list",
-              data_ = ""
+              data_ = "update"
             }
         ]
 
