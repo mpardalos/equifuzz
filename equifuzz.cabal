@@ -15,6 +15,9 @@ executable equifuzz
     ghc-options: -Wall -threaded
     main-is:          Main.hs
     other-modules: Experiments
+                 , Experiments.Types
+                 , Experiments.Generators
+                 , Experiments.Runners
                  , SystemC
                  , GenSystemC
                  , Util

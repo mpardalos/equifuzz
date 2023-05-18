@@ -40,6 +40,7 @@ import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, html, param, raw, scotty, setHeader, status, stream)
+import Util (whenJust)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
@@ -85,6 +86,7 @@ handleProgress stateVar progress = do
     Aborted experiment -> do
       #running % at experiment.uuid .= Nothing
       liftIO . atomically $ signalSemaphore state.runningSem
+    -- FIXME: Handle multiple results for the same experiment
     Completed result -> do
       use (#running % at result.uuid) >>= \case
         Nothing -> pure () -- FIXME: Report this as an error
@@ -317,10 +319,6 @@ experimentExtraOutput tab info = whenJust info.result $ \result -> do
 -- | htmx attributes to make an element continuously poll-reload from a URL
 hxReloadFrom :: H.AttributeValue -> H.Attribute
 hxReloadFrom url = hxGet url <> hxTrigger "load delay:5s" <> hxSwap "outerHTML"
-
-whenJust :: Applicative f => Maybe a -> (a -> f ()) -> f ()
-whenJust Nothing _ = pure ()
-whenJust (Just x) f = f x
 
 data ExperimentBucket = Running | Interesting | Uninteresting
   deriving (Show, Eq, Ord)
