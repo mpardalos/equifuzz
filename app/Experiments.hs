@@ -188,17 +188,18 @@ saveExperiment category Experiment {designSpec, designImpl, uuid, expectedResult
 -- icarus verilog (`iverilog`) available locally
 mkSystemCConstantExperiment :: IO Experiment
 mkSystemCConstantExperiment = do
-  systemcModule <- Hog.sample (genSystemCConstant "mod1")
+  systemcModule <- Hog.sample (genSystemCConstant "dut")
+  let wrapperName = "impl"
   let designImpl =
         DesignSource
           { language = SystemC,
-            topName = hectorWrapperName,
+            topName = wrapperName,
             source =
               SC.includeHeader
                 <> "\n\n"
                 <> SC.genSource systemcModule
                 <> "\n\n"
-                <> systemCHectorWrapper systemcModule
+                <> systemCHectorWrapper wrapperName systemcModule
           }
 
   expectedResult <-
@@ -212,7 +213,7 @@ mkSystemCConstantExperiment = do
   let signed :: Text = if SC.isSigned systemcModule.returnType then "signed" else ""
   let verilogModule =
         [__i|
-          module mod2 (out);
+          module spec(out);
             output wire #{signed} [#{outWidth - 1}:0] out;
             assign out = #{outWidth}'b#{expectedResult};
           endmodule
@@ -220,20 +221,20 @@ mkSystemCConstantExperiment = do
   let designSpec =
         DesignSource
           { language = Verilog,
-            topName = "mod2",
+            topName = "spec",
             source = verilogModule
           }
   uuid <- UUID.nextRandom
-  return Experiment {expectedResult = True, ..}
+  return Experiment {uuid, expectedResult = True, designSpec, designImpl}
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper
-systemCHectorWrapper :: SC.Annotation ann => SC.FunctionDeclaration ann -> Text
-systemCHectorWrapper SC.FunctionDeclaration {returnType, args, name} =
+systemCHectorWrapper :: SC.Annotation ann => Text -> SC.FunctionDeclaration ann -> Text
+systemCHectorWrapper wrapperName SC.FunctionDeclaration {returnType, args, name} =
   [__i|
       \#include<Hector.h>
 
-      void #{hectorWrapperName}() {
+      void #{wrapperName}() {
           #{inputDeclarations}
           #{outType} out;
 
@@ -339,9 +340,6 @@ languageFromExtension _ = Nothing
 isCompleted :: ExperimentProgress -> Bool
 isCompleted Completed {} = True
 isCompleted _ = False
-
-hectorWrapperName :: Text
-hectorWrapperName = "hector_wrapper"
 
 languageFileExtension :: DesignLanguage -> Text
 languageFileExtension Verilog = "v"
