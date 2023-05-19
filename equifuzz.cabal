@@ -12,7 +12,7 @@ build-type:         Simple
 extra-source-files: resources/style.css, resources/htmx.js
 
 executable equifuzz
-    ghc-options: -Wall -threaded
+    ghc-options: -Wall -Wno-unrecognised-pragmas -threaded
     main-is:          Main.hs
     other-modules: Experiments
                  , Experiments.Types
