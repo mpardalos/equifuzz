@@ -22,14 +22,17 @@ import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes)
+import Data.String.Interpolate (i)
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Experiments (Experiment (..), ExperimentProgress (..), ExperimentResult (..), RunnerInfo)
 import GHC.Generics (Generic)
-import Network.HTTP.Types (status200)
+import Network.HTTP.Types (status200, urlDecode, urlEncode)
 import Network.Wai (StreamingBody)
-import Optics (At (at), makeFieldLabelsNoPrefix, traversed, (%), (%?), (^..))
+import Optics (At (at), makeFieldLabelsNoPrefix, traversed, (%), (%?), (^.), (^..), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
@@ -37,11 +40,12 @@ import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxSwap, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
-import Web.Scotty (ActionM, Parsable (..), addHeader, get, html, param, raw, scotty, setHeader, status, stream)
+import Text.Printf (printf)
+import Web.Scotty (ActionM, Parsable (..), addHeader, get, html, next, notFound, param, raw, scotty, setHeader, status, stream)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
-    runs :: [RunInfo]
+    runs :: Map RunnerInfo RunInfo
   }
   deriving (Generic)
 
@@ -80,10 +84,10 @@ handleProgress stateVar progress = do
       liftIO . atomically $ signalSemaphore state.interestingExperimentsSem
     BeginRun uuid runnerInfo -> do
       -- FIXME: Report error if uuid does not exist
-      #interestingExperiments % at uuid %? #runs %= (ActiveRun runnerInfo :)
+      #interestingExperiments % at uuid %? #runs % at runnerInfo .= Just (ActiveRun runnerInfo)
     RunCompleted result -> do
-      #interestingExperiments % at result.uuid %? #runs %= filter (/= ActiveRun result.runnerInfo)
-      #interestingExperiments % at result.uuid %? #runs %= (CompletedRun result :)
+      -- FIXME: Report error if uuid does not exist
+      #interestingExperiments % at result.uuid %? #runs % at result.runnerInfo .= Just (CompletedRun result)
       #totalRunCount %= (+ 1)
       liftIO . atomically $ signalSemaphore state.interestingExperimentsSem
       liftIO . atomically $ signalSemaphore state.totalRunCountSem
@@ -107,13 +111,21 @@ runWebUI stateVar = scotty 8888 $ do
     raw $
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/htmx.js")
 
-  get "/experiments/:uuid/run/:runIdx" $ do
+  get "/experiments/:uuid/runs/:runnerInfo" $ do
     UUIDParam uuid <- param "uuid"
-    runIdx :: Int <- param "runIdx"
+    runnerInfo <- urlDecode False <$> param "runnerInfo"
     state <- liftIO (readMVar stateVar)
 
-    -- TODO: Full info on a run
-    pure ()
+    liftIO $ printf "Looking for runner %s" (show runnerInfo)
+
+    case state
+      ^? #interestingExperiments
+      % at uuid
+      %? #runs
+      % at (T.decodeUtf8 runnerInfo)
+      % _Just of
+      Nothing -> next
+      Just info -> blazeHtml (runInfo info)
 
   get "/experiments/stream" $ do
     state <- liftIO (readMVar stateVar)
@@ -132,8 +144,8 @@ runWebUI stateVar = scotty 8888 $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (indexPage state)
 
-indexPage :: WebUIState -> Html
-indexPage state = H.docTypeHtml $ do
+htmlBase :: Html -> Html
+htmlBase content = H.docTypeHtml $ do
   H.head $ do
     H.title "Equifuzz"
     H.link H.! A.rel "stylesheet" H.! A.href "/resources/style.css"
@@ -141,9 +153,17 @@ indexPage state = H.docTypeHtml $ do
     H.script H.! A.src "/resources/htmx.js" $ ""
     H.script H.! A.src "https://unpkg.com/htmx.org/dist/ext/sse.js" $ ""
   H.body H.! hxExt "sse" H.! sseConnect "/experiments/stream" $ do
-    H.main $ do
-      experimentList state.interestingExperiments
-      H.div H.! A.id "experiment-info" $ pure ()
+    H.main
+      content
+
+runInfo :: RunInfo -> Html
+runInfo = const (H.p "Stuff goes here")
+
+indexPage :: WebUIState -> Html
+indexPage state =
+  htmlBase $ do
+    experimentList state.interestingExperiments
+    H.div H.! A.id "experiment-info" $ pure ()
 
 experimentList ::
   Foldable t =>
@@ -154,9 +174,9 @@ experimentList experiments =
   H.div
     H.! A.class_ "info-box"
     H.! A.id "experiment-list"
-    H.! hxTrigger "sse:experiment-list"
-    H.! hxGet "/experiments"
-    H.! hxSwap "outerHTML"
+    -- H.! hxTrigger "sse:experiment-list"
+    -- H.! hxGet "/experiments"
+    -- H.! hxSwap "outerHTML"
     $ do
       H.h2 H.! A.class_ "info-box-title flex-spread" $ do
         H.span "Experiments"
@@ -167,12 +187,21 @@ experimentList experiments =
   where
     experimentListItem :: ExperimentInfo -> Html
     experimentListItem info =
-      H.div
+      H.details
         H.! A.class_ "experiment-list-item"
         -- H.! hxGet ("/experiments/" <> fromString (show uuid))
         -- H.! hxTarget "#experiment-info"
         -- H.! hxSwap "outerHTML"
-        $ H.toHtml (show info.experiment.uuid)
+        $ do
+          H.summary (H.toHtml (show info.experiment.uuid))
+          H.ul $
+            forM_ (Map.keys info.runs) $ \(runnerInfo :: RunnerInfo) ->
+              H.li
+                $ H.a
+                  H.! A.href [i|/experiments/#{show (info ^. #experiment % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
+                $ H.toHtml runnerInfo
+
+-- "stuff and things"
 
 -- runInfo :: ExperimentInfo -> Html
 -- runInfo info = H.div
@@ -322,7 +351,7 @@ chooseSemaphore choices = do
 
 shouldKeep :: ExperimentInfo -> Bool
 shouldKeep info =
-  let proofsFound = [proofFound | CompletedRun (ExperimentResult {proofFound}) <- info.runs]
+  let proofsFound = [proofFound | CompletedRun (ExperimentResult {proofFound}) <- Map.elems info.runs]
    in any (/= Just info.experiment.expectedResult) proofsFound
 
 makeFieldLabelsNoPrefix ''WebUIState

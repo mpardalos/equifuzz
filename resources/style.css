@@ -30,24 +30,17 @@ body {
 main {
     display: grid;
     grid:
-        'running       info' 32%
-        'interesting   info' 32%
-        'uninteresting info' 32%
+        'list info'
         / fit-content(100%) auto;
     gap: 10px;
     height: calc(100vh - 2*var(--body-margin));
 }
 
-.experiment-list-title {
-    text-align: center;
-    margin: 0;
-}
-
-.experiment-list {
-    border: var(--border);
-    border-radius: var(--border-radius);
+#experiment-list {
+    grid-area: running;
     height: 100%;
     overflow: scroll;
+    grid-area: list;
 }
 
 .experiment-list-item {
@@ -61,14 +54,6 @@ main {
 .experiment-list-item:hover {
     background-color: gray;
 }
-
-#running-list, #interesting-list, #uninteresting-list {
-    height: 100%;
-}
-
-#running-list { grid-area: running; }
-#interesting-list { grid-area: interesting; }
-#uninteresting-list { grid-area: uninteresting; }
 
 #experiment-info {
     grid-area: info;
