@@ -8,7 +8,7 @@ module Main where
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally, forkIO, newMVar, threadDelay)
 import Control.Exception (SomeException, try)
-import Control.Monad (forever, replicateM_, void)
+import Control.Monad (forever, replicateM_, void, replicateM)
 import Data.Functor ((<&>))
 import Data.Text.IO qualified as T
 import Data.UUID.V4 qualified as UUID
@@ -92,9 +92,9 @@ parseArgs =
 testThread :: (ExperimentProgress -> IO ()) -> IO ()
 testThread reportProgress = void . forkIO . forever . try @SomeException $ do
   experiment <- mkTestExperiment
-  reportProgress (Began experiment)
+  reportProgress (NewExperiment experiment)
 
-  threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
+  threadDelay =<< getStdRandom (uniformR (1e6, 2e6))
 
   proofFound <-
     getStdRandom (uniformR (1 :: Int, 100)) <&> \x ->
@@ -103,17 +103,34 @@ testThread reportProgress = void . forkIO . forever . try @SomeException $ do
           | x < 20 -> Just True
           | otherwise -> Just False
 
+  reportProgress (BeginRun experiment.uuid "test-runner-1")
+  reportProgress (BeginRun experiment.uuid "test-runner-2")
+
+  threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
   reportProgress
-    ( Completed
+    ( RunCompleted
         ExperimentResult
           { proofFound,
-            runnerInfo = "Example data generator",
+            runnerInfo = "test-runner-1",
             counterExample = Just "counter example goes here",
             fullOutput = "blah\nblah\nblah",
             uuid = experiment.uuid
           }
     )
-  return ()
+
+  threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
+  reportProgress
+    ( RunCompleted
+        ExperimentResult
+          { proofFound,
+            runnerInfo = "test-runner-2",
+            counterExample = Just "counter example goes here",
+            fullOutput = "blah\nblah\nblah",
+            uuid = experiment.uuid
+          }
+    )
+
+  reportProgress (ExperimentCompleted experiment.uuid)
   where
     mkTestExperiment :: IO Experiment
     mkTestExperiment = do

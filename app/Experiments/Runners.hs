@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Experiments.Runners (ExperimentRunner, allRunners, saveExperiment) where
+module Experiments.Runners (ExperimentRunner(..), allRunners, saveExperiment) where
 
 import Control.Monad (forM_, void)
 import Data.Function ((&))
@@ -21,24 +21,39 @@ import Shelly ((<.>), (</>))
 import Shelly qualified as Sh
 import Util (whenJust)
 
-type ExperimentRunner = Experiment -> IO ExperimentResult
+data ExperimentRunner = ExperimentRunner
+  { info :: RunnerInfo,
+    run :: Experiment -> IO ExperimentResult
+  }
 
 allRunners :: [ExperimentRunner]
 allRunners = [hectorOnEEMill3, hectorOnEEBeholder0]
 
 hectorOnEEMill3 :: ExperimentRunner
 hectorOnEEMill3 =
-  runVCFormal
-    "Synopsys Hector on ee-mill3 (Version T-2022.06-SP2 for linux64 - Nov 29, 2022)"
-    "mp5617@ee-mill3.ee.ic.ac.uk"
-    "/eda/synopsys/2022-23/RHELx86/VC-STATIC_2022.06-SP2/bin/vcf"
+  ExperimentRunner
+    { info,
+      run =
+        runVCFormal
+          info
+          "mp5617@ee-mill3.ee.ic.ac.uk"
+          "/eda/synopsys/2022-23/RHELx86/VC-STATIC_2022.06-SP2/bin/vcf"
+    }
+  where
+    info = "Synopsys Hector on ee-mill3 (Version T-2022.06-SP2 for linux64 - Nov 29, 2022)"
 
 hectorOnEEBeholder0 :: ExperimentRunner
 hectorOnEEBeholder0 =
-  runVCFormal
-    "Synopsys Hector on ee-beholder0 (Version T-2022.06-SP2-3 for linux64 - Apr 21, 2023)"
-    "mp5617@ee-beholder0.ee.ic.ac.uk"
-    "/home/mp5617/synopsys/vc_static/T-2022.06-SP2-3/bin/vcf"
+  ExperimentRunner
+    { info,
+      run =
+        runVCFormal
+          info
+          "mp5617@ee-beholder0.ee.ic.ac.uk"
+          "/home/mp5617/synopsys/vc_static/T-2022.06-SP2-3/bin/vcf"
+    }
+  where
+    info = "Synopsys Hector on ee-beholder0 (Version T-2022.06-SP2-3 for linux64 - Apr 21, 2023)"
 
 -- | Run an experiment using VC Formal on a remote host
 runVCFormal :: Text -> Text -> Text -> Experiment -> IO ExperimentResult
