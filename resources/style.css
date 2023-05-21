@@ -55,7 +55,7 @@ main {
     border-bottom: 1px solid black;
 }
 
-#experiment-info {
+#run-info {
     grid-area: info;
 
     display: grid;
@@ -68,10 +68,10 @@ main {
     grid-gap: 10px;
 }
 
-#experiment-info .experiment-details {grid-area: details;}
-#experiment-info .experiment-source-impl {grid-area: impl;}
-#experiment-info .experiment-source-spec {grid-area: spec;}
-#experiment-info .experiment-extra-output {grid-area: output;}
+#run-info .experiment-details {grid-area: details;}
+#run-info .experiment-source-impl {grid-area: impl;}
+#run-info .experiment-source-spec {grid-area: spec;}
+#run-info .experiment-extra-output {grid-area: output;}
 
 .info-box {
     border: var(--border);

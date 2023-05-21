@@ -28,7 +28,7 @@ import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
-import Experiments (Experiment (..), ExperimentProgress (..), ExperimentResult (..), RunnerInfo)
+import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), RunnerInfo)
 import GHC.Generics (Generic)
 import Network.HTTP.Types (status200, urlDecode, urlEncode)
 import Network.Wai (StreamingBody)
@@ -38,10 +38,10 @@ import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
-import Text.Blaze.Htmx (hxExt, hxGet, hxSwap, hxTrigger)
+import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Text.Printf (printf)
-import Web.Scotty (ActionM, Parsable (..), addHeader, get, html, next, notFound, param, raw, scotty, setHeader, status, stream)
+import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, notFound, param, raw, scotty, setHeader, status, stream)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
@@ -52,7 +52,7 @@ data ExperimentInfo = ExperimentInfo
 data RunInfo
   = CompletedRun ExperimentResult
   | ActiveRun RunnerInfo
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 data WebUIState = WebUIState
   { interestingExperiments :: Map UUID ExperimentInfo,
@@ -115,17 +115,19 @@ runWebUI stateVar = scotty 8888 $ do
     UUIDParam uuid <- param "uuid"
     runnerInfo <- urlDecode False <$> param "runnerInfo"
     state <- liftIO (readMVar stateVar)
+    isHtmxRequest <- (Just "true" ==) <$> header "HX-Request"
 
     liftIO $ printf "Looking for runner %s" (show runnerInfo)
 
-    case state
-      ^? #interestingExperiments
-      % at uuid
-      %? #runs
-      % at (T.decodeUtf8 runnerInfo)
-      % _Just of
-      Nothing -> next
-      Just info -> blazeHtml (runInfo info)
+    let mExperimentInfo = state.interestingExperiments ^. at uuid
+    let mExperiment = mExperimentInfo ^? _Just % #experiment
+    let mRunInfo = mExperimentInfo ^? _Just % #runs % at (T.decodeUtf8 runnerInfo) % _Just
+
+    case (mExperiment, mRunInfo) of
+      (Just experiment, Just ri)
+        | isHtmxRequest -> blazeHtml (runInfoBlock experiment ri)
+        | otherwise -> blazeHtml (runInfoPage state experiment ri)
+      _ -> next
 
   get "/experiments/stream" $ do
     state <- liftIO (readMVar stateVar)
@@ -156,14 +158,57 @@ htmlBase content = H.docTypeHtml $ do
     H.main
       content
 
-runInfo :: RunInfo -> Html
-runInfo = const (H.p "Stuff goes here")
-
 indexPage :: WebUIState -> Html
 indexPage state =
   htmlBase $ do
     experimentList state.interestingExperiments
-    H.div H.! A.id "experiment-info" $ pure ()
+    H.div H.! A.id "run-info" $ pure ()
+
+runInfoPage :: WebUIState -> Experiment -> RunInfo -> Html
+runInfoPage state experiment run =
+  htmlBase $ do
+    experimentList state.interestingExperiments
+    runInfoBlock experiment run
+
+runInfoBlock :: Experiment -> RunInfo -> Html
+runInfoBlock experiment run =
+  H.div
+    H.! A.id "run-info"
+    -- H.!? (experimentBucket info == Running, hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid)))
+    $ do
+      H.div H.! A.class_ "experiment-details info-box" $
+        H.div H.! A.class_ "info-box-content" $
+          H.table $ do
+            H.tr $ do
+              H.td "UUID"
+              H.td $ H.toHtml (show experiment.uuid)
+            H.tr $ do
+              H.td "Expected Result"
+              H.td $
+                if experiment.expectedResult
+                  then "Equivalent"
+                  else "Non-equivalent"
+            case run ^? #_CompletedRun of
+              Nothing -> pure ()
+              Just result -> do
+                H.tr $ do
+                  H.td "Actual Result"
+                  H.td $ case result.proofFound of
+                    Just True -> "Equivalent"
+                    Just False -> "Non-equivalent"
+                    Nothing -> "Inconclusive"
+      H.div H.! A.class_ "info-box long experiment-source-spec" $ do
+        H.h2 H.! A.class_ "info-box-title" $ "Source"
+        H.div H.! A.class_ "info-box-content long" $
+          H.pre $
+            H.text ("\n" <> experiment.designSpec.source)
+      H.div H.! A.class_ "info-box experiment-source-impl" $ do
+        H.h2 H.! A.class_ "info-box-title" $ "Implementation"
+        H.div H.! A.class_ "info-box-content long" $
+          H.pre $
+            H.text ("\n" <> experiment.designImpl.source)
+
+-- experimentExtraOutput CounterExample info
 
 experimentList ::
   Foldable t =>
@@ -187,97 +232,19 @@ experimentList experiments =
   where
     experimentListItem :: ExperimentInfo -> Html
     experimentListItem info =
-      H.details
-        H.! A.class_ "experiment-list-item"
-        -- H.! hxGet ("/experiments/" <> fromString (show uuid))
-        -- H.! hxTarget "#experiment-info"
-        -- H.! hxSwap "outerHTML"
-        $ do
-          H.summary (H.toHtml (show info.experiment.uuid))
-          H.ul $
-            forM_ (Map.keys info.runs) $ \(runnerInfo :: RunnerInfo) ->
-              H.li
-                $ H.a
+      H.details H.! A.class_ "experiment-list-item" $ do
+        H.summary (H.toHtml (show info.experiment.uuid))
+        H.ul $
+          forM_ (Map.keys info.runs) $ \(runnerInfo :: RunnerInfo) ->
+            H.li
+              ( H.a
+                  H.! hxTarget "#run-info"
+                  H.! hxSwap "outerHTML"
+                  H.! hxPushUrl "true"
+                  H.! hxGet [i|/experiments/#{show (info ^. #experiment % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
                   H.! A.href [i|/experiments/#{show (info ^. #experiment % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
-                $ H.toHtml runnerInfo
-
--- "stuff and things"
-
--- runInfo :: ExperimentInfo -> Html
--- runInfo info = H.div
---   H.! A.id "experiment-info"
---   -- H.!? (experimentBucket info == Running, hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid)))
---   $ do
---     H.div H.! A.class_ "experiment-details info-box" $
---       H.div H.! A.class_ "info-box-content" $
---         H.table $ do
---           H.tr $ do
---             H.td "UUID"
---             H.td $ fromString $ show info.experiment.uuid
---           H.tr $ do
---             H.td "Expected Result"
---             H.td $
---               if info.experiment.expectedResult
---                 then "Equivalent"
---                 else "Non-equivalent"
---           case info.result of
---             Nothing -> pure ()
---             Just result -> do
---               H.tr $ do
---                 H.td "Actual Result"
---                 H.td $ case result.proofFound of
---                   Just True -> "Equivalent"
---                   Just False -> "Non-equivalent"
---                   Nothing -> "Inconclusive"
---     H.div H.! A.class_ "info-box long experiment-source-spec" $ do
---       H.h2 H.! A.class_ "info-box-title" $ "Source"
---       H.div H.! A.class_ "info-box-content long" $
---         H.pre $
---           H.text ("\n" <> info.experiment.designSpec.source)
---     H.div H.! A.class_ "info-box experiment-source-impl" $ do
---       H.h2 H.! A.class_ "info-box-title" $ "Implementation"
---       H.div H.! A.class_ "info-box-content long" $
---         H.pre $
---           H.text ("\n" <> info.experiment.designImpl.source)
-
---     experimentExtraOutput CounterExample info
-
--- data OutputType = Log | CounterExample
---   deriving (Show, Eq, Ord)
-
--- instance Parsable OutputType where
---   parseParam "log" = Right Log
---   parseParam "counter-example" = Right CounterExample
---   parseParam txt = Left ("'" <> txt <> "' is not a valid output type")
-
--- experimentExtraOutput :: OutputType -> ExperimentInfo -> Html
--- experimentExtraOutput tab info = whenJust info.result $ \result -> do
---   let text = case tab of
---         Log -> result.fullOutput
---         CounterExample -> fromMaybe "" (result.counterExample)
-
---   H.div H.! A.class_ "info-box tab-box experiment-extra-output" $ do
---     H.div H.! A.class_ "tabs" $ do
---       let uuid = fromString (show info.experiment.uuid)
---       H.span
---         H.! hxGet ("/experiments/" <> uuid <> "/outputs/log")
---         H.! hxTarget "closest .experiment-extra-output"
---         H.! hxSwap "outerHTML"
---         H.! (if tab == Log then A.class_ "tab selected" else A.class_ "tab")
---         $ "Log"
---       H.span
---         H.! hxGet ("/experiments/" <> uuid <> "/outputs/counter-example")
---         H.! hxTarget "closest .experiment-extra-output"
---         H.! hxSwap "outerHTML"
---         H.! (if tab == CounterExample then A.class_ "tab selected" else A.class_ "tab")
---         $ "Counter Example"
---     H.div H.! A.class_ "tab-box-content long" $
---       H.pre $
---         H.text ("\n" <> text)
-
--- -- | htmx attributes to make an element continuously poll-reload from a URL
--- hxReloadFrom :: H.AttributeValue -> H.Attribute
--- hxReloadFrom url = hxGet url <> hxTrigger "load delay:5s" <> hxSwap "outerHTML"
+                  $ H.toHtml runnerInfo
+              )
 
 blazeHtml :: Html -> ActionM ()
 blazeHtml = html . LT.pack . H.renderHtml
@@ -356,3 +323,4 @@ shouldKeep info =
 
 makeFieldLabelsNoPrefix ''WebUIState
 makeFieldLabelsNoPrefix ''ExperimentInfo
+makeFieldLabelsNoPrefix ''RunInfo
