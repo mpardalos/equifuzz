@@ -51,8 +51,8 @@ main {
     cursor: pointer;
 }
 
-.experiment-list-item:hover {
-    background-color: gray;
+.experiment-list-item:not(:last-child) {
+    border-bottom: 1px solid black;
 }
 
 #experiment-info {
