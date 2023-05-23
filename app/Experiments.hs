@@ -17,6 +17,7 @@ import Data.Text qualified as T
 import Experiments.Generators
 import Experiments.Runners
 import Experiments.Types
+import Text.Printf (printf)
 
 experimentLoop ::
   IO Experiment ->
@@ -28,13 +29,16 @@ experimentLoop generator runners progress = forever $ do
   experiment <- generator
 
   progress (NewExperiment experiment)
+
   results <- fmap rights . forM runners $ \runner -> do
     progress (BeginRun experiment.uuid runner.info)
     Control.Exception.try @Control.Exception.SomeException (runner.run experiment) >>= \case
       Right result -> do
+        printf "Run completed successfully: %s on %s\n" (show experiment.uuid) (runner.info)
         progress (RunCompleted result)
         return (Right result)
       Left err -> do
+        printf "Run failed: %s on %s (%s)\n" (show experiment.uuid) (runner.info) (show err)
         progress
           ( RunCompleted
               ExperimentResult

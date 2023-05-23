@@ -8,13 +8,14 @@ module Main where
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally, forkIO, newMVar, threadDelay)
 import Control.Exception (SomeException, try)
-import Control.Monad (forever, replicateM_, void, replicateM)
+import Control.Monad (forever, replicateM, replicateM_, void)
 import Data.Functor ((<&>))
 import Data.Text.IO qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments
 import Options.Applicative qualified as Opt
 import System.Random (getStdRandom, uniformR)
+import Text.Printf (printf)
 import WebUI (handleProgress, newWebUIState, runWebUI)
 
 experimentThread :: (ExperimentProgress -> IO ()) -> IO ()
@@ -26,7 +27,10 @@ experimentThread reportProgress =
           allRunners
           reportProgress
       )
-      (const $ experimentThread reportProgress)
+      ( \err -> do
+          printf "Experiment thread crashed: \n%s\n-------------------\n" (show err)
+          experimentThread reportProgress
+      )
 
 webMain :: Bool -> IO ()
 webMain test = do
