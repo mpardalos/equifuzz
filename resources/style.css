@@ -88,6 +88,7 @@ main > * {
     display: flex;
     flex-direction: column;
     margin: 10px;
+    overflow: scroll;
 }
 
 .info-box-title {
@@ -102,6 +103,7 @@ main > * {
 .info-box-content {
     padding: 10px;
     flex-grow: 1;
+    overflow: scroll;
 }
 
 .long {overflow: scroll;}
