@@ -179,50 +179,43 @@ runInfoPage state experiment run =
     runInfoBlock experiment run
 
 runInfoBlock :: Experiment -> RunInfo -> Html
-runInfoBlock experiment run =
-  H.div
-    H.! A.id "run-info"
-    H.! A.class_ "long"
-    -- H.!? (experimentBucket info == Running, hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid)))
-    $ do
-      infoBoxNoTitle . table $
-        [ ["UUID", H.toHtml (show experiment.uuid)],
-          ["Expected Result", if experiment.expectedResult then "Equivalent" else "Non-equivalent"],
-          case run of
-            CompletedRun result ->
-              [ "Actual Result",
-                case result.proofFound of
-                  Just True -> "Equivalent"
-                  Just False -> "Non-equivalent"
-                  Nothing -> "Inconclusive"
-              ]
-            _ -> []
-        ]
+runInfoBlock experiment run = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
+  infoBoxNoTitle . table $
+    [ ["UUID", H.toHtml (show experiment.uuid)],
+      ["Expected Result", if experiment.expectedResult then "Equivalent" else "Non-equivalent"],
+      case run of
+        CompletedRun result ->
+          [ "Actual Result",
+            case result.proofFound of
+              Just True -> "Equivalent"
+              Just False -> "Non-equivalent"
+              Nothing -> "Inconclusive"
+          ]
+        _ -> []
+    ]
 
-      sideBySide $ do
-        infoBox
-          "Spec"
-          (H.pre $ H.text ("\n" <> experiment.designSpec.source))
-        infoBox
-          "Implementation"
-          (H.pre $ H.text ("\n" <> experiment.designImpl.source))
+  sideBySide $ do
+    infoBox
+      "Spec"
+      (H.pre $ H.text ("\n" <> experiment.designSpec.source))
+    infoBox
+      "Implementation"
+      (H.pre $ H.text ("\n" <> experiment.designImpl.source))
 
-      whenJust (run ^? #_CompletedRun % #counterExample % _Just) $ \counterExample ->
-        infoBox
-          "Counter-example"
-          (H.pre $ H.text ("\n" <> counterExample))
+  whenJust (run ^? #_CompletedRun % #counterExample % _Just) $ \counterExample ->
+    infoBox
+      "Counter-example"
+      (H.pre $ H.text ("\n" <> counterExample))
 
-      whenJust (run ^? #_CompletedRun % #fullOutput) $ \output ->
-        infoBox
-          "Full output"
-          (H.pre $ H.text ("\n" <> output))
+  whenJust (run ^? #_CompletedRun % #fullOutput) $ \output ->
+    infoBox
+      "Full output"
+      (H.pre $ H.text ("\n" <> output))
 
 experimentList :: WebUIState -> Html
 experimentList state = H.div
   H.! A.id "experiment-list"
-  H.! hxTrigger "sse:experiment-list"
-  H.! hxGet "/experiments"
-  H.! hxSwap "outerHTML"
+  H.! (hxTrigger "sse:experiment-list" <> hxGet "/experiments" <> hxSwap "outerHTML")
   $ do
     experimentSubList "Running" state.runningExperiments
     experimentSubList "Interesting" state.interestingExperiments
