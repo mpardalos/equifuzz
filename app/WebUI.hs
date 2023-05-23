@@ -229,8 +229,9 @@ experimentList state = H.div
     experimentListItem :: ExperimentInfo -> Html
     experimentListItem info =
       H.div H.! A.class_ "experiment-list-item" $ do
-        H.h3 (H.toHtml (show info.experiment.uuid))
-        H.ul $
+        H.span H.! A.class_ "experiment-list-uuid" $
+          H.toHtml (show info.experiment.uuid)
+        H.ul H.! A.class_ "experiment-list-run-list" $
           forM_ (Map.keys info.runs) $ \(runnerInfo :: RunnerInfo) ->
             H.li
               ( H.a

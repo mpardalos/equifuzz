@@ -57,6 +57,17 @@ main > * {
     border-bottom: 1px solid black;
 }
 
+.experiment-list-item .experiment-list-uuid {
+    font-size: 1.1em;
+    display: block;
+}
+
+.experiment-list-item .experiment-list-run-list {
+    margin: 10px 0;
+    padding-left: 10px;
+    list-style: '— ' inside;
+}
+
 #run-info {
     overflow-y: scroll;
     overflow-x: hidden;
