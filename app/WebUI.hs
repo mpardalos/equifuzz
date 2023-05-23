@@ -185,7 +185,7 @@ runInfoBlock experiment run =
     H.! A.class_ "long"
     -- H.!? (experimentBucket info == Running, hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid)))
     $ do
-      infoBox Nothing $
+      infoBoxNoTitle $
         H.table $ do
           H.tr $ do
             H.td "UUID"
@@ -205,25 +205,22 @@ runInfoBlock experiment run =
                 Nothing -> "Inconclusive"
 
       sideBySide $ do
-        infoBox (Just "Spec") (H.pre $ H.text ("\n" <> experiment.designSpec.source))
-        infoBox (Just "Implementation") (H.pre $ H.text ("\n" <> experiment.designImpl.source))
+        infoBox
+          "Spec"
+          (H.pre $ H.text ("\n" <> experiment.designSpec.source))
+        infoBox
+          "Implementation"
+          (H.pre $ H.text ("\n" <> experiment.designImpl.source))
 
-      whenJust (run ^? #_CompletedRun % #counterExample % _Just) $ \counterExample -> do
-        infoBox (Just "Counter-example") $ H.pre $ H.text ("\n" <> counterExample)
+      whenJust (run ^? #_CompletedRun % #counterExample % _Just) $ \counterExample ->
+        infoBox
+          "Counter-example"
+          (H.pre $ H.text ("\n" <> counterExample))
 
-      whenJust (run ^? #_CompletedRun % #fullOutput) $ \output -> do
-        infoBox (Just "Full output") $ H.pre $ H.text ("\n" <> output)
-
-sideBySide :: Html -> Html
-sideBySide = H.div H.! A.class_ "side-by-side"
-
-infoBox :: Maybe Html -> Html -> Html
-infoBox mTitle body = do
-  H.div H.! A.class_ "info-box" $ do
-    whenJust mTitle $ \title ->
-      H.h2 H.! A.class_ "info-box-title" $ title
-    H.div H.! A.class_ "info-box-content" $
-      body
+      whenJust (run ^? #_CompletedRun % #fullOutput) $ \output ->
+        infoBox
+          "Full output"
+          (H.pre $ H.text ("\n" <> output))
 
 experimentList :: WebUIState -> Html
 experimentList state = H.div
@@ -235,19 +232,11 @@ experimentList state = H.div
     experimentSubList "Running" state.runningExperiments
     experimentSubList "Interesting" state.interestingExperiments
   where
-    experimentSubList ::
-      Foldable t =>
-      Html ->
-      t ExperimentInfo ->
-      Html
-    experimentSubList title experiments = H.div H.! A.class_ "info-box" $
-      do
-        H.h2 H.! A.class_ "info-box-title flex-spread" $ do
-          H.span title
-          H.span (H.toHtml (length experiments))
-
-        H.div H.! A.class_ "info-box-content long" $
-          mapM_ experimentListItem experiments
+    experimentSubList title experiments =
+      infoBoxWithSideTitle
+        title
+        (H.toHtml (length experiments))
+        (mapM_ experimentListItem experiments)
 
     experimentListItem :: ExperimentInfo -> Html
     experimentListItem info =
@@ -264,6 +253,32 @@ experimentList state = H.div
                   H.! A.href [i|/experiments/#{show (info ^. #experiment % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
                   $ H.toHtml runnerInfo
               )
+
+sideBySide :: Html -> Html
+sideBySide = H.div H.! A.class_ "side-by-side"
+
+infoBox :: Html -> Html -> Html
+infoBox title body = do
+  H.div H.! A.class_ "info-box" $ do
+    H.h2 H.! A.class_ "info-box-title" $
+      title
+    H.div H.! A.class_ "info-box-content" $
+      body
+
+infoBoxNoTitle :: Html -> Html
+infoBoxNoTitle body = do
+  H.div H.! A.class_ "info-box" $ do
+    H.div H.! A.class_ "info-box-content" $
+      body
+
+infoBoxWithSideTitle :: Html -> Html -> Html -> Html
+infoBoxWithSideTitle title count body =
+  H.div H.! A.class_ "info-box" $ do
+    H.h2 H.! A.class_ "info-box-title" $ do
+      H.span title
+      H.span count
+    H.div H.! A.class_ "info-box-content" $
+      body
 
 blazeHtml :: Html -> ActionM ()
 blazeHtml = html . LT.pack . H.renderHtml
