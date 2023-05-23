@@ -28,27 +28,29 @@ body {
 }
 
 main {
-    display: grid;
-    grid:
-        'list info'
-        / fit-content(100%) auto;
-    gap: 10px;
+    display: flex;
+    width: 100%;
+    flex-direction: row;
     height: calc(100vh - 2*var(--body-margin));
+    gap: 10px;
+}
+
+main > * {
+    height: 100%;
+    flex-grow: 1;
 }
 
 #experiment-list {
-    grid-area: running;
+    max-width: 20vw;
+    display: flex;
+    flex-direction: column;
     height: 100%;
-    overflow: scroll;
-    grid-area: list;
 }
 
-.experiment-list-item {
-    padding-left: 10px;
-    padding-right: 10px;
-    line-height: 2;
-    font-family: monospace;
-    cursor: pointer;
+#experiment-list > * {
+    overflow: scroll;
+    /* Make all children the same size */
+    flex: 1 1 0;
 }
 
 .experiment-list-item:not(:last-child) {
@@ -56,28 +58,31 @@ main {
 }
 
 #run-info {
-    grid-area: info;
-
-    display: grid;
-    grid:
-        "details details" min-content
-        "spec    impl   " 1fr
-        "output  output " 32%
-        / 1fr 1fr
-    ;
-    grid-gap: 10px;
+    overflow-y: scroll;
+    overflow-x: hidden;
 }
 
-#run-info .experiment-details {grid-area: details;}
-#run-info .experiment-source-impl {grid-area: impl;}
-#run-info .experiment-source-spec {grid-area: spec;}
-#run-info .experiment-extra-output {grid-area: output;}
+.side-by-side {
+    display: flex;
+    flex-direction: row;
+}
+
+.side-by-side > * {
+    flex: 1 1 50%;
+}
+
+/* Make everything single-column by default, so we can make specific blocks
+ * side-by-side */
+#run-info * {grid-column: begin/end;}
+#run-info .experiment-source-spec {grid-column: begin/middle}
+#run-info .experiment-source-impl {grid-column: middle/end;}
 
 .info-box {
     border: var(--border);
     border-radius: var(--border-radius);
     display: flex;
     flex-direction: column;
+    margin: 10px;
 }
 
 .info-box-title {

@@ -10,6 +10,7 @@
 
 module WebUI (WebUIState, newWebUIState, handleProgress, runWebUI) where
 
+import Control.Applicative ((<|>))
 import Control.Concurrent (MVar, modifyMVar_, readMVar)
 import Control.Concurrent.STM (STM, TMVar, atomically, isEmptyTMVar, newTMVar, retry, takeTMVar, tryPutTMVar)
 import Control.Monad (forM, forM_, forever, void)
@@ -23,7 +24,6 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes)
 import Data.String.Interpolate (i)
-import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
@@ -32,7 +32,7 @@ import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..),
 import GHC.Generics (Generic)
 import Network.HTTP.Types (status200, urlDecode, urlEncode)
 import Network.Wai (StreamingBody)
-import Optics (At (at), makeFieldLabelsNoPrefix, traversed, (%), (%?), (^.), (^..), (^?), _Just)
+import Optics (At (at), makeFieldLabelsNoPrefix, use, (%), (%?), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
@@ -41,7 +41,8 @@ import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Text.Printf (printf)
-import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, notFound, param, raw, scotty, setHeader, status, stream)
+import Util (whenJust)
+import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, raw, scotty, setHeader, status, stream)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
@@ -55,8 +56,9 @@ data RunInfo
   deriving (Eq, Show, Generic)
 
 data WebUIState = WebUIState
-  { interestingExperiments :: Map UUID ExperimentInfo,
-    interestingExperimentsSem :: Semaphore,
+  { runningExperiments :: Map UUID ExperimentInfo,
+    interestingExperiments :: Map UUID ExperimentInfo,
+    experimentsSem :: Semaphore,
     totalRunCount :: Int,
     totalRunCountSem :: Semaphore
   }
@@ -64,12 +66,13 @@ data WebUIState = WebUIState
 
 newWebUIState :: IO WebUIState
 newWebUIState = do
-  interestingExperimentsSem <- atomically newSemaphore
+  experimentsSem <- atomically newSemaphore
   totalRunCountSem <- atomically newSemaphore
   return
     WebUIState
       { interestingExperiments = Map.empty,
-        interestingExperimentsSem,
+        runningExperiments = Map.empty,
+        experimentsSem,
         totalRunCount = 0,
         totalRunCountSem
       }
@@ -80,25 +83,28 @@ handleProgress stateVar progress = do
 
   modifyMVar_ stateVar . execStateT $ case progress of
     NewExperiment experiment -> do
-      #interestingExperiments % at experiment.uuid .= Just (ExperimentInfo experiment [])
-      liftIO . atomically $ signalSemaphore state.interestingExperimentsSem
+      #runningExperiments % at experiment.uuid .= Just (ExperimentInfo experiment [])
+      liftIO . atomically $ signalSemaphore state.experimentsSem
     BeginRun uuid runnerInfo -> do
       -- FIXME: Report error if uuid does not exist
-      #interestingExperiments % at uuid %? #runs % at runnerInfo .= Just (ActiveRun runnerInfo)
+      #runningExperiments % at uuid %? #runs % at runnerInfo .= Just (ActiveRun runnerInfo)
     RunCompleted result -> do
       -- FIXME: Report error if uuid does not exist
-      #interestingExperiments % at result.uuid %? #runs % at result.runnerInfo .= Just (CompletedRun result)
+      #runningExperiments % at result.uuid %? #runs % at result.runnerInfo .= Just (CompletedRun result)
       #totalRunCount %= (+ 1)
-      liftIO . atomically $ signalSemaphore state.interestingExperimentsSem
+      liftIO . atomically $ signalSemaphore state.experimentsSem
       liftIO . atomically $ signalSemaphore state.totalRunCountSem
     ExperimentCompleted uuid -> do
       -- FIXME: Report error if experiment does not exist
       -- FIXME: Report error if experiment still has active runs
-      #interestingExperiments % at uuid %= \case
-        Nothing -> Nothing
-        Just info
-          | shouldKeep info -> Just info
-          | otherwise -> Nothing
+      mExperiment <- use (#runningExperiments % at uuid)
+      whenJust mExperiment $ \experiment -> do
+        #runningExperiments % at uuid .= Nothing
+        #interestingExperiments
+          % at uuid
+          .= if shouldKeep experiment
+            then Just experiment
+            else Nothing
 
 runWebUI :: MVar WebUIState -> IO ()
 runWebUI stateVar = scotty 8888 $ do
@@ -119,7 +125,9 @@ runWebUI stateVar = scotty 8888 $ do
 
     liftIO $ printf "Looking for runner %s" (show runnerInfo)
 
-    let mExperimentInfo = state.interestingExperiments ^. at uuid
+    let mExperimentInfo =
+          Map.lookup uuid state.runningExperiments
+            <|> Map.lookup uuid state.interestingExperiments
     let mExperiment = mExperimentInfo ^? _Just % #experiment
     let mRunInfo = mExperimentInfo ^? _Just % #runs % at (T.decodeUtf8 runnerInfo) % _Just
 
@@ -129,18 +137,18 @@ runWebUI stateVar = scotty 8888 $ do
         | otherwise -> blazeHtml (runInfoPage state experiment ri)
       _ -> next
 
-  get "/experiments/stream" $ do
+  get "/events" $ do
     state <- liftIO (readMVar stateVar)
     status status200
     setHeader "Content-Type" "text/event-stream"
     stream . eventStreamFromIO . atomically $ do
-      waitForSemaphore state.interestingExperimentsSem
+      waitForSemaphore state.experimentsSem
       pure [EventStreamEvent {event = "experiment-list", data_ = "update"}]
 
   get "/experiments" $ do
     state <- liftIO (readMVar stateVar)
 
-    blazeHtml (experimentList state.interestingExperiments)
+    blazeHtml (experimentList state)
 
   get "/" $ do
     state <- liftIO (readMVar stateVar)
@@ -154,86 +162,97 @@ htmlBase content = H.docTypeHtml $ do
     -- H.script H.! A.src "/resources/htmx.min.js.gz" $ ""
     H.script H.! A.src "/resources/htmx.js" $ ""
     H.script H.! A.src "https://unpkg.com/htmx.org/dist/ext/sse.js" $ ""
-  H.body H.! hxExt "sse" H.! sseConnect "/experiments/stream" $ do
+  H.body H.! hxExt "sse" H.! sseConnect "/events" $ do
     H.main
       content
 
 indexPage :: WebUIState -> Html
 indexPage state =
   htmlBase $ do
-    experimentList state.interestingExperiments
+    experimentList state
     H.div H.! A.id "run-info" $ pure ()
 
 runInfoPage :: WebUIState -> Experiment -> RunInfo -> Html
 runInfoPage state experiment run =
   htmlBase $ do
-    experimentList state.interestingExperiments
+    experimentList state
     runInfoBlock experiment run
 
 runInfoBlock :: Experiment -> RunInfo -> Html
 runInfoBlock experiment run =
   H.div
     H.! A.id "run-info"
+    H.! A.class_ "long"
     -- H.!? (experimentBucket info == Running, hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid)))
     $ do
-      H.div H.! A.class_ "experiment-details info-box" $
-        H.div H.! A.class_ "info-box-content" $
-          H.table $ do
+      infoBox Nothing $
+        H.table $ do
+          H.tr $ do
+            H.td "UUID"
+            H.td $ H.toHtml (show experiment.uuid)
+          H.tr $ do
+            H.td "Expected Result"
+            H.td $
+              if experiment.expectedResult
+                then "Equivalent"
+                else "Non-equivalent"
+          whenJust (run ^? #_CompletedRun) $ \result -> do
             H.tr $ do
-              H.td "UUID"
-              H.td $ H.toHtml (show experiment.uuid)
-            H.tr $ do
-              H.td "Expected Result"
-              H.td $
-                if experiment.expectedResult
-                  then "Equivalent"
-                  else "Non-equivalent"
-            case run ^? #_CompletedRun of
-              Nothing -> pure ()
-              Just result -> do
-                H.tr $ do
-                  H.td "Actual Result"
-                  H.td $ case result.proofFound of
-                    Just True -> "Equivalent"
-                    Just False -> "Non-equivalent"
-                    Nothing -> "Inconclusive"
-      H.div H.! A.class_ "info-box long experiment-source-spec" $ do
-        H.h2 H.! A.class_ "info-box-title" $ "Source"
-        H.div H.! A.class_ "info-box-content long" $
-          H.pre $
-            H.text ("\n" <> experiment.designSpec.source)
-      H.div H.! A.class_ "info-box experiment-source-impl" $ do
-        H.h2 H.! A.class_ "info-box-title" $ "Implementation"
-        H.div H.! A.class_ "info-box-content long" $
-          H.pre $
-            H.text ("\n" <> experiment.designImpl.source)
+              H.td "Actual Result"
+              H.td $ case result.proofFound of
+                Just True -> "Equivalent"
+                Just False -> "Non-equivalent"
+                Nothing -> "Inconclusive"
 
--- experimentExtraOutput CounterExample info
+      sideBySide $ do
+        infoBox (Just "Spec") (H.pre $ H.text ("\n" <> experiment.designSpec.source))
+        infoBox (Just "Implementation") (H.pre $ H.text ("\n" <> experiment.designImpl.source))
 
-experimentList ::
-  Foldable t =>
-  -- | Experiment list to show from
-  t ExperimentInfo ->
-  Html
-experimentList experiments =
-  H.div
-    H.! A.class_ "info-box"
-    H.! A.id "experiment-list"
-    -- H.! hxTrigger "sse:experiment-list"
-    -- H.! hxGet "/experiments"
-    -- H.! hxSwap "outerHTML"
-    $ do
-      H.h2 H.! A.class_ "info-box-title flex-spread" $ do
-        H.span "Experiments"
-        H.span (H.toHtml (length experiments))
+      whenJust (run ^? #_CompletedRun % #counterExample % _Just) $ \counterExample -> do
+        infoBox (Just "Counter-example") $ H.pre $ H.text ("\n" <> counterExample)
 
-      H.div H.! A.class_ "info-box-content long" $
-        mapM_ experimentListItem experiments
+      whenJust (run ^? #_CompletedRun % #fullOutput) $ \output -> do
+        infoBox (Just "Full output") $ H.pre $ H.text ("\n" <> output)
+
+sideBySide :: Html -> Html
+sideBySide = H.div H.! A.class_ "side-by-side"
+
+infoBox :: Maybe Html -> Html -> Html
+infoBox mTitle body = do
+  H.div H.! A.class_ "info-box" $ do
+    whenJust mTitle $ \title ->
+      H.h2 H.! A.class_ "info-box-title" $ title
+    H.div H.! A.class_ "info-box-content" $
+      body
+
+experimentList :: WebUIState -> Html
+experimentList state = H.div
+  H.! A.id "experiment-list"
+  H.! hxTrigger "sse:experiment-list"
+  H.! hxGet "/experiments"
+  H.! hxSwap "outerHTML"
+  $ do
+    experimentSubList "Running" state.runningExperiments
+    experimentSubList "Interesting" state.interestingExperiments
   where
+    experimentSubList ::
+      Foldable t =>
+      Html ->
+      t ExperimentInfo ->
+      Html
+    experimentSubList title experiments = H.div H.! A.class_ "info-box" $
+      do
+        H.h2 H.! A.class_ "info-box-title flex-spread" $ do
+          H.span title
+          H.span (H.toHtml (length experiments))
+
+        H.div H.! A.class_ "info-box-content long" $
+          mapM_ experimentListItem experiments
+
     experimentListItem :: ExperimentInfo -> Html
     experimentListItem info =
-      H.details H.! A.class_ "experiment-list-item" $ do
-        H.summary (H.toHtml (show info.experiment.uuid))
+      H.div H.! A.class_ "experiment-list-item" $ do
+        H.h3 (H.toHtml (show info.experiment.uuid))
         H.ul $
           forM_ (Map.keys info.runs) $ \(runnerInfo :: RunnerInfo) ->
             H.li
