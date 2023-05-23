@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Experiments.Runners (ExperimentRunner(..), allRunners, saveExperiment) where
+module Experiments.Runners (ExperimentRunner (..), allRunners, saveExperiment) where
 
 import Control.Monad (forM_, void)
 import Data.Function ((&))
@@ -27,37 +27,50 @@ data ExperimentRunner = ExperimentRunner
   }
 
 allRunners :: [ExperimentRunner]
-allRunners = [hectorOnEEMill3, hectorOnEEBeholder0]
+allRunners = [hector_2022_06_SP2, hector_2022_06_SP2_3, hector_2023_03_1]
 
-hectorOnEEMill3 :: ExperimentRunner
-hectorOnEEMill3 =
-  ExperimentRunner
-    { info,
-      run =
-        runVCFormal
-          info
-          "mp5617@ee-mill3.ee.ic.ac.uk"
-          "/eda/synopsys/2022-23/RHELx86/VC-STATIC_2022.06-SP2/bin/vcf"
-    }
-  where
-    info = "Synopsys Hector on ee-mill3 (Version T-2022.06-SP2 for linux64 - Nov 29, 2022)"
-
-hectorOnEEBeholder0 :: ExperimentRunner
-hectorOnEEBeholder0 =
+hector_2022_06_SP2 :: ExperimentRunner
+hector_2022_06_SP2 =
   ExperimentRunner
     { info,
       run =
         runVCFormal
           info
           "mp5617@ee-beholder0.ee.ic.ac.uk"
-          "/home/mp5617/synopsys/vc_static/T-2022.06-SP2-3/bin/vcf"
+          "/scratch/mp5617/synopsys/vc_static/T-2022.06-SP2/activate.sh"
     }
   where
-    info = "Synopsys Hector on ee-beholder0 (Version T-2022.06-SP2-3 for linux64 - Apr 21, 2023)"
+    info = "Hector T-2022.06-SP2"
+
+hector_2022_06_SP2_3 :: ExperimentRunner
+hector_2022_06_SP2_3 =
+  ExperimentRunner
+    { info,
+      run =
+        runVCFormal
+          info
+          "mp5617@ee-beholder0.ee.ic.ac.uk"
+          "/scratch/mp5617/synopsys/vc_static/T-2022.06-SP2-3/activate.sh"
+    }
+  where
+    info = "Hector T-2022.06-SP2-3"
+
+hector_2023_03_1 :: ExperimentRunner
+hector_2023_03_1 =
+  ExperimentRunner
+    { info,
+      run =
+        runVCFormal
+          info
+          "mp5617@ee-beholder0.ee.ic.ac.uk"
+          "/scratch/mp5617/synopsys/vc_static/U-2023.03-1/activate.sh"
+    }
+  where
+    info = "Hector T-2022.06-SP2-3"
 
 -- | Run an experiment using VC Formal on a remote host
 runVCFormal :: Text -> Text -> Text -> Experiment -> IO ExperimentResult
-runVCFormal runnerInfo vcfHost vcfPath experiment@Experiment {uuid, designSpec, designImpl} = Sh.shelly . Sh.silently $ do
+runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, designSpec, designImpl} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile
     (dir </> specFileName)
@@ -120,7 +133,7 @@ runVCFormal runnerInfo vcfHost vcfPath experiment@Experiment {uuid, designSpec, 
     implFileName = ("impl" :: FilePath) <.> languageFileExtension designImpl.language
 
     sshCommand :: Text
-    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && #{vcfPath} -fmode DPV -f compare.tcl|]
+    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
 
 hectorCompareScript :: FilePath -> FilePath -> Experiment -> Text
 hectorCompareScript specFileName implFileName experiment =
