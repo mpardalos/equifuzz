@@ -185,24 +185,19 @@ runInfoBlock experiment run =
     H.! A.class_ "long"
     -- H.!? (experimentBucket info == Running, hxReloadFrom ("/experiments/" <> fromString (show info.experiment.uuid)))
     $ do
-      infoBoxNoTitle $
-        H.table $ do
-          H.tr $ do
-            H.td "UUID"
-            H.td $ H.toHtml (show experiment.uuid)
-          H.tr $ do
-            H.td "Expected Result"
-            H.td $
-              if experiment.expectedResult
-                then "Equivalent"
-                else "Non-equivalent"
-          whenJust (run ^? #_CompletedRun) $ \result -> do
-            H.tr $ do
-              H.td "Actual Result"
-              H.td $ case result.proofFound of
-                Just True -> "Equivalent"
-                Just False -> "Non-equivalent"
-                Nothing -> "Inconclusive"
+      infoBoxNoTitle . table $
+        [ ["UUID", H.toHtml (show experiment.uuid)],
+          ["Expected Result", if experiment.expectedResult then "Equivalent" else "Non-equivalent"],
+          case run of
+            CompletedRun result ->
+              [ "Actual Result",
+                case result.proofFound of
+                  Just True -> "Equivalent"
+                  Just False -> "Non-equivalent"
+                  Nothing -> "Inconclusive"
+              ]
+            _ -> []
+        ]
 
       sideBySide $ do
         infoBox
@@ -253,6 +248,13 @@ experimentList state = H.div
                   H.! A.href [i|/experiments/#{show (info ^. #experiment % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
                   $ H.toHtml runnerInfo
               )
+
+table :: [[Html]] -> Html
+table rows = H.table $
+  forM_ rows $ \row ->
+    H.tr $
+      forM_ row $ \content ->
+        H.td content
 
 sideBySide :: Html -> Html
 sideBySide = H.div H.! A.class_ "side-by-side"
