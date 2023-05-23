@@ -169,6 +169,7 @@ saveExperiment experiment results = Sh.shelly . Sh.silently $ do
   Sh.writefile (dir </> specFileName) experiment.designSpec.source
   Sh.writefile (dir </> implFileName) experiment.designImpl.source
   forM_ results $ \result -> do
+    Sh.mkdir_p (dir </> result.runnerInfo)
     Sh.writefile
       (dir </> result.runnerInfo </> ("full_output.txt" :: Text))
       result.fullOutput
