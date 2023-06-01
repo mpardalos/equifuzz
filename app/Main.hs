@@ -11,12 +11,17 @@ import Control.Exception (SomeException, try)
 import Control.Monad (forever, replicateM, replicateM_, void)
 import Data.Functor ((<&>))
 import Data.Text.IO qualified as T
+import Data.Time (ZonedTime (zonedTimeToLocalTime), getZonedTime)
+import Data.Time.Format.ISO8601 (iso8601Show)
 import Data.UUID.V4 qualified as UUID
 import Experiments
 import Options.Applicative qualified as Opt
 import System.Random (getStdRandom, uniformR)
 import Text.Printf (printf)
 import WebUI (handleProgress, newWebUIState, runWebUI)
+
+errorLog :: FilePath
+errorLog = "equifuzz.error.log"
 
 experimentThread :: (ExperimentProgress -> IO ()) -> IO ()
 experimentThread reportProgress =
@@ -28,7 +33,12 @@ experimentThread reportProgress =
           reportProgress
       )
       ( \err -> do
-          printf "Experiment thread crashed: \n%s\n-------------------\n" (show err)
+          time <- zonedTimeToLocalTime <$> getZonedTime
+          appendFile errorLog (printf "[%s] Experiment thread crashed\n" (iso8601Show time))
+          appendFile errorLog "=========================\n"
+          appendFile errorLog (show err)
+          appendFile errorLog "=========================\n"
+          appendFile errorLog "\n"
           experimentThread reportProgress
       )
 
