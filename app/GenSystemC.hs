@@ -43,16 +43,17 @@ grow scExpr = do
   grownScExpr <-
     iterateM
       count
-      ( \e ->
-          Hog.choice
-            [ castWithDeclaration e,
-              range e
-            ]
-      )
+      (\e -> do f <- Hog.element growFuncs; f e)
       scExpr
   if isFinalType grownScExpr.annotation
     then return grownScExpr
     else castToFinalType grownScExpr
+  where
+    growFuncs :: [SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)]
+    growFuncs =
+      [ castWithDeclaration,
+        range
+      ]
 
 newtype BuildOutM a = BuildOutM (StateT SCConstState Gen a)
   deriving newtype (Applicative, Monad, Alternative, MonadState SCConstState, MonadGen)
