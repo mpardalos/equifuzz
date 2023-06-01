@@ -113,6 +113,7 @@ castToType = \case
   -- testing. This workaround should be an option at the top level.
   SC.SCFixed {} -> Hog.choice [someFixed, someUFixed]
   SC.SCUFixed {} -> Hog.choice [someFixed, someUFixed]
+  SC.SCFxnumSubref {} -> Hog.choice [someInt, someUInt]
   _ -> Hog.choice [someInt, someUInt, someFixed, someUFixed]
   where
     someInt = SC.SCInt <$> someWidth
