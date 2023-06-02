@@ -120,7 +120,22 @@ data SCType
   | SCUIntSubref
   | CUInt
   | CInt
+  | CDouble
   deriving (Eq, Show, Generic, Data)
+
+-- | The list of types that this type can be *implicitly* cast to, including itself
+implicitCastTargetsOf :: SCType -> [SCType]
+implicitCastTargetsOf t@SCInt {} = [t, CInt]
+implicitCastTargetsOf t@SCUInt {} = [t, CUInt]
+implicitCastTargetsOf t@SCIntSubref {} = [t, CInt]
+implicitCastTargetsOf t@SCUIntSubref {} = [t, CUInt]
+implicitCastTargetsOf t@SCFixed {} = [t, CDouble]
+implicitCastTargetsOf t@SCUFixed {} = [t, CDouble]
+implicitCastTargetsOf t@SCFxnumSubref = [t] -- TODO: Add bv_base
+-- TODO: Can we say that CUInt and CInt can be implicitly cast to each other?
+implicitCastTargetsOf t@CUInt = [t]
+implicitCastTargetsOf t@CInt = [t]
+implicitCastTargetsOf t@CDouble = [t]
 
 isSigned :: SCType -> Bool
 isSigned SCInt {} = True
@@ -134,6 +149,19 @@ isSigned SCUIntSubref = False
 isSigned SCUInt {} = False
 isSigned SCUFixed {} = False
 isSigned CUInt = False
+isSigned CDouble = True
+
+isIntegral :: SCType -> Bool
+isIntegral SCInt {} = True
+isIntegral CInt = True
+isIntegral SCIntSubref = True
+isIntegral SCUIntSubref = True
+isIntegral SCUInt {} = True
+isIntegral CUInt = True
+isIntegral SCFixed {} = False
+isIntegral SCUFixed {} = False
+isIntegral SCFxnumSubref = False
+isIntegral CDouble = False
 
 -- | `Just <subref type>` if the type supports the range operator, or `Nothing`
 -- if it does not
@@ -147,6 +175,7 @@ supportsRange SCIntSubref = Nothing
 supportsRange SCUIntSubref = Nothing
 supportsRange CInt = Nothing
 supportsRange CUInt = Nothing
+supportsRange CDouble = Nothing
 
 -- | Give the bitwidth of the type where that exists (i.e. SystemC types with a
 -- width template parameters)
@@ -160,6 +189,7 @@ specifiedWidth SCIntSubref = Nothing
 specifiedWidth SCUIntSubref = Nothing
 specifiedWidth CInt = Nothing
 specifiedWidth CUInt = Nothing
+specifiedWidth CDouble = Nothing
 
 data FunctionDeclaration ann = FunctionDeclaration
   { returnType :: SCType,
@@ -260,6 +290,7 @@ instance Pretty SCType where
   pretty SCUIntSubref = "sc_dt::sc_uint_subref"
   pretty CInt = "int"
   pretty CUInt = "unsigned"
+  pretty CDouble = "double"
 
 instance Source SCType where
   genSource =

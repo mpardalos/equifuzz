@@ -53,7 +53,8 @@ grow scExpr = do
     growFuncs :: [SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)]
     growFuncs =
       [ castWithDeclaration,
-        range
+        range,
+        arithmetic
       ]
 
 newtype BuildOutM a = BuildOutM (StateT SCConstState Gen a)
@@ -107,6 +108,30 @@ castToFinalType e = do
   #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
   return (SC.Variable varType varName)
 
+arithmetic :: Expr BuildOut -> BuildOutM (Expr BuildOut)
+arithmetic e
+  | any (`elem` [SC.CInt, SC.CUInt, SC.CDouble]) (implicitCastTargetsOf e.annotation) =
+      SC.BinOp resultType e
+        <$> someOp
+        <*> someConstant
+  | otherwise = pure e
+  where
+    someOp =
+      Hog.element
+        [ SC.Plus,
+          SC.Minus,
+          SC.Multiply
+        ]
+
+    someConstant =
+      SC.Constant resultType
+        <$> Hog.int (Hog.Range.constant (-1024) 1024)
+
+    resultType = case (isIntegral e.annotation, isSigned e.annotation) of
+      (False, _) -> SC.CDouble
+      (True, False) -> SC.CUInt
+      (True, True) -> SC.CInt
+
 -- | Generate a type that the input type can be cast to
 castToType :: MonadGen m => SC.SCType -> m SC.SCType
 castToType = \case
@@ -135,6 +160,7 @@ isFinalType SC.SCUInt {} = True
 isFinalType SC.SCUFixed {} = True
 isFinalType SC.CInt = False
 isFinalType SC.CUInt = False
+isFinalType SC.CDouble = False
 isFinalType SC.SCFxnumSubref = False
 isFinalType SC.SCIntSubref = False
 isFinalType SC.SCUIntSubref = False
