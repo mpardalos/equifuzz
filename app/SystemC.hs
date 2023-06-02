@@ -18,6 +18,7 @@ import Prettyprinter
     align,
     comma,
     defaultLayoutOptions,
+    hsep,
     indent,
     layoutPretty,
     line,
@@ -204,34 +205,27 @@ annComment :: Doc a -> Doc a
 annComment ann = "/* " <> ann <> " */"
 
 instance Annotation ann => Pretty (Expr ann) where
-  pretty (Constant ann n) = pretty n <+> annComment (pretty ann)
-  pretty (BinOp ann l op r) =
+  pretty (Constant _ n)
+    | n < 0 = parens (pretty n)
+    | otherwise = pretty n
+  pretty (BinOp _ l op r) =
+    hsep ["(", pretty l, pretty op, pretty r, ")"]
+  pretty (Conditional _ cond tBranch fBranch) =
     align $
       vsep
         [ "(",
           indent 4 . vsep $
-            [ pretty l,
-              pretty op <+> annComment (pretty ann),
-              pretty r
-            ],
-          ")"
-        ]
-  pretty (Conditional ann cond tBranch fBranch) =
-    align $
-      vsep
-        [ "(",
-          indent 4 . vsep $
-            [ pretty cond <+> annComment ("?:" <+> pretty ann),
+            [ pretty cond,
               "?" <+> pretty tBranch,
               ":" <+> pretty fBranch
             ],
           ")"
         ]
-  pretty (Variable ann name) =
-    pretty name <+> annComment (pretty ann)
-  pretty (Cast ann castType expr) =
+  pretty (Variable _ name) =
+    pretty name
+  pretty (Cast _ castType expr) =
     pretty castType <> parens (pretty expr)
-  pretty (Range ann e hi lo) = pretty e <+> ".range(" <> pretty hi <> ", " <> pretty lo <> ")"
+  pretty (Range _ e hi lo) = pretty e <> ".range(" <> pretty hi <> ", " <> pretty lo <> ")"
 
 -- instance Annotation ann => Source (Expr ann) where
 --   genSource =
