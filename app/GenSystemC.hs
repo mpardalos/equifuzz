@@ -39,7 +39,8 @@ seedExpr = constant <$> Hog.int (Hog.Range.constant (-128) 128)
 
 grow :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
 grow scExpr = do
-  count <- Hog.int (Hog.Range.linear 5 50)
+  -- count <- Hog.int (Hog.Range.linear 5 50)
+  let count = 50
   grownScExpr <-
     iterateM
       count

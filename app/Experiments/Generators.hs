@@ -25,7 +25,7 @@ import SystemC qualified as SC
 -- icarus verilog (`iverilog`) available locally
 mkSystemCConstantExperiment :: IO Experiment
 mkSystemCConstantExperiment = do
-  systemcModule <- Hog.sample (genSystemCConstant "dut")
+  systemcModule <- Hog.sample (Hog.resize 99 $ genSystemCConstant "dut")
   let wrapperName = "impl"
   let designImpl =
         DesignSource
