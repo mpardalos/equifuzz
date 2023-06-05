@@ -20,8 +20,9 @@ data Experiment = Experiment
   { uuid :: UUID,
     -- | True if we expect the modules to be equivalent, False if we expect them not to be
     expectedResult :: Bool,
-    designSpec :: DesignSource,
-    designImpl :: DesignSource
+    design :: DesignSource,
+    -- | Value that the design will be compared to
+    comparisonValue :: Text
   }
   deriving (Generic, Show)
 
@@ -31,12 +32,8 @@ instance Eq Experiment where
 instance Ord Experiment where
   compare = compare `on` view #uuid
 
-data DesignLanguage = SystemC | Verilog
-  deriving (Show)
-
 data DesignSource = DesignSource
-  { language :: DesignLanguage,
-    topName :: Text,
+  { topName :: Text,
     source :: Text
   }
   deriving (Show)

@@ -183,6 +183,7 @@ runInfoBlock experiment run = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
   infoBoxNoTitle . table $
     [ ["UUID", H.toHtml (show experiment.uuid)],
       ["Expected Result", if experiment.expectedResult then "Equivalent" else "Non-equivalent"],
+      ["Comparison Value", H.text experiment.comparisonValue],
       case run of
         CompletedRun result ->
           [ "Actual Result",
@@ -194,13 +195,7 @@ runInfoBlock experiment run = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
         _ -> []
     ]
 
-  sideBySide $ do
-    infoBox
-      "Spec"
-      (H.pre $ H.text ("\n" <> experiment.designSpec.source))
-    infoBox
-      "Implementation"
-      (H.pre $ H.text ("\n" <> experiment.designImpl.source))
+  infoBox "Design" (H.pre $ H.text ("\n" <> experiment.design.source))
 
   whenJust (run ^? #_CompletedRun % #counterExample % _Just) $ \counterExample ->
     infoBox

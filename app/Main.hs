@@ -54,10 +54,10 @@ webMain test = do
 
 genMain :: IO ()
 genMain = do
-  Experiment {designSpec, designImpl} <- mkSystemCConstantExperiment
-  T.putStrLn designSpec.source
+  Experiment {design, comparisonValue} <- mkSystemCConstantExperiment
+  T.putStrLn design.source
   putStrLn "---------"
-  T.putStrLn designImpl.source
+  T.putStrLn comparisonValue
 
 main :: IO ()
 main =
@@ -152,17 +152,11 @@ testThread reportProgress = void . forkIO . forever . try @SomeException $ do
       return
         Experiment
           { uuid,
-            designSpec =
+            design =
               DesignSource
-                { language = Verilog,
-                  topName = "top",
-                  source = "/* I would write some Verilog here, but it's late */"
-                },
-            designImpl =
-              DesignSource
-                { language = SystemC,
-                  topName = "main",
+                { topName = "main",
                   source = "int main() { return 0; }"
                 },
+            comparisonValue = "32'hdeadbeef",
             expectedResult = False
           }

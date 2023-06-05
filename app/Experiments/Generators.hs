@@ -10,7 +10,7 @@ module Experiments.Generators (mkSystemCConstantExperiment) where
 
 import Control.Monad (void)
 import Data.Maybe (fromJust)
-import Data.String.Interpolate (__i)
+import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID.V4 qualified as UUID
@@ -27,10 +27,9 @@ mkSystemCConstantExperiment :: IO Experiment
 mkSystemCConstantExperiment = do
   systemcModule <- Hog.sample (Hog.resize 99 $ genSystemCConstant "dut")
   let wrapperName = "impl"
-  let designImpl =
+  let design =
         DesignSource
-          { language = SystemC,
-            topName = wrapperName,
+          { topName = wrapperName,
             source =
               SC.includeHeader
                 <> "\n\n"
@@ -47,22 +46,16 @@ mkSystemCConstantExperiment = do
   -- FIXME: The error from this `fromJust` is unhandled up the stack. Handle
   -- errors from experiment generation
   let outWidth = fromJust $ SC.specifiedWidth systemcModule.returnType
-  let signed :: Text = if SC.isSigned systemcModule.returnType then "signed" else ""
-  let verilogModule =
-        [__i|
-          module spec(out);
-            output wire #{signed} [#{outWidth - 1}:0] out;
-            assign out = #{outWidth}'b#{expectedResult};
-          endmodule
-            |]
-  let designSpec =
-        DesignSource
-          { language = Verilog,
-            topName = "spec",
-            source = verilogModule
-          }
+  let comparisonValue = T.pack (show outWidth) <> "'b" <> expectedResult
+
   uuid <- UUID.nextRandom
-  return Experiment {uuid, expectedResult = True, designSpec, designImpl}
+  return
+    Experiment
+      { uuid,
+        expectedResult = True,
+        design,
+        comparisonValue
+      }
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper

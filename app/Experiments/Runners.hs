@@ -70,17 +70,14 @@ hector_2023_03_1 =
 
 -- | Run an experiment using VC Formal on a remote host
 runVCFormal :: Text -> Text -> Text -> Experiment -> IO ExperimentResult
-runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, designSpec, designImpl} = Sh.shelly . Sh.silently $ do
+runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile
-    (dir </> specFileName)
-    designSpec.source
-  Sh.writefile
-    (dir </> implFileName)
-    designImpl.source
+    (dir </> filename)
+    design.source
   Sh.writefile
     (dir </> ("compare.tcl" :: Text))
-    (hectorCompareScript specFileName implFileName experiment)
+    (hectorCompareScript filename experiment)
   void $ Sh.bash "ssh" [vcfHost, "mkdir -p " <> remoteDir <> "/"]
   void $ Sh.bash "scp" ["-r", dir <> "/*", vcfHost <> ":" <> remoteDir <> "/" <> T.pack (show uuid)]
 
@@ -128,30 +125,28 @@ runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, designSpe
     experimentDir :: Text
     experimentDir = remoteDir <> "/" <> T.pack (show uuid)
 
-    specFileName, implFileName :: FilePath
-    specFileName = ("spec" :: FilePath) <.> languageFileExtension designSpec.language
-    implFileName = ("impl" :: FilePath) <.> languageFileExtension designImpl.language
+    filename = "impl.cpp"
 
     sshCommand :: Text
     sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
 
-hectorCompareScript :: FilePath -> FilePath -> Experiment -> Text
-hectorCompareScript specFileName implFileName experiment =
+hectorCompareScript :: FilePath -> Experiment -> Text
+hectorCompareScript filename experiment =
   [__i|
             set_custom_solve_script "orch_multipliers"
             set_user_assumes_lemmas_procedure "miter"
 
-            create_design -name spec -top #{experiment ^. #designSpec ^. #topName}
-            #{compileCommand (experiment ^. #designSpec ^. #language) specFileName}
+            create_design -name spec -top #{experiment ^. #design ^. #topName}
+            cppan #{filename}
             compile_design spec
 
-            create_design -name impl -top #{experiment ^. #designImpl ^. #topName}
-            #{compileCommand (experiment ^. #designImpl ^. #language) implFileName}
+            create_design -name impl -top #{experiment ^. #design ^. #topName}
+            cppan #{filename}
             compile_design impl
 
             proc miter {} {
                     map_by_name -inputs -implphase 1 -specphase 1
-                    lemma out_equiv = spec.out(1) == impl.out(1)
+                    lemma out_equiv = spec.out(1) == #{experiment ^. #comparisonValue}
             }
 
             compose
@@ -161,26 +156,15 @@ hectorCompareScript specFileName implFileName experiment =
             simcex -txt counter_example.txt out_equiv
             quit
   |]
-  where
-    compileCommand :: DesignLanguage -> FilePath -> FilePath
-    compileCommand language file = case language of
-      Verilog -> [i|vcs -sverilog #{file}|]
-      SystemC -> [i|cppan #{file}|]
-
-languageFileExtension :: DesignLanguage -> Text
-languageFileExtension Verilog = "v"
-languageFileExtension SystemC = "cpp"
 
 -- | Save information about the experiment to the experiments/ directory
 saveExperiment :: Experiment -> [ExperimentResult] -> IO ()
 saveExperiment experiment results = Sh.shelly . Sh.silently $ do
   let dir = "experiments/" <> UUID.toString experiment.uuid
-  let specFileName = ("spec" :: Text) <.> languageFileExtension experiment.designSpec.language
-  let implFileName = ("impl" :: Text) <.> languageFileExtension experiment.designImpl.language
+  let filename = "impl.cpp"
 
   Sh.mkdir_p dir
-  Sh.writefile (dir </> specFileName) experiment.designSpec.source
-  Sh.writefile (dir </> implFileName) experiment.designImpl.source
+  Sh.writefile (dir </> filename) experiment.design.source
   forM_ results $ \result -> do
     Sh.mkdir_p (dir </> result.runnerInfo)
     Sh.writefile
@@ -199,4 +183,4 @@ saveExperiment experiment results = Sh.shelly . Sh.silently $ do
           Counter Example : #{isJust (result ^. #counterExample)}
           |]
 
-  Sh.writefile (dir </> ("compare.tcl" :: Text)) (hectorCompareScript specFileName implFileName experiment)
+  Sh.writefile (dir </> ("compare.tcl" :: Text)) (hectorCompareScript filename experiment)
