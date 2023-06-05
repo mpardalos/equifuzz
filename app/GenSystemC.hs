@@ -55,7 +55,8 @@ grow scExpr = do
       [ castWithDeclaration,
         range,
         arithmetic,
-        useAsCondition
+        useAsCondition,
+        bitSelect
       ]
 
 newtype BuildOutM a = BuildOutM (StateT SCConstState Gen a)
@@ -172,9 +173,12 @@ isFinalType SC.SCUFixed {} = True
 isFinalType SC.CInt = False
 isFinalType SC.CUInt = False
 isFinalType SC.CDouble = False
+isFinalType SC.CBool = False
 isFinalType SC.SCFxnumSubref = False
 isFinalType SC.SCIntSubref = False
 isFinalType SC.SCUIntSubref = False
+isFinalType SC.SCIntBitref = True
+isFinalType SC.SCUIntBitref = True
 
 range :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
 range e = case (SC.specifiedWidth e.annotation, SC.supportsRange e.annotation) of
@@ -182,4 +186,11 @@ range e = case (SC.specifiedWidth e.annotation, SC.supportsRange e.annotation) o
     hi <- Hog.int (Hog.Range.constant 0 (width - 1))
     lo <- Hog.int (Hog.Range.constant 0 hi)
     return (SC.Range subrefType e hi lo)
+  _ -> return e
+
+bitSelect :: Expr BuildOut -> BuildOutM (Expr BuildOut)
+bitSelect e = case (SC.specifiedWidth e.annotation, SC.supportsBitref e.annotation) of
+  (Just width, Just bitrefType) -> do
+    bit <- Hog.int (Hog.Range.constant 0 (width - 1))
+    return (SC.Bitref bitrefType e bit)
   _ -> return e

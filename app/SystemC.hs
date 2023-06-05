@@ -64,6 +64,7 @@ data Expr ann
   | Variable (AnnExpr ann) Text
   | Cast (AnnExpr ann) SCType (Expr ann)
   | Range (AnnExpr ann) (Expr ann) Int Int
+  | Bitref (AnnExpr ann) (Expr ann) Int
   deriving (Generic)
 
 deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (Expr ann)
@@ -79,6 +80,7 @@ instance (Annotation ann, AnnExpr ann ~ annType) => HasField "annotation" (Expr 
   getField (Variable ann _) = ann
   getField (Cast ann _ _) = ann
   getField (Range ann _ _ _) = ann
+  getField (Bitref ann _ _) = ann
 
 instance
   (Annotation ann, AnnExpr ann ~ annType) =>
@@ -118,9 +120,12 @@ data SCType
   | SCFxnumSubref
   | SCIntSubref
   | SCUIntSubref
+  | SCIntBitref
+  | SCUIntBitref
   | CUInt
   | CInt
   | CDouble
+  | CBool
   deriving (Eq, Show, Generic, Data)
 
 -- | The list of types that this type can be *implicitly* cast to, including itself
@@ -132,10 +137,13 @@ implicitCastTargetsOf t@SCUIntSubref {} = [t, CUInt]
 implicitCastTargetsOf t@SCFixed {} = [t, CDouble]
 implicitCastTargetsOf t@SCUFixed {} = [t, CDouble]
 implicitCastTargetsOf t@SCFxnumSubref = [t] -- TODO: Add bv_base
+implicitCastTargetsOf t@SCIntBitref = [t, CBool]
+implicitCastTargetsOf t@SCUIntBitref = [t, CBool]
 -- TODO: Can we say that CUInt and CInt can be implicitly cast to each other?
 implicitCastTargetsOf t@CUInt = [t]
 implicitCastTargetsOf t@CInt = [t]
 implicitCastTargetsOf t@CDouble = [t]
+implicitCastTargetsOf t@CBool = [t]
 
 isSigned :: SCType -> Bool
 isSigned SCInt {} = True
@@ -146,22 +154,28 @@ isSigned CInt = True
 isSigned SCFxnumSubref = False
 isSigned SCIntSubref = False
 isSigned SCUIntSubref = False
+isSigned SCIntBitref = False
+isSigned SCUIntBitref = False
 isSigned SCUInt {} = False
 isSigned SCUFixed {} = False
 isSigned CUInt = False
 isSigned CDouble = True
+isSigned CBool = False
 
 isIntegral :: SCType -> Bool
 isIntegral SCInt {} = True
 isIntegral CInt = True
 isIntegral SCIntSubref = True
 isIntegral SCUIntSubref = True
+isIntegral SCIntBitref = True
+isIntegral SCUIntBitref = True
 isIntegral SCUInt {} = True
 isIntegral CUInt = True
 isIntegral SCFixed {} = False
 isIntegral SCUFixed {} = False
 isIntegral SCFxnumSubref = False
 isIntegral CDouble = False
+isIntegral CBool = True
 
 -- | `Just <subref type>` if the type supports the range operator, or `Nothing`
 -- if it does not
@@ -173,9 +187,30 @@ supportsRange SCUFixed {} = Just SCFxnumSubref
 supportsRange SCFxnumSubref = Nothing
 supportsRange SCIntSubref = Nothing
 supportsRange SCUIntSubref = Nothing
+supportsRange SCIntBitref = Nothing
+supportsRange SCUIntBitref = Nothing
 supportsRange CInt = Nothing
 supportsRange CUInt = Nothing
 supportsRange CDouble = Nothing
+supportsRange CBool = Nothing
+
+-- | `Just <subref type>` if the type supports the bitref operator, or `Nothing`
+-- if it does not
+supportsBitref :: SCType -> Maybe SCType
+supportsBitref SCInt {} = Just SCIntBitref
+supportsBitref SCUInt {} = Just SCUIntBitref
+-- TODO: Fxnum bitrefs
+supportsBitref SCFixed {} = Nothing
+supportsBitref SCUFixed {} = Nothing
+supportsBitref SCFxnumSubref = Nothing
+supportsBitref SCIntSubref = Nothing
+supportsBitref SCUIntSubref = Nothing
+supportsBitref SCIntBitref = Nothing
+supportsBitref SCUIntBitref = Nothing
+supportsBitref CInt = Nothing
+supportsBitref CUInt = Nothing
+supportsBitref CDouble = Nothing
+supportsBitref CBool = Nothing
 
 -- | Give the bitwidth of the type where that exists (i.e. SystemC types with a
 -- width template parameters)
@@ -187,9 +222,12 @@ specifiedWidth SCUFixed {w} = Just w
 specifiedWidth SCFxnumSubref = Nothing
 specifiedWidth SCIntSubref = Nothing
 specifiedWidth SCUIntSubref = Nothing
+specifiedWidth SCIntBitref = Nothing
+specifiedWidth SCUIntBitref = Nothing
 specifiedWidth CInt = Nothing
 specifiedWidth CUInt = Nothing
 specifiedWidth CDouble = Nothing
+specifiedWidth CBool = Nothing
 
 data FunctionDeclaration ann = FunctionDeclaration
   { returnType :: SCType,
@@ -254,6 +292,7 @@ instance Annotation ann => Pretty (Expr ann) where
   pretty (Cast _ castType expr) =
     pretty castType <> parens (pretty expr)
   pretty (Range _ e hi lo) = pretty e <> ".range(" <> pretty hi <> ", " <> pretty lo <> ")"
+  pretty (Bitref _ e bit) = pretty e <> "[" <> pretty bit <> "]"
 
 -- instance Annotation ann => Source (Expr ann) where
 --   genSource =
@@ -286,9 +325,12 @@ instance Pretty SCType where
   pretty SCFxnumSubref = "sc_dt::sc_fxnum_subref"
   pretty SCIntSubref = "sc_dt::sc_int_subref"
   pretty SCUIntSubref = "sc_dt::sc_uint_subref"
+  pretty SCIntBitref = "sc_dt::sc_int_bitref"
+  pretty SCUIntBitref = "sc_dt::sc_uint_bitref"
   pretty CInt = "int"
   pretty CUInt = "unsigned"
   pretty CDouble = "double"
+  pretty CBool = "bool"
 
 instance Source SCType where
   genSource =

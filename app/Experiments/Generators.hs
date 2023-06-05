@@ -10,7 +10,7 @@ module Experiments.Generators (mkSystemCConstantExperiment) where
 
 import Control.Monad (void)
 import Data.Maybe (fromJust)
-import Data.String.Interpolate (i, __i)
+import Data.String.Interpolate (__i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID.V4 qualified as UUID
