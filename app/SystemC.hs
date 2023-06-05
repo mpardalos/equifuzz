@@ -241,16 +241,14 @@ instance Annotation ann => Pretty (Expr ann) where
   pretty (BinOp _ l op r) =
     hsep ["(", pretty l, pretty op, pretty r, ")"]
   pretty (Conditional _ cond tBranch fBranch) =
-    align $
-      vsep
-        [ "(",
-          indent 4 . vsep $
-            [ pretty cond,
-              "?" <+> pretty tBranch,
-              ":" <+> pretty fBranch
-            ],
-          ")"
-        ]
+    "("
+      <> ( align . vsep $
+             [ pretty cond,
+               "?" <+> pretty tBranch,
+               ":" <+> pretty fBranch
+             ]
+         )
+      <> ")"
   pretty (Variable _ name) =
     pretty name
   pretty (Cast _ castType expr) =
