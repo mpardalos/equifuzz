@@ -54,7 +54,8 @@ grow scExpr = do
     growFuncs =
       [ castWithDeclaration,
         range,
-        arithmetic
+        arithmetic,
+        useAsCondition
       ]
 
 newtype BuildOutM a = BuildOutM (StateT SCConstState Gen a)
@@ -107,6 +108,16 @@ castToFinalType e = do
   #nextVarIdx %= (+ 1)
   #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
   return (SC.Variable varType varName)
+
+useAsCondition :: Expr BuildOut -> BuildOutM (Expr BuildOut)
+useAsCondition e
+  | any (`elem` [SC.CInt, SC.CUInt, SC.CDouble]) (implicitCastTargetsOf e.annotation) =
+      SC.Conditional SC.CInt e
+        <$> (constant <$> someValue)
+        <*> (constant <$> someValue)
+  | otherwise = pure e
+  where
+    someValue = Hog.int (Hog.Range.constant (-1024) 1024)
 
 arithmetic :: Expr BuildOut -> BuildOutM (Expr BuildOut)
 arithmetic e
