@@ -55,10 +55,19 @@ experimentThread reportProgress =
 webMain :: Bool -> IO ()
 webMain test = do
   stateVar <- newMVar =<< newWebUIState
+  let reportProgress p = do
+        case p of
+          NewExperiment experiment -> printf "Begin experiment | %s\n" (show experiment.uuid)
+          BeginRun uuid runnerInfo -> printf "Begin run | %s on %s\n" (show uuid) runnerInfo
+          RunFailed uuid runnerInfo _ -> printf "Run failed | %s on %s\n" (show uuid) (show runnerInfo)
+          RunCompleted result -> printf "Run completed | %s on %s\n" (show result.uuid) (result.runnerInfo)
+          ExperimentCompleted uuid -> printf "Experiment Completed | %s\n" (show uuid)
+        handleProgress stateVar p
+
   replicateM_ 10 $
     if test
-      then testThread (handleProgress stateVar)
-      else experimentThread (handleProgress stateVar)
+      then testThread reportProgress
+      else experimentThread reportProgress
 
   runWebUI stateVar
 

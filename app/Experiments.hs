@@ -16,7 +16,6 @@ import Data.Maybe (catMaybes)
 import Experiments.Generators
 import Experiments.Runners
 import Experiments.Types
-import Text.Printf (printf)
 
 experimentLoop ::
   IO Experiment ->
@@ -33,11 +32,9 @@ experimentLoop generator runners progress = forever $ do
     progress (BeginRun experiment.uuid runner.info)
     Control.Exception.try @Control.Exception.SomeException (runner.run experiment) >>= \case
       Right (Right result) -> do
-        printf "Run completed successfully: %s on %s\n" (show experiment.uuid) (runner.info)
         progress (RunCompleted result)
         return (Just result)
       Right (Left runnerError) -> do
-        printf "Run failed: %s on %s\n" (show experiment.uuid) (runner.info)
         progress (RunFailed experiment.uuid runner.info runnerError)
         -- Out of licenses *should* terminate the thread
         case runnerError of
@@ -46,7 +43,6 @@ experimentLoop generator runners progress = forever $ do
             throwIO OutOfLicenses
           _ -> return Nothing
       Left err -> do
-        printf "Run failed: %s on %s (%s)\n" (show experiment.uuid) (runner.info) (show err)
         progress (RunFailed experiment.uuid runner.info (RunnerCrashed err))
         return Nothing
 
