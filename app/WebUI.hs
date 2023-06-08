@@ -12,8 +12,8 @@ module WebUI (WebUIState, newWebUIState, handleProgress, runWebUI) where
 
 import Control.Applicative ((<|>))
 import Control.Concurrent (MVar, modifyMVar_, readMVar)
-import Control.Concurrent.STM (STM, TMVar, atomically, isEmptyTMVar, newTMVar, retry, takeTMVar, tryPutTMVar)
-import Control.Monad (forM, forM_, forever, void)
+import Control.Concurrent.STM (STM, TMVar, atomically, newTMVar, takeTMVar, tryPutTMVar)
+import Control.Monad (forM_, forever, void)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (execStateT)
 import Data.Binary.Builder qualified as Binary
@@ -22,7 +22,6 @@ import Data.ByteString.Lazy.Char8 qualified as LB
 import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (catMaybes)
 import Data.String.Interpolate (i)
 import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as LT
@@ -249,9 +248,6 @@ table rows = H.table $
       forM_ row $ \content ->
         H.td content
 
-sideBySide :: Html -> Html
-sideBySide = H.div H.! A.class_ "side-by-side"
-
 infoBox :: Html -> Html -> Html
 infoBox title body = do
   H.div H.! A.class_ "info-box" $ do
@@ -325,25 +321,8 @@ newSemaphore = Semaphore <$> newTMVar ()
 waitForSemaphore :: Semaphore -> STM ()
 waitForSemaphore (Semaphore mvar) = takeTMVar mvar
 
-checkSemaphore :: Semaphore -> STM Bool
-checkSemaphore (Semaphore mvar) = not <$> isEmptyTMVar mvar
-
 signalSemaphore :: Semaphore -> STM ()
 signalSemaphore (Semaphore mvar) = void $ tryPutTMVar mvar ()
-
-chooseSemaphore :: [(Semaphore, STM a)] -> STM a
-chooseSemaphore choices = do
-  signalledChoices <- forM choices $ \(s, x) -> do
-    isSignalled <- checkSemaphore s
-    return $
-      if isSignalled
-        then Just (s, x)
-        else Nothing
-  case catMaybes signalledChoices of
-    (s, x) : _ -> do
-      waitForSemaphore s -- Cleared the signal (and only this signal)
-      x
-    [] -> retry
 
 shouldKeep :: ExperimentInfo -> Bool
 shouldKeep info =
