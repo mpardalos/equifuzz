@@ -2,13 +2,16 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-typed-holes #-}
 
 module GenSystemC (genSystemCConstant) where
 
 import Control.Applicative (Alternative)
 import Control.Monad.State (MonadState (..), StateT (..))
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
@@ -112,7 +115,7 @@ castToFinalType e = do
 
 useAsCondition :: Expr BuildOut -> BuildOutM (Expr BuildOut)
 useAsCondition e
-  | any (`elem` [SC.CInt, SC.CUInt, SC.CDouble]) (implicitCastTargetsOf e.annotation) =
+  | length (Set.intersection [SC.CInt, SC.CUInt, SC.CDouble] (implicitCastTargetsOf e.annotation)) == 1 =
       SC.Conditional SC.CInt e
         <$> (constant <$> someValue)
         <*> (constant <$> someValue)
@@ -122,7 +125,7 @@ useAsCondition e
 
 arithmetic :: Expr BuildOut -> BuildOutM (Expr BuildOut)
 arithmetic e
-  | any (`elem` [SC.CInt, SC.CUInt, SC.CDouble]) (implicitCastTargetsOf e.annotation) =
+  | length (Set.intersection [SC.CInt, SC.CUInt, SC.CDouble] (implicitCastTargetsOf e.annotation)) == 1 =
       SC.BinOp resultType e
         <$> someOp
         <*> someConstant

@@ -2,6 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE OverloadedLists #-}
 
 module SystemC where
 
@@ -29,6 +30,7 @@ import Prettyprinter
     (<+>),
   )
 import Prettyprinter.Render.Text (renderStrict)
+import Data.Set (Set)
 
 type AnnConstraint (c :: Type -> Constraint) ann =
   ( c (AnnExpr ann),
@@ -126,16 +128,17 @@ data SCType
   | CInt
   | CDouble
   | CBool
-  deriving (Eq, Show, Generic, Data)
+  deriving (Eq, Show, Ord, Generic, Data)
 
 -- | The list of types that this type can be *implicitly* cast to, including itself
-implicitCastTargetsOf :: SCType -> [SCType]
+implicitCastTargetsOf :: SCType -> Set SCType
 implicitCastTargetsOf t@SCInt {} = [t, CInt]
 implicitCastTargetsOf t@SCUInt {} = [t, CUInt]
 implicitCastTargetsOf t@SCIntSubref {} = [t, CInt]
 implicitCastTargetsOf t@SCUIntSubref {} = [t, CUInt]
-implicitCastTargetsOf t@SCFixed {} = [t, CDouble]
-implicitCastTargetsOf t@SCUFixed {} = [t, CDouble]
+-- FIXME: sc_fixed -> int and sc_ufixed -> uint only exist as implicit casts in hector
+implicitCastTargetsOf t@SCFixed {} = [t, CInt, CDouble]
+implicitCastTargetsOf t@SCUFixed {} = [t, CUInt, CDouble]
 implicitCastTargetsOf t@SCFxnumSubref = [t] -- TODO: Add bv_base
 implicitCastTargetsOf t@SCIntBitref = [t, CBool]
 implicitCastTargetsOf t@SCUIntBitref = [t, CBool]
