@@ -115,7 +115,7 @@ castToFinalType e = do
 
 useAsCondition :: Expr BuildOut -> BuildOutM (Expr BuildOut)
 useAsCondition e
-  | length (Set.intersection [SC.CInt, SC.CUInt, SC.CDouble] (implicitCastTargetsOf e.annotation)) == 1 =
+  | SC.CBool `elem` implicitCastTargetsOf e.annotation =
       SC.Conditional SC.CInt e
         <$> (constant <$> someValue)
         <*> (constant <$> someValue)
