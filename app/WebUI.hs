@@ -40,7 +40,6 @@ import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
-import Text.Printf (printf)
 import Util (whenJust)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, raw, scotty, setHeader, status, stream)
 
@@ -129,8 +128,6 @@ runWebUI stateVar = scotty 8888 $ do
     runnerInfo <- urlDecode False <$> param "runnerInfo"
     state <- liftIO (readMVar stateVar)
     isHtmxRequest <- (Just "true" ==) <$> header "HX-Request"
-
-    liftIO $ printf "Looking for runner %s" (show runnerInfo)
 
     let mExperimentInfo =
           Map.lookup uuid state.runningExperiments
