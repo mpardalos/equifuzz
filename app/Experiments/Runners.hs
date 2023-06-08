@@ -66,7 +66,7 @@ hector_2023_03_1 =
           "/scratch/mp5617/synopsys/vc_static/U-2023.03-1/activate.sh"
     }
   where
-    info = "Hector T-2022.06-SP2-3"
+    info = "Hector U-2023.03-1"
 
 -- | Run an experiment using VC Formal on a remote host
 runVCFormal :: Text -> Text -> Text -> Experiment -> IO (Either RunnerError ExperimentResult)
