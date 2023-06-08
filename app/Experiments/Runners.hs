@@ -136,7 +136,7 @@ runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} =
     filename = "impl.cpp"
 
     sshCommand :: Text
-    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum *.v && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
+    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum * && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
 
 hectorCompareScript :: FilePath -> Experiment -> Text
 hectorCompareScript filename experiment =
