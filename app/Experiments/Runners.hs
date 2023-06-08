@@ -17,13 +17,13 @@ import Data.Text qualified as T
 import Data.UUID qualified as UUID
 import Experiments.Types
 import Optics ((^.))
-import Shelly ((<.>), (</>))
+import Shelly ((</>))
 import Shelly qualified as Sh
 import Util (whenJust)
 
 data ExperimentRunner = ExperimentRunner
   { info :: RunnerInfo,
-    run :: Experiment -> IO ExperimentResult
+    run :: Experiment -> IO (Either RunnerError ExperimentResult)
   }
 
 allRunners :: [ExperimentRunner]
@@ -69,7 +69,7 @@ hector_2023_03_1 =
     info = "Hector T-2022.06-SP2-3"
 
 -- | Run an experiment using VC Formal on a remote host
-runVCFormal :: Text -> Text -> Text -> Experiment -> IO ExperimentResult
+runVCFormal :: Text -> Text -> Text -> Experiment -> IO (Either RunnerError ExperimentResult)
 runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.silently $ do
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile
@@ -102,6 +102,11 @@ runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} =
       False -> pure Nothing
       True -> Just <$> Sh.readfile (T.unpack dir <> "/counter_example.txt")
 
+  let noLicense =
+        fullOutput
+          & T.lines
+          & any ("Unable to check out license feature" `T.isInfixOf`)
+
   let proofSuccessful =
         fullOutput
           & T.lines
@@ -117,7 +122,10 @@ runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} =
         (False, True) -> Just False
         _ -> Nothing
 
-  return ExperimentResult {proofFound, counterExample, fullOutput, uuid, runnerInfo}
+  return $
+    if noLicense
+      then Left OutOfLicenses
+      else Right ExperimentResult {proofFound, counterExample, fullOutput, uuid, runnerInfo}
   where
     remoteDir :: Text
     remoteDir = "equifuzz_vcf_experiment"

@@ -10,10 +10,9 @@ module Experiments
   )
 where
 
-import Control.Exception (SomeException, try)
+import Control.Exception (SomeException, throwIO, try)
 import Control.Monad (forM, forever, when)
-import Data.Either (rights)
-import Data.Text qualified as T
+import Data.Maybe (catMaybes)
 import Experiments.Generators
 import Experiments.Runners
 import Experiments.Types
@@ -30,26 +29,26 @@ experimentLoop generator runners progress = forever $ do
 
   progress (NewExperiment experiment)
 
-  results <- fmap rights . forM runners $ \runner -> do
+  results <- fmap catMaybes . forM runners $ \runner -> do
     progress (BeginRun experiment.uuid runner.info)
     Control.Exception.try @Control.Exception.SomeException (runner.run experiment) >>= \case
-      Right result -> do
+      Right (Right result) -> do
         printf "Run completed successfully: %s on %s\n" (show experiment.uuid) (runner.info)
         progress (RunCompleted result)
-        return (Right result)
+        return (Just result)
+      Right (Left runnerError) -> do
+        printf "Run failed: %s on %s\n" (show experiment.uuid) (runner.info)
+        progress (RunFailed experiment.uuid runner.info runnerError)
+        -- Out of licenses *should* terminate the thread
+        case runnerError of
+          OutOfLicenses -> do
+            progress (ExperimentCompleted experiment.uuid)
+            throwIO OutOfLicenses
+          _ -> return Nothing
       Left err -> do
         printf "Run failed: %s on %s (%s)\n" (show experiment.uuid) (runner.info) (show err)
-        progress
-          ( RunCompleted
-              ExperimentResult
-                { proofFound = Nothing,
-                  counterExample = Nothing,
-                  fullOutput = T.pack (show err),
-                  runnerInfo = runner.info,
-                  uuid = experiment.uuid
-                }
-          )
-        return (Left err)
+        progress (RunFailed experiment.uuid runner.info (RunnerCrashed err))
+        return Nothing
 
   let isInteresting result = case (experiment.expectedResult, result.proofFound) of
         (_, Nothing) -> True

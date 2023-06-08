@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -9,6 +11,7 @@
 
 module Experiments.Types where
 
+import Control.Exception (Exception, SomeException)
 import Data.Data (Data)
 import Data.Function (on)
 import Data.Text (Text)
@@ -49,9 +52,16 @@ data ExperimentResult = ExperimentResult
   }
   deriving (Show, Eq, Generic, Data)
 
+data RunnerError
+  = OutOfLicenses
+  | RunnerCrashed SomeException
+  deriving stock (Show)
+  deriving anyclass (Exception)
+
 data ExperimentProgress
   = NewExperiment Experiment
   | BeginRun UUID RunnerInfo
+  | RunFailed UUID RunnerInfo RunnerError
   | RunCompleted ExperimentResult
   | ExperimentCompleted UUID
   deriving (Show)

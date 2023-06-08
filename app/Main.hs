@@ -2,12 +2,13 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NumDecimals #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Main where
 
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally, forkIO, newMVar, threadDelay)
-import Control.Exception (SomeException, try)
+import Control.Exception (SomeException, fromException, try)
 import Control.Monad (forever, replicateM, replicateM_, void)
 import Data.Functor ((<&>))
 import Data.Text.IO qualified as T
@@ -23,6 +24,17 @@ import WebUI (handleProgress, newWebUIState, runWebUI)
 errorLog :: FilePath
 errorLog = "equifuzz.error.log"
 
+reportError :: String -> IO ()
+reportError str = do
+  time <- zonedTimeToLocalTime <$> getZonedTime
+  appendFile errorLog . unlines $
+    [ printf "[%s] Experiment thread crashed" (iso8601Show time),
+      "=========================",
+      str,
+      "=========================",
+      ""
+    ]
+
 experimentThread :: (ExperimentProgress -> IO ()) -> IO ()
 experimentThread reportProgress =
   void $
@@ -33,13 +45,11 @@ experimentThread reportProgress =
           reportProgress
       )
       ( \err -> do
-          time <- zonedTimeToLocalTime <$> getZonedTime
-          appendFile errorLog (printf "[%s] Experiment thread crashed\n" (iso8601Show time))
-          appendFile errorLog "=========================\n"
-          appendFile errorLog (show err)
-          appendFile errorLog "=========================\n"
-          appendFile errorLog "\n"
-          experimentThread reportProgress
+          reportError (show err)
+          case err of
+            -- Let the runner just end if we are out of licenses
+            Left (fromException -> Just OutOfLicenses) -> pure ()
+            _ -> experimentThread reportProgress
       )
 
 webMain :: Bool -> IO ()

@@ -28,7 +28,7 @@ import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
-import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), RunnerInfo)
+import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), RunnerError, RunnerInfo)
 import GHC.Generics (Generic)
 import Network.HTTP.Types (status200, urlDecode, urlEncode)
 import Network.Wai (StreamingBody)
@@ -52,8 +52,9 @@ data ExperimentInfo = ExperimentInfo
 
 data RunInfo
   = CompletedRun ExperimentResult
+  | FailedRun RunnerError
   | ActiveRun RunnerInfo
-  deriving (Eq, Show, Generic)
+  deriving (Show, Generic)
 
 data WebUIState = WebUIState
   { runningExperiments :: Map UUID ExperimentInfo,
@@ -88,6 +89,12 @@ handleProgress stateVar progress = do
     BeginRun uuid runnerInfo -> do
       -- FIXME: Report error if uuid does not exist
       #runningExperiments % at uuid %? #runs % at runnerInfo .= Just (ActiveRun runnerInfo)
+    RunFailed uuid runnerInfo runnerError -> do
+      -- FIXME: Report error if uuid does not exist
+      #runningExperiments % at uuid %? #runs % at runnerInfo .= Just (FailedRun runnerError)
+      #totalRunCount %= (+ 1)
+      liftIO . atomically $ signalSemaphore state.experimentsSem
+      liftIO . atomically $ signalSemaphore state.totalRunCountSem
     RunCompleted result -> do
       -- FIXME: Report error if uuid does not exist
       #runningExperiments % at result.uuid %? #runs % at result.runnerInfo .= Just (CompletedRun result)
