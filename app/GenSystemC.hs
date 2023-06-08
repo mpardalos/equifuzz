@@ -180,8 +180,8 @@ isFinalType SC.CBool = False
 isFinalType SC.SCFxnumSubref = False
 isFinalType SC.SCIntSubref = False
 isFinalType SC.SCUIntSubref = False
-isFinalType SC.SCIntBitref = True
-isFinalType SC.SCUIntBitref = True
+isFinalType SC.SCIntBitref = False
+isFinalType SC.SCUIntBitref = False
 
 range :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
 range e = case (SC.specifiedWidth e.annotation, SC.supportsRange e.annotation) of
