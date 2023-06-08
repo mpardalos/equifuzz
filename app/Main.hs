@@ -9,7 +9,7 @@ module Main where
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally, forkIO, newMVar, threadDelay)
 import Control.Exception (SomeException, fromException, try)
-import Control.Monad (forever, replicateM, replicateM_, void)
+import Control.Monad (forever, replicateM_, void)
 import Data.Functor ((<&>))
 import Data.Text.IO qualified as T
 import Data.Time (ZonedTime (zonedTimeToLocalTime), getZonedTime)
