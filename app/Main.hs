@@ -8,6 +8,7 @@ module Main where
 
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally, forkIO, newMVar, threadDelay)
+import Control.Concurrent.STM (TBQueue, atomically, newTBQueueIO, readTBQueue, writeTBQueue)
 import Control.Exception (SomeException, fromException, try)
 import Control.Monad (forever, replicateM_, void)
 import Data.Functor ((<&>))
@@ -24,37 +25,56 @@ import WebUI (handleProgress, newWebUIState, runWebUI)
 errorLog :: FilePath
 errorLog = "equifuzz.error.log"
 
-reportError :: String -> IO ()
-reportError str = do
+reportError :: String -> String -> IO ()
+reportError title err = do
   time <- zonedTimeToLocalTime <$> getZonedTime
   appendFile errorLog . unlines $
-    [ printf "[%s] Experiment thread crashed" (iso8601Show time),
+    [ printf "[%s] %s" (iso8601Show time) title,
       "=========================",
-      str,
+      err,
       "=========================",
       ""
     ]
 
-experimentThread :: (ExperimentProgress -> IO ()) -> IO ()
-experimentThread reportProgress =
+forkRestarting :: String -> IO () -> IO ()
+forkRestarting title action =
+  void $
+    forkFinally
+      action
+      ( \err -> do
+          reportError title (show err)
+          forkRestarting title action
+      )
+
+startGeneratorThread :: TBQueue Experiment -> IO ()
+startGeneratorThread queue = do
+  forkRestarting "Generator thread crashed" $ forever $ do
+    experiment <- mkSystemCConstantExperiment
+    atomically (writeTBQueue queue experiment)
+  return queue
+
+startExperimentThread :: TBQueue Experiment -> (ExperimentProgress -> IO ()) -> IO ()
+startExperimentThread experimentQueue reportProgress =
   void $
     forkFinally
       ( experimentLoop
-          mkSystemCConstantExperiment
+          (atomically (readTBQueue experimentQueue))
           allRunners
           reportProgress
       )
       ( \err -> do
-          reportError (show err)
+          reportError "Experiment thread crashed" (show err)
           case err of
             -- Let the runner just end if we are out of licenses
             Left (fromException -> Just OutOfLicenses) -> pure ()
-            _ -> experimentThread reportProgress
+            _ -> startExperimentThread experimentQueue reportProgress
       )
 
 webMain :: Bool -> IO ()
 webMain test = do
+  experimentQueue <- newTBQueueIO 20
   stateVar <- newMVar =<< newWebUIState
+
   let reportProgress p = do
         case p of
           NewExperiment experiment -> printf "Begin experiment | %s\n" (show experiment.uuid)
@@ -64,10 +84,12 @@ webMain test = do
           ExperimentCompleted uuid -> printf "Experiment Completed | %s\n" (show uuid)
         handleProgress stateVar p
 
+  startGeneratorThread experimentQueue
+
   replicateM_ 10 $
     if test
       then testThread reportProgress
-      else experimentThread reportProgress
+      else startExperimentThread experimentQueue reportProgress
 
   runWebUI stateVar
 

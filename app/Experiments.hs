@@ -23,7 +23,6 @@ experimentLoop ::
   (ExperimentProgress -> IO ()) ->
   IO ()
 experimentLoop generator runners progress = forever $ do
-  -- FIXME: Handle errors from the generator
   experiment <- generator
 
   progress (NewExperiment experiment)
