@@ -8,50 +8,23 @@ module Main where
 
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally, forkIO, newMVar, threadDelay)
-import Control.Concurrent.STM (TBQueue, atomically, newTBQueueIO, readTBQueue, writeTBQueue)
+import Control.Concurrent.STM (TBQueue, atomically, newTBQueueIO, newTChanIO, readTBQueue, writeTBQueue, writeTChan)
 import Control.Exception (SomeException, fromException, try)
-import Control.Monad (forever, replicateM_, void)
+import Control.Monad (forever, void, replicateM_)
 import Data.Functor ((<&>))
 import Data.Text.IO qualified as T
-import Data.Time (ZonedTime (zonedTimeToLocalTime), getZonedTime)
-import Data.Time.Format.ISO8601 (iso8601Show)
 import Data.UUID.V4 qualified as UUID
 import Experiments
 import Options.Applicative qualified as Opt
 import System.Random (getStdRandom, uniformR)
-import Text.Printf (printf)
-import WebUI (handleProgress, newWebUIState, runWebUI)
-
-errorLog :: FilePath
-errorLog = "equifuzz.error.log"
-
-reportError :: String -> String -> IO ()
-reportError title err = do
-  time <- zonedTimeToLocalTime <$> getZonedTime
-  appendFile errorLog . unlines $
-    [ printf "[%s] %s" (iso8601Show time) title,
-      "=========================",
-      err,
-      "=========================",
-      ""
-    ]
-
-forkRestarting :: String -> IO () -> IO ()
-forkRestarting title action =
-  void $
-    forkFinally
-      action
-      ( \err -> do
-          reportError title (show err)
-          forkRestarting title action
-      )
+import Util (forkRestarting, reportError)
+import WebUI (runWebUI)
 
 startGeneratorThread :: TBQueue Experiment -> IO ()
 startGeneratorThread queue = do
   forkRestarting "Generator thread crashed" $ forever $ do
     experiment <- mkSystemCConstantExperiment
     atomically (writeTBQueue queue experiment)
-  return queue
 
 startExperimentThread :: TBQueue Experiment -> (ExperimentProgress -> IO ()) -> IO ()
 startExperimentThread experimentQueue reportProgress =
@@ -73,25 +46,25 @@ startExperimentThread experimentQueue reportProgress =
 webMain :: Bool -> IO ()
 webMain test = do
   experimentQueue <- newTBQueueIO 20
-  stateVar <- newMVar =<< newWebUIState
+  progressChan <- newTChanIO
 
-  let reportProgress p = do
-        case p of
-          NewExperiment experiment -> printf "Begin experiment | %s\n" (show experiment.uuid)
-          BeginRun uuid runnerInfo -> printf "Begin run | %s on %s\n" (show uuid) runnerInfo
-          RunFailed uuid runnerInfo _ -> printf "Run failed | %s on %s\n" (show uuid) (show runnerInfo)
-          RunCompleted result -> printf "Run completed | %s on %s\n" (show result.uuid) (result.runnerInfo)
-          ExperimentCompleted uuid -> printf "Experiment Completed | %s\n" (show uuid)
-        handleProgress stateVar p
+  let reportProgress p = atomically (writeTChan progressChan p)
+  -- case p of
+  --   NewExperiment experiment -> printf "Begin experiment | %s\n" (show experiment.uuid)
+  --   BeginRun uuid runnerInfo -> printf "Begin run | %s on %s\n" (show uuid) runnerInfo
+  --   RunFailed uuid runnerInfo _ -> printf "Run failed | %s on %s\n" (show uuid) (show runnerInfo)
+  --   RunCompleted result -> printf "Run completed | %s on %s\n" (show result.uuid) (result.runnerInfo)
+  --   ExperimentCompleted uuid -> printf "Experiment Completed | %s\n" (show uuid)
+  -- handleProgress webUIStateVar p
 
   startGeneratorThread experimentQueue
 
   replicateM_ 10 $
     if test
-      then testThread reportProgress
+      then startTestThread reportProgress
       else startExperimentThread experimentQueue reportProgress
 
-  runWebUI stateVar
+  runWebUI progressChan
 
 genMain :: IO ()
 genMain = do
@@ -144,8 +117,8 @@ parseArgs =
 
 --------------------------- Testing --------------------------------------------
 
-testThread :: (ExperimentProgress -> IO ()) -> IO ()
-testThread reportProgress = void . forkIO . forever . try @SomeException $ do
+startTestThread :: (ExperimentProgress -> IO ()) -> IO ()
+startTestThread reportProgress = void . forkIO . forever . try @SomeException $ do
   experiment <- mkTestExperiment
   reportProgress (NewExperiment experiment)
 

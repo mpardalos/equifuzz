@@ -8,11 +8,11 @@
 
 {-# HLINT ignore "Redundant <$>" #-}
 
-module WebUI (WebUIState, newWebUIState, handleProgress, runWebUI) where
+module WebUI (runWebUI) where
 
 import Control.Applicative ((<|>))
-import Control.Concurrent (MVar, modifyMVar_, readMVar)
-import Control.Concurrent.STM (STM, TMVar, atomically, newTMVar, takeTMVar, tryPutTMVar)
+import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar)
+import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTChan, takeTMVar, tryPutTMVar)
 import Control.Monad (forM_, forever, void)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (execStateT)
@@ -39,7 +39,7 @@ import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
-import Util (whenJust)
+import Util (forkRestarting, whenJust)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, raw, scotty, setHeader, status, stream)
 
 data ExperimentInfo = ExperimentInfo
@@ -111,8 +111,8 @@ handleProgress stateVar progress = do
             then Just experiment
             else Nothing
 
-runWebUI :: MVar WebUIState -> IO ()
-runWebUI stateVar = scotty 8888 $ do
+scottyServer :: MVar WebUIState -> IO ()
+scottyServer stateVar = scotty 8888 $ do
   get "/resources/style.css" $
     raw $
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/style.css")
@@ -156,6 +156,14 @@ runWebUI stateVar = scotty 8888 $ do
   get "/" $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (indexPage state)
+
+runWebUI :: TChan ExperimentProgress -> IO ()
+runWebUI progressChan = do
+  stateVar <- newMVar =<< newWebUIState
+  forkRestarting "UI Handler thread crashed" $ forever $ do
+    progress <- atomically (readTChan progressChan)
+    handleProgress stateVar progress
+  scottyServer stateVar
 
 htmlBase :: Html -> Html
 htmlBase content = H.docTypeHtml $ do
