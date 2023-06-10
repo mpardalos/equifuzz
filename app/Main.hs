@@ -7,8 +7,8 @@
 module Main where
 
 import Control.Applicative ((<**>))
-import Control.Concurrent (forkFinally, forkIO, newMVar, threadDelay)
-import Control.Concurrent.STM (TBQueue, atomically, newTBQueueIO, newTChanIO, readTBQueue, writeTBQueue, writeTChan)
+import Control.Concurrent (forkFinally, forkIO, threadDelay)
+import Control.Concurrent.STM (TBQueue, atomically, newTBQueueIO, newTChanIO, readTBQueue, writeTBQueue, writeTChan, TChan)
 import Control.Exception (SomeException, fromException, try)
 import Control.Monad (forever, void, replicateM_)
 import Data.Functor ((<&>))
@@ -26,21 +26,21 @@ startGeneratorThread queue = do
     experiment <- mkSystemCConstantExperiment
     atomically (writeTBQueue queue experiment)
 
-startExperimentThread :: TBQueue Experiment -> (ExperimentProgress -> IO ()) -> IO ()
-startExperimentThread experimentQueue reportProgress =
+startExperimentThread :: TBQueue Experiment -> TChan ExperimentProgress -> IO ()
+startExperimentThread experimentQueue progressChan =
   void $
     forkFinally
       ( experimentLoop
           (atomically (readTBQueue experimentQueue))
           allRunners
-          reportProgress
+          (atomically . writeTChan progressChan)
       )
       ( \err -> do
           reportError "Experiment thread crashed" (show err)
           case err of
             -- Let the runner just end if we are out of licenses
             Left (fromException -> Just OutOfLicenses) -> pure ()
-            _ -> startExperimentThread experimentQueue reportProgress
+            _ -> startExperimentThread experimentQueue progressChan
       )
 
 webMain :: Bool -> IO ()
@@ -62,7 +62,7 @@ webMain test = do
   replicateM_ 10 $
     if test
       then startTestThread reportProgress
-      else startExperimentThread experimentQueue reportProgress
+      else startExperimentThread experimentQueue progressChan
 
   runWebUI progressChan
 
