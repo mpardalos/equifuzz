@@ -148,20 +148,15 @@ hectorCompareScript filename experiment =
             set_custom_solve_script "orch_multipliers"
             set_user_assumes_lemmas_procedure "miter"
 
-            create_design -name spec -top #{experiment ^. #design ^. #topName}
-            cppan #{filename}
-            compile_design spec
-
             create_design -name impl -top #{experiment ^. #design ^. #topName}
-            cppan #{filename}
+            scdtan -DSC_INCLUDE_FX #{filename}
             compile_design impl
 
             proc miter {} {
-                    map_by_name -inputs -implphase 1 -specphase 1
-                    lemma out_equiv = spec.out(1) == #{experiment ^. #comparisonValue}
+                    lemma out_equiv = out(1) == #{experiment ^. #comparisonValue}
             }
 
-            compose
+            compose -nospec
             solveNB proof
             proofwait
             listproof
