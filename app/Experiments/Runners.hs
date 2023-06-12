@@ -132,7 +132,7 @@ runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} =
       else Right ExperimentResult {proofFound, counterExample, fullOutput, uuid, runnerInfo}
   where
     remoteDir :: Text
-    remoteDir = "/scratch/mp5617/equifuzz_vcf_experiment"
+    remoteDir = "equifuzz_vcf_experiment"
 
     experimentDir :: Text
     experimentDir = remoteDir <> "/" <> T.pack (show uuid)
