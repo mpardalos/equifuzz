@@ -28,7 +28,7 @@ orchestrationConfig =
 genConfig :: GenConfig
 genConfig =
   GenConfig
-    { growSteps = 50
+    { growSteps = 300
     }
 
 webMain :: Bool -> IO ()
