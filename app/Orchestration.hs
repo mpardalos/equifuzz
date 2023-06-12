@@ -38,7 +38,7 @@ startRunners config = do
 
   if config.test
     then do
-      startTestThread progressChan
+      replicateM_ 10 $ startTestThread progressChan
     else do
       experimentQueue <- newTBQueueIO (fromIntegral config.experimentQueueDepth)
       startGeneratorThread config experimentQueue
