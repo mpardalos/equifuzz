@@ -57,6 +57,7 @@ data RunInfo
 data WebUIState = WebUIState
   { runningExperiments :: Map UUID ExperimentInfo,
     interestingExperiments :: Map UUID ExperimentInfo,
+    uninterestingExperiments :: Map UUID ExperimentInfo,
     experimentsSem :: Semaphore,
     totalRunCount :: Int,
     totalRunCountSem :: Semaphore
@@ -71,6 +72,7 @@ newWebUIState = do
     WebUIState
       { interestingExperiments = Map.empty,
         runningExperiments = Map.empty,
+        uninterestingExperiments = Map.empty,
         experimentsSem,
         totalRunCount = 0,
         totalRunCountSem
@@ -106,11 +108,9 @@ handleProgress stateVar progress = do
       mExperiment <- use (#runningExperiments % at uuid)
       whenJust mExperiment $ \experiment -> do
         #runningExperiments % at uuid .= Nothing
-        #interestingExperiments
-          % at uuid
-          .= if shouldKeep experiment
-            then Just experiment
-            else Nothing
+        if isInteresting experiment
+          then #interestingExperiments % at uuid .= Just experiment
+          else #uninterestingExperiments % at uuid .= Just experiment
 
 scottyServer :: MVar WebUIState -> IO ()
 scottyServer stateVar = scotty 8888 $ do
@@ -132,6 +132,7 @@ scottyServer stateVar = scotty 8888 $ do
     let mExperimentInfo =
           Map.lookup uuid state.runningExperiments
             <|> Map.lookup uuid state.interestingExperiments
+            <|> Map.lookup uuid state.uninterestingExperiments
     let mExperiment = mExperimentInfo ^? _Just % #experiment
     let mRunInfo = mExperimentInfo ^? _Just % #runs % at (T.decodeUtf8 runnerInfo) % _Just
 
@@ -226,6 +227,7 @@ experimentList state = H.div
   $ do
     experimentSubList "Running" state.runningExperiments
     experimentSubList "Interesting" state.interestingExperiments
+    experimentSubList "Uninteresting" state.uninterestingExperiments
   where
     experimentSubList title experiments =
       infoBoxWithSideTitle
@@ -333,8 +335,8 @@ waitForSemaphore (Semaphore mvar) = takeTMVar mvar
 signalSemaphore :: Semaphore -> STM ()
 signalSemaphore (Semaphore mvar) = void $ tryPutTMVar mvar ()
 
-shouldKeep :: ExperimentInfo -> Bool
-shouldKeep info =
+isInteresting :: ExperimentInfo -> Bool
+isInteresting info =
   let proofsFound = [proofFound | CompletedRun (ExperimentResult {proofFound}) <- Map.elems info.runs]
    in any (/= Just info.experiment.expectedResult) proofsFound
 
