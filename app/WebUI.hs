@@ -217,10 +217,10 @@ runInfoBlock experiment run = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
       "Counter-example"
       (H.pre $ H.text ("\n" <> counterExample))
 
-  whenJust (run ^? #_CompletedRun % #fullOutput) $ \output ->
-    infoBox
-      "Full output"
-      (H.pre $ H.text ("\n" <> output))
+  case run of
+    CompletedRun result -> infoBox "Full output" (H.pre $ H.text ("\n" <> result.fullOutput))
+    FailedRun err -> infoBox "Error" (H.pre $ H.string (show err))
+    ActiveRun _ -> pure ()
 
 experimentList :: WebUIState -> Html
 experimentList state = H.div
