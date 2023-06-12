@@ -13,6 +13,7 @@ import Control.Monad (forever, replicateM_, void, when)
 import Data.Functor ((<&>))
 import Data.UUID.V4 qualified as UUID
 import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), RunnerError (..), mkSystemCConstantExperiment)
+import GenSystemC (GenConfig)
 import System.Random (getStdRandom, uniformR)
 import Text.Printf (printf)
 import Util (forkRestarting)
@@ -27,7 +28,8 @@ data OrchestrationConfig = OrchestrationConfig
     logging :: Bool,
     generatorThreads :: Int,
     maxExperiments :: Int,
-    experimentQueueDepth :: Int
+    experimentQueueDepth :: Int,
+    genConfig :: GenConfig
   }
 
 startRunners :: OrchestrationConfig -> IO ProgressChan
@@ -50,12 +52,13 @@ startRunners config = do
   return progressChan
 
 startGeneratorThread :: OrchestrationConfig -> ExperimentQueue -> IO ()
-startGeneratorThread OrchestrationConfig {generatorThreads} queue = replicateM_ generatorThreads
-  . forkRestarting "Generator thread crashed"
-  . forever
-  $ do
-    experiment <- mkSystemCConstantExperiment
-    atomically (writeTBQueue queue experiment)
+startGeneratorThread OrchestrationConfig {generatorThreads, genConfig} queue =
+  replicateM_ generatorThreads
+    . forkRestarting "Generator thread crashed"
+    . forever
+    $ do
+      experiment <- mkSystemCConstantExperiment genConfig
+      atomically (writeTBQueue queue experiment)
 
 startOrchestratorThread :: OrchestrationConfig -> ExperimentQueue -> ProgressChan -> IO ()
 startOrchestratorThread OrchestrationConfig {runner, maxExperiments} experimentQueue progressChan = do

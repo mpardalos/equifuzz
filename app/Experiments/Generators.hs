@@ -15,7 +15,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments.Types
-import GenSystemC (genSystemCConstant)
+import GenSystemC (genSystemCConstant, GenConfig)
 import Hedgehog.Gen qualified as Hog
 import Optics ((<&>))
 import Shelly qualified as Sh
@@ -23,9 +23,9 @@ import SystemC qualified as SC
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
-mkSystemCConstantExperiment :: IO Experiment
-mkSystemCConstantExperiment = do
-  systemcModule <- Hog.sample (Hog.resize 99 $ genSystemCConstant "dut")
+mkSystemCConstantExperiment :: GenConfig -> IO Experiment
+mkSystemCConstantExperiment config = do
+  systemcModule <- Hog.sample (Hog.resize 99 $ genSystemCConstant config "dut")
   let wrapperName = "impl"
   let design =
         DesignSource

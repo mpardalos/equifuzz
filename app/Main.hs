@@ -1,34 +1,44 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# OPTIONS_GHC -Wno-ambiguous-fields #-}
 
 module Main where
 
 import Control.Applicative ((<**>))
 import Data.Text.IO qualified as T
 import Experiments
+import GenSystemC (GenConfig (..))
 import Options.Applicative qualified as Opt
 import Orchestration
 import WebUI (runWebUI)
 
+orchestrationConfig :: OrchestrationConfig
+orchestrationConfig =
+  OrchestrationConfig
+    { runner = hector_2023_03_1,
+      test = False,
+      logging = True,
+      generatorThreads = 10,
+      maxExperiments = 10,
+      -- Double the max concurrent experiments to make sure that we are never
+      experimentQueueDepth = 20,
+      genConfig
+    }
+
+genConfig :: GenConfig
+genConfig =
+  GenConfig
+    { growSteps = 50
+    }
+
 webMain :: Bool -> IO ()
 webMain test = do
-  progressChan <-
-    startRunners
-      OrchestrationConfig
-        { runner = hector_2023_03_1,
-          test,
-          logging = True,
-          generatorThreads = 10,
-          maxExperiments = 10,
-          -- Double the max concurrent experiments to make sure that we are never
-          experimentQueueDepth = 20
-        }
-
+  progressChan <- startRunners (orchestrationConfig {test})
   runWebUI progressChan
 
 genMain :: IO ()
 genMain = do
-  Experiment {design, comparisonValue} <- mkSystemCConstantExperiment
+  Experiment {design, comparisonValue} <- mkSystemCConstantExperiment genConfig
   T.putStrLn design.source
   putStrLn "---------"
   T.putStrLn comparisonValue

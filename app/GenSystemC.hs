@@ -7,7 +7,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-typed-holes #-}
 
-module GenSystemC (genSystemCConstant) where
+module GenSystemC (GenConfig (..), genSystemCConstant) where
 
 import Control.Applicative (Alternative)
 import Control.Monad.State (MonadState (..), StateT (..))
@@ -23,9 +23,13 @@ import Optics.State.Operators ((%=))
 import SystemC as SC
 import Util (iterateM)
 
-genSystemCConstant :: Text -> Gen (SC.FunctionDeclaration BuildOut)
-genSystemCConstant name = do
-  (expr, finalState) <- runBuildOutM genExpr
+newtype GenConfig = GenConfig
+  { growSteps :: Int
+  }
+
+genSystemCConstant :: GenConfig -> Text -> Gen (SC.FunctionDeclaration BuildOut)
+genSystemCConstant config name = do
+  (expr, finalState) <- runBuildOutM (genExpr config)
   return $
     SC.FunctionDeclaration
       { returnType = expr.annotation,
@@ -34,19 +38,17 @@ genSystemCConstant name = do
         body = finalState.statements ++ [SC.Return () expr]
       }
 
-genExpr :: BuildOutM (SC.Expr BuildOut)
-genExpr = seedExpr >>= grow
+genExpr :: GenConfig -> BuildOutM (SC.Expr BuildOut)
+genExpr config = seedExpr >>= grow config
 
 seedExpr :: BuildOutM (SC.Expr BuildOut)
 seedExpr = constant <$> Hog.int (Hog.Range.constant (-128) 128)
 
-grow :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
-grow scExpr = do
-  -- count <- Hog.int (Hog.Range.linear 5 50)
-  let count = 50
+grow :: GenConfig -> SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
+grow config scExpr = do
   grownScExpr <-
     iterateM
-      count
+      config.growSteps
       (\e -> do f <- Hog.element growFuncs; f e)
       scExpr
   if isFinalType grownScExpr.annotation
