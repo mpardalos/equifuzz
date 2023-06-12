@@ -52,6 +52,7 @@ executable equifuzz
                     , binary == 0.8.*
                     , stm == 2.5.*
                     , time == 1.12.*
+                    , async == 2.2.*
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions:

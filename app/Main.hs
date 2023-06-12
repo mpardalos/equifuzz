@@ -2,68 +2,107 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NumDecimals #-}
-{-# LANGUAGE ViewPatterns #-}
 
 module Main where
 
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally, forkIO, threadDelay)
-import Control.Concurrent.STM (TBQueue, atomically, newTBQueueIO, newTChanIO, readTBQueue, writeTBQueue, writeTChan, TChan)
-import Control.Exception (SomeException, fromException, try)
-import Control.Monad (forever, void, replicateM_)
+import Control.Concurrent.Async (forConcurrently_)
+import Control.Concurrent.STM (TBQueue, TChan, atomically, cloneTChan, newTBQueueIO, newTChanIO, readTBQueue, readTChan, writeTBQueue, writeTChan)
+import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
+import Control.Exception (SomeException, bracket_, try)
+import Control.Monad (forM, forever, replicateM_, void)
 import Data.Functor ((<&>))
+import Data.Map.Strict qualified as SMap
 import Data.Text.IO qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments
 import Options.Applicative qualified as Opt
 import System.Random (getStdRandom, uniformR)
-import Util (forkRestarting, reportError)
+import Text.Printf (printf)
+import Util (forkRestarting)
 import WebUI (runWebUI)
 
-startGeneratorThread :: TBQueue Experiment -> IO ()
-startGeneratorThread queue = do
-  forkRestarting "Generator thread crashed" $ forever $ do
-    experiment <- mkSystemCConstantExperiment
-    atomically (writeTBQueue queue experiment)
+type ExperimentQueue = TBQueue Experiment
 
-startExperimentThread :: TBQueue Experiment -> TChan ExperimentProgress -> IO ()
-startExperimentThread experimentQueue progressChan =
-  void $
+type ProgressChan = TChan ExperimentProgress
+
+startGeneratorThread :: ExperimentQueue -> IO ()
+startGeneratorThread queue = replicateM_ 10 . forkRestarting "Generator thread crashed" . forever $ do
+  experiment <- mkSystemCConstantExperiment
+  atomically (writeTBQueue queue experiment)
+
+startOrchestratorThread :: ExperimentQueue -> ProgressChan -> IO ()
+startOrchestratorThread experimentQueue progressChan = do
+  maxExperiments <- atomically (newTSem 10)
+
+  maxRunners :: SMap.Map RunnerInfo TSem <-
+    SMap.fromList
+      <$> forM
+        allRunners
+        ( \runner -> do
+            sem <- atomically (newTSem 10)
+            return (runner.info, sem)
+        )
+
+  forkRestarting "Orchestrator thread crashed" $ forever $ do
+    atomically (waitTSem maxExperiments)
+    experiment <- atomically (readTBQueue experimentQueue)
+    progress (NewExperiment experiment)
     forkFinally
-      ( experimentLoop
-          (atomically (readTBQueue experimentQueue))
-          allRunners
-          (atomically . writeTChan progressChan)
+      ( forConcurrently_ allRunners $ \runner -> do
+          result <-
+            try @SomeException $
+              let !runnerSem = maxRunners SMap.! runner.info
+               in bracket_
+                    ( do
+                        atomically (waitTSem runnerSem)
+                        progress (BeginRun experiment.uuid runner.info)
+                    )
+                    (atomically (signalTSem runnerSem))
+                    (runner.run experiment)
+
+          case result of
+            Left e -> progress (RunFailed experiment.uuid runner.info (RunnerCrashed e))
+            Right (Left OutOfLicenses) -> do
+              -- We have one less license than we thought, so reduce the max
+              -- number of runners allowed
+              atomically (waitTSem (maxRunners SMap.! runner.info))
+              progress (RunFailed experiment.uuid runner.info OutOfLicenses)
+            Right (Left e) -> progress (RunFailed experiment.uuid runner.info e)
+            Right (Right r) -> progress (RunCompleted r)
       )
-      ( \err -> do
-          reportError "Experiment thread crashed" (show err)
-          case err of
-            -- Let the runner just end if we are out of licenses
-            Left (fromException -> Just OutOfLicenses) -> pure ()
-            _ -> startExperimentThread experimentQueue progressChan
+      ( \_ -> do
+          atomically (signalTSem maxExperiments)
+          progress (ExperimentCompleted experiment.uuid)
       )
+  where
+    progress = atomically . writeTChan progressChan
+
+startLoggerThread :: ProgressChan -> IO ()
+startLoggerThread progressChan =
+  forkRestarting "Logger thread crashed" . forever $
+    atomically (readTChan progressChan) >>= \case
+      NewExperiment experiment -> printf "Begin experiment | %s\n" (show experiment.uuid)
+      BeginRun uuid runnerInfo -> printf "Begin run | %s on %s\n" (show uuid) runnerInfo
+      RunFailed uuid runnerInfo _ -> printf "Run failed | %s on %s\n" (show uuid) (show runnerInfo)
+      RunCompleted result -> printf "Run completed | %s on %s\n" (show result.uuid) (result.runnerInfo)
+      ExperimentCompleted uuid -> printf "Experiment Completed | %s\n" (show uuid)
 
 webMain :: Bool -> IO ()
 webMain test = do
-  experimentQueue <- newTBQueueIO 20
   progressChan <- newTChanIO
 
-  let reportProgress p = atomically (writeTChan progressChan p)
-  -- case p of
-  --   NewExperiment experiment -> printf "Begin experiment | %s\n" (show experiment.uuid)
-  --   BeginRun uuid runnerInfo -> printf "Begin run | %s on %s\n" (show uuid) runnerInfo
-  --   RunFailed uuid runnerInfo _ -> printf "Run failed | %s on %s\n" (show uuid) (show runnerInfo)
-  --   RunCompleted result -> printf "Run completed | %s on %s\n" (show result.uuid) (result.runnerInfo)
-  --   ExperimentCompleted uuid -> printf "Experiment Completed | %s\n" (show uuid)
-  -- handleProgress webUIStateVar p
+  if test
+    then startTestThread progressChan
+    else do
+      experimentQueue <- newTBQueueIO 20
+      startGeneratorThread experimentQueue
+      startOrchestratorThread experimentQueue progressChan
 
-  startGeneratorThread experimentQueue
-
-  replicateM_ 10 $
-    if test
-      then startTestThread reportProgress
-      else startExperimentThread experimentQueue progressChan
-
+  -- The following threads are readers and so we need to duplicate the progress
+  -- channel so that they can all read the messages on it
+  startLoggerThread =<< atomically (cloneTChan progressChan)
   runWebUI progressChan
 
 genMain :: IO ()
@@ -117,8 +156,8 @@ parseArgs =
 
 --------------------------- Testing --------------------------------------------
 
-startTestThread :: (ExperimentProgress -> IO ()) -> IO ()
-startTestThread reportProgress = void . forkIO . forever . try @SomeException $ do
+startTestThread :: ProgressChan -> IO ()
+startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
   experiment <- mkTestExperiment
   reportProgress (NewExperiment experiment)
 
@@ -174,3 +213,5 @@ startTestThread reportProgress = void . forkIO . forever . try @SomeException $ 
             comparisonValue = "32'hdeadbeef",
             expectedResult = False
           }
+
+    reportProgress p = atomically (writeTChan progressChan p)
