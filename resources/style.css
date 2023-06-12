@@ -37,11 +37,12 @@ main {
 
 main > * {
     height: 100%;
-    flex-grow: 1;
 }
 
+#experiment-list { flex-grow: 0; }
+#run-info { flex-grow: 1; }
+
 #experiment-list {
-    max-width: 20vw;
     display: flex;
     flex-direction: column;
     height: 100%;
