@@ -22,6 +22,7 @@ executable equifuzz
                  , GenSystemC
                  , Util
                  , WebUI
+                 , Orchestration
     -- other-extensions:
     build-depends:    base ==4.16.*
                     , text
