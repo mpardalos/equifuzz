@@ -87,6 +87,7 @@ handleProgress stateVar progress = do
     BeginRun uuid runnerInfo -> do
       -- FIXME: Report error if uuid does not exist
       #runningExperiments % at uuid %? #runs % at runnerInfo .= Just (ActiveRun runnerInfo)
+      liftIO . atomically $ signalSemaphore state.experimentsSem
     RunFailed uuid runnerInfo runnerError -> do
       -- FIXME: Report error if uuid does not exist
       #runningExperiments % at uuid %? #runs % at runnerInfo .= Just (FailedRun runnerError)
