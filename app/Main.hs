@@ -7,13 +7,11 @@ module Main where
 
 import Control.Applicative ((<**>))
 import Control.Concurrent (forkFinally, forkIO, threadDelay)
-import Control.Concurrent.Async (forConcurrently_)
 import Control.Concurrent.STM (TBQueue, TChan, atomically, cloneTChan, newTBQueueIO, newTChanIO, readTBQueue, readTChan, writeTBQueue, writeTChan)
-import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
-import Control.Exception (SomeException, bracket_, try)
-import Control.Monad (forM, forever, replicateM_, void)
+import Control.Concurrent.STM.TSem (newTSem, signalTSem, waitTSem)
+import Control.Exception (SomeException, try)
+import Control.Monad (forever, replicateM_, void)
 import Data.Functor ((<&>))
-import Data.Map.Strict qualified as SMap
 import Data.Text.IO qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments
@@ -27,47 +25,34 @@ type ExperimentQueue = TBQueue Experiment
 
 type ProgressChan = TChan ExperimentProgress
 
+newtype Config = Config
+  { runner :: ExperimentRunner
+  }
+
 startGeneratorThread :: ExperimentQueue -> IO ()
 startGeneratorThread queue = replicateM_ 10 . forkRestarting "Generator thread crashed" . forever $ do
   experiment <- mkSystemCConstantExperiment
   atomically (writeTBQueue queue experiment)
 
-startOrchestratorThread :: ExperimentQueue -> ProgressChan -> IO ()
-startOrchestratorThread experimentQueue progressChan = do
+startOrchestratorThread :: Config -> ExperimentQueue -> ProgressChan -> IO ()
+startOrchestratorThread Config {runner} experimentQueue progressChan = do
   maxExperiments <- atomically (newTSem 10)
-
-  maxRunners :: SMap.Map RunnerInfo TSem <-
-    SMap.fromList
-      <$> forM
-        allRunners
-        ( \runner -> do
-            sem <- atomically (newTSem 10)
-            return (runner.info, sem)
-        )
 
   forkRestarting "Orchestrator thread crashed" $ forever $ do
     atomically (waitTSem maxExperiments)
     experiment <- atomically (readTBQueue experimentQueue)
     progress (NewExperiment experiment)
     forkFinally
-      ( forConcurrently_ allRunners $ \runner -> do
-          result <-
-            try @SomeException $
-              let !runnerSem = maxRunners SMap.! runner.info
-               in bracket_
-                    ( do
-                        atomically (waitTSem runnerSem)
-                        progress (BeginRun experiment.uuid runner.info)
-                    )
-                    (atomically (signalTSem runnerSem))
-                    (runner.run experiment)
+      ( do
+          progress (BeginRun experiment.uuid runner.info)
+          result <- try @SomeException (runner.run experiment)
 
           case result of
             Left e -> progress (RunFailed experiment.uuid runner.info (RunnerCrashed e))
             Right (Left OutOfLicenses) -> do
               -- We have one less license than we thought, so reduce the max
-              -- number of runners allowed
-              atomically (waitTSem (maxRunners SMap.! runner.info))
+              -- number of experiments allowed
+              atomically (waitTSem maxExperiments)
               progress (RunFailed experiment.uuid runner.info OutOfLicenses)
             Right (Left e) -> progress (RunFailed experiment.uuid runner.info e)
             Right (Right r) -> progress (RunCompleted r)
@@ -98,12 +83,14 @@ webMain test = do
     else do
       experimentQueue <- newTBQueueIO 20
       startGeneratorThread experimentQueue
-      startOrchestratorThread experimentQueue progressChan
+      startOrchestratorThread config experimentQueue progressChan
 
   -- The following threads are readers and so we need to duplicate the progress
   -- channel so that they can all read the messages on it
   startLoggerThread =<< atomically (cloneTChan progressChan)
   runWebUI progressChan
+  where
+    config = Config {runner = hector_2023_03_1}
 
 genMain :: IO ()
 genMain = do

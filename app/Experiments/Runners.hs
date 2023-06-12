@@ -6,7 +6,14 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Experiments.Runners (ExperimentRunner (..), allRunners, saveExperiment) where
+module Experiments.Runners
+  ( ExperimentRunner (..),
+    hector_2022_06_SP2,
+    hector_2022_06_SP2_3,
+    hector_2023_03_1,
+    saveExperiment,
+  )
+where
 
 import Control.Monad (forM_, void)
 import Data.Function ((&))
@@ -25,9 +32,6 @@ data ExperimentRunner = ExperimentRunner
   { info :: RunnerInfo,
     run :: Experiment -> IO (Either RunnerError ExperimentResult)
   }
-
-allRunners :: [ExperimentRunner]
-allRunners = [hector_2022_06_SP2, hector_2022_06_SP2_3, hector_2023_03_1]
 
 hector_2022_06_SP2 :: ExperimentRunner
 hector_2022_06_SP2 =
