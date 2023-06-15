@@ -5,18 +5,25 @@
 
 module Orchestration (ProgressChan, OrchestrationConfig (..), startRunners) where
 
-import Control.Concurrent (forkFinally, forkIO, threadDelay)
+import Control.Concurrent (MVar, forkFinally, forkIO, modifyMVar_, newMVar, threadDelay)
 import Control.Concurrent.STM (TBQueue, TChan, atomically, cloneTChan, newTBQueueIO, newTChanIO, readTBQueue, readTChan, writeTBQueue, writeTChan)
 import Control.Concurrent.STM.TSem (newTSem, signalTSem, waitTSem)
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, replicateM_, void, when)
+import Control.Monad.State (execStateT, liftIO)
 import Data.Functor ((<&>))
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Text qualified as T
+import Data.UUID (UUID)
 import Data.UUID.V4 qualified as UUID
-import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), RunnerError (..), mkSystemCConstantExperiment)
+import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), RunnerError (..), mkSystemCConstantExperiment, saveExperiment)
 import GenSystemC (GenConfig)
+import Optics (at, use, (%?), _2)
+import Optics.State.Operators ((%=), (.=))
 import System.Random (getStdRandom, uniformR)
 import Text.Printf (printf)
-import Util (forkRestarting)
+import Util (forkRestarting, whenJust)
 
 type ExperimentQueue = TBQueue Experiment
 
@@ -43,10 +50,11 @@ startRunners config = do
       experimentQueue <- newTBQueueIO (fromIntegral config.experimentQueueDepth)
       startGeneratorThread config experimentQueue
       startOrchestratorThread config experimentQueue progressChan
+      -- We need to clone the progressChan because, otherwise, this thread would
+      -- "eat up" all the messages on it. This way it just gets a copy
+      startSaverThread =<< atomically (cloneTChan progressChan)
 
   when config.logging $
-    -- We need to clone the progressChan because, otherwise, this thread would
-    -- "eat up" all the messages on it. This way it just gets a copy
     startLoggerThread =<< atomically (cloneTChan progressChan)
 
   return progressChan
@@ -99,6 +107,38 @@ startLoggerThread progressChan =
       RunFailed uuid runnerInfo _ -> printf "Run failed | %s on %s\n" (show uuid) (show runnerInfo)
       RunCompleted result -> printf "Run completed | %s on %s\n" (show result.uuid) (result.runnerInfo)
       ExperimentCompleted uuid -> printf "Experiment Completed | %s\n" (show uuid)
+
+startSaverThread :: ProgressChan -> IO ()
+startSaverThread progressChan = do
+  experimentResults :: MVar (Map UUID (Experiment, [ExperimentResult])) <- newMVar Map.empty
+
+  forkRestarting "Saver thread crashed" . forever $ do
+    progress <- atomically (readTChan progressChan)
+    modifyMVar_ experimentResults . execStateT $ case progress of
+      NewExperiment experiment ->
+        at experiment.uuid .= Just (experiment, [])
+      BeginRun _ _ -> pure ()
+      RunFailed uuid runnerInfo err ->
+        at uuid
+          %? _2
+          %= ( ExperimentResult
+                 { proofFound = Nothing,
+                   counterExample = Nothing,
+                   fullOutput = T.pack (show err),
+                   runnerInfo,
+                   uuid
+                 }
+                 :
+             )
+      RunCompleted result ->
+        at result.uuid %? _2 %= (result :)
+      ExperimentCompleted uuid -> do
+        mExperiment <- use (at uuid)
+        whenJust mExperiment $ \(experiment, results) -> do
+          let isInteresting ExperimentResult {proofFound} =
+                proofFound /= Just experiment.expectedResult
+          when (any isInteresting results) $
+            liftIO (saveExperiment experiment results)
 
 --------------------------- Testing --------------------------------------------
 
