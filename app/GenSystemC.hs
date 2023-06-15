@@ -20,7 +20,8 @@ import Hedgehog.Gen qualified as Hog
 import Hedgehog.Range qualified as Hog.Range
 import Optics (use)
 import Optics.State.Operators ((%=))
-import SystemC as SC
+import SystemC qualified as SC
+import Text.Printf (printf)
 import Util (iterateM)
 
 newtype GenConfig = GenConfig
@@ -49,14 +50,14 @@ grow config scExpr = do
   grownScExpr <-
     iterateM
       config.growSteps
-      (\e -> do f <- Hog.element growFuncs; f e)
+      (\e -> do t <- Hog.element transformations; t.apply e)
       scExpr
   if isFinalType grownScExpr.annotation
     then return grownScExpr
-    else castToFinalType grownScExpr
+    else castToFinalType.apply grownScExpr
   where
-    growFuncs :: [SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)]
-    growFuncs =
+    transformations :: [Transformation SC.Expr]
+    transformations =
       [ castWithDeclaration,
         range,
         arithmetic,
@@ -95,8 +96,17 @@ constant = SC.Constant SC.CInt
 someWidth :: MonadGen m => m Int
 someWidth = Hog.int (Hog.Range.constant 1 64)
 
-castWithDeclaration :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
-castWithDeclaration e = do
+data Transformation e = Transformation
+  { name :: Text,
+    apply :: e BuildOut -> BuildOutM (e BuildOut)
+  }
+
+instance Show (Transformation e) where
+  show Transformation {name} =
+    printf "Transformation { name = \"%s\", apply = ... }" (T.unpack name)
+
+castWithDeclaration :: Transformation SC.Expr
+castWithDeclaration = Transformation "castWithDeclaration" $ \e -> do
   varType <- castToType e.annotation
   varIdx <- use #nextVarIdx
   let varName = "x" <> T.pack (show varIdx)
@@ -104,8 +114,8 @@ castWithDeclaration e = do
   #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
   return (SC.Variable varType varName)
 
-castToFinalType :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
-castToFinalType e = do
+castToFinalType :: Transformation SC.Expr
+castToFinalType = Transformation "castToFinalType" $ \e -> do
   -- TODO Change this to specify the actually allowed "final" types. This works
   -- for now because all of the types in `castToType` are allowed as final
   varType <- castToType e.annotation
@@ -115,39 +125,34 @@ castToFinalType e = do
   #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
   return (SC.Variable varType varName)
 
-useAsCondition :: Expr BuildOut -> BuildOutM (Expr BuildOut)
-useAsCondition e
-  | SC.CBool `elem` implicitCastTargetsOf e.annotation =
-      SC.Conditional SC.CInt e
-        <$> (constant <$> someValue)
-        <*> (constant <$> someValue)
-  | otherwise = pure e
+useAsCondition :: Transformation SC.Expr
+useAsCondition = Transformation "useAsCondition" $ \e ->
+  if SC.CBool `elem` SC.implicitCastTargetsOf e.annotation
+    then SC.Conditional SC.CInt e <$> (constant <$> someValue) <*> (constant <$> someValue)
+    else pure e
   where
     someValue = Hog.int (Hog.Range.constant (-1024) 1024)
 
-arithmetic :: Expr BuildOut -> BuildOutM (Expr BuildOut)
-arithmetic e
-  | length (Set.intersection [SC.CInt, SC.CUInt, SC.CDouble] (implicitCastTargetsOf e.annotation)) == 1 =
-      SC.BinOp resultType e
-        <$> someOp
-        <*> someConstant
-  | otherwise = pure e
-  where
-    someOp =
-      Hog.element
-        [ SC.Plus,
-          SC.Minus,
-          SC.Multiply
-        ]
+arithmetic :: Transformation SC.Expr
+arithmetic = Transformation "arithmetic" $ \e ->
+  let someOp =
+        Hog.element
+          [ SC.Plus,
+            SC.Minus,
+            SC.Multiply
+          ]
 
-    someConstant =
-      SC.Constant resultType
-        <$> Hog.int (Hog.Range.constant (-1024) 1024)
+      someConstant =
+        SC.Constant resultType
+          <$> Hog.int (Hog.Range.constant (-1024) 1024)
 
-    resultType = case (isIntegral e.annotation, isSigned e.annotation) of
-      (False, _) -> SC.CDouble
-      (True, False) -> SC.CUInt
-      (True, True) -> SC.CInt
+      resultType = case (SC.isIntegral e.annotation, SC.isSigned e.annotation) of
+        (False, _) -> SC.CDouble
+        (True, False) -> SC.CUInt
+        (True, True) -> SC.CInt
+   in if length (Set.intersection [SC.CInt, SC.CUInt, SC.CDouble] (SC.implicitCastTargetsOf e.annotation)) == 1
+        then SC.BinOp resultType e <$> someOp <*> someConstant
+        else pure e
 
 -- | Generate a type that the input type can be cast to
 castToType :: MonadGen m => SC.SCType -> m SC.SCType
@@ -185,17 +190,19 @@ isFinalType SC.SCUIntSubref = False
 isFinalType SC.SCIntBitref = False
 isFinalType SC.SCUIntBitref = False
 
-range :: SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
-range e = case (SC.specifiedWidth e.annotation, SC.supportsRange e.annotation) of
-  (Just width, Just subrefType) -> do
-    hi <- Hog.int (Hog.Range.constant 0 (width - 1))
-    lo <- Hog.int (Hog.Range.constant 0 hi)
-    return (SC.Range subrefType e hi lo)
-  _ -> return e
+range :: Transformation SC.Expr
+range = Transformation "range" $ \e ->
+  case (SC.specifiedWidth e.annotation, SC.supportsRange e.annotation) of
+    (Just width, Just subrefType) -> do
+      hi <- Hog.int (Hog.Range.constant 0 (width - 1))
+      lo <- Hog.int (Hog.Range.constant 0 hi)
+      return (SC.Range subrefType e hi lo)
+    _ -> return e
 
-bitSelect :: Expr BuildOut -> BuildOutM (Expr BuildOut)
-bitSelect e = case (SC.specifiedWidth e.annotation, SC.supportsBitref e.annotation) of
-  (Just width, Just bitrefType) -> do
-    bit <- Hog.int (Hog.Range.constant 0 (width - 1))
-    return (SC.Bitref bitrefType e bit)
-  _ -> return e
+bitSelect :: Transformation SC.Expr
+bitSelect = Transformation "bitSelect" $ \e ->
+  case (SC.specifiedWidth e.annotation, SC.supportsBitref e.annotation) of
+    (Just width, Just bitrefType) -> do
+      bit <- Hog.int (Hog.Range.constant 0 (width - 1))
+      return (SC.Bitref bitrefType e bit)
+    _ -> return e
