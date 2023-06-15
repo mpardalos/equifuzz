@@ -111,12 +111,17 @@ someConstant t = SC.Constant t <$> Hog.int (Hog.Range.constant (-1024) 1024)
 someWidth :: MonadGen m => m Int
 someWidth = Hog.int (Hog.Range.constant 1 64)
 
+newVar :: BuildOutM Text
+newVar = do
+  varIdx <- use #nextVarIdx
+  #nextVarIdx %= (+ 1)
+  return ("x" <> T.pack (show varIdx))
+
 castWithDeclaration :: Transformation
 castWithDeclaration e = do
   varType <- castToType e.annotation
-  varIdx <- use #nextVarIdx
-  let varName = "x" <> T.pack (show varIdx)
-  #nextVarIdx %= (+ 1)
+
+  varName <- newVar
   #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
 
   tell ["castWithDeclaration(" <> SC.genSource varType <> ")"]
