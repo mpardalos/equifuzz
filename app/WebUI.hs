@@ -208,6 +208,8 @@ runInfoBlock experiment run = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
         _ -> []
     ]
 
+  infoBox "Description" (H.pre $ H.text ("\n" <> experiment.designDescription))
+
   infoBox "Design" (H.pre $ H.text ("\n" <> experiment.design.source))
 
   whenJust (run ^? #_CompletedRun % #counterExample % _Just) $ \counterExample ->

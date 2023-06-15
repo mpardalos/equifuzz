@@ -24,6 +24,9 @@ data Experiment = Experiment
     -- | True if we expect the modules to be equivalent, False if we expect them not to be
     expectedResult :: Bool,
     design :: DesignSource,
+    -- | Human-readable text describing the design/how it was generated
+    -- E.g. The series of transformations that generated it
+    designDescription :: Text,
     -- | Value that the design will be compared to
     comparisonValue :: Text
   }

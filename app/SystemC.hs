@@ -266,11 +266,11 @@ instance Pretty BinOp where
   pretty Divide = "/"
   pretty BitwiseOr = "|"
 
--- instance Source BinOp where
---   genSource =
---     renderStrict
---       . layoutPretty defaultLayoutOptions
---       . pretty
+instance Source BinOp where
+  genSource =
+    renderStrict
+      . layoutPretty defaultLayoutOptions
+      . pretty
 
 annComment :: Doc a -> Doc a
 annComment ann = "/* " <> ann <> " */"
@@ -297,11 +297,11 @@ instance Annotation ann => Pretty (Expr ann) where
   pretty (Range _ e hi lo) = pretty e <> ".range(" <> pretty hi <> ", " <> pretty lo <> ")"
   pretty (Bitref _ e bit) = pretty e <> "[" <> pretty bit <> "]"
 
--- instance Annotation ann => Source (Expr ann) where
---   genSource =
---     renderStrict
---       . layoutPretty defaultLayoutOptions
---       . pretty
+instance Annotation ann => Source (Expr ann) where
+  genSource =
+    renderStrict
+      . layoutPretty defaultLayoutOptions
+      . pretty
 
 prettyBlock :: Annotation ann => [Statement ann] -> Doc a
 prettyBlock statements = vsep ["{", indent 4 . vsep $ pretty <$> statements, "}"]
