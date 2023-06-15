@@ -52,9 +52,10 @@ seedExpr = do
 
 grow :: GenConfig -> SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
 grow config scExpr = do
+  steps <- getRandomR (max 10 config.growSteps, config.growSteps)
   grownScExpr <-
     iterateM
-      config.growSteps
+      steps
       ( \e -> do
           t <- uniform transformations
           t e
