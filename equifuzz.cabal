@@ -27,7 +27,6 @@ executable equifuzz
     build-depends:    base ==4.16.*
                     , text
                     , bytestring == 0.11.*
-                    , hedgehog
                     , shelly
                     , optics
                     , string-interpolate
@@ -50,6 +49,7 @@ executable equifuzz
                     , http-types == 0.12.*
                     , file-embed == 0.0.15.*
                     , random == 1.2.*
+                    , MonadRandom == 0.6.*
                     , binary == 0.8.*
                     , stm == 2.5.*
                     , time == 1.12.*

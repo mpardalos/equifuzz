@@ -2,14 +2,13 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-typed-holes #-}
 
 module GenSystemC (GenConfig (..), TransformationLabel, genSystemCConstant) where
 
-import Control.Applicative (Alternative)
+import Control.Monad.Random.Strict (MonadRandom, Rand, StdGen, getRandomR, uniform)
 import Control.Monad.State (MonadState (..), StateT (..))
 import Control.Monad.Trans.Writer (WriterT, runWriterT)
 import Control.Monad.Writer.Class (MonadWriter, tell)
@@ -17,13 +16,11 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
-import Hedgehog (Gen, MonadGen)
-import Hedgehog.Gen qualified as Hog
-import Hedgehog.Range qualified as Hog.Range
 import Optics (use)
 import Optics.State.Operators ((%=))
 import SystemC qualified as SC
 import Util (iterateM)
+import Control.Monad (join)
 
 newtype GenConfig = GenConfig
   { growSteps :: Int
@@ -31,7 +28,7 @@ newtype GenConfig = GenConfig
 
 type TransformationLabel = Text
 
-genSystemCConstant :: GenConfig -> Text -> Gen ([TransformationLabel], SC.FunctionDeclaration BuildOut)
+genSystemCConstant :: GenConfig -> Text -> Rand StdGen ([TransformationLabel], SC.FunctionDeclaration BuildOut)
 genSystemCConstant config name = do
   ((expr, transformations), finalState) <- runBuildOutM (genExpr config)
   return
@@ -49,7 +46,7 @@ genExpr config = seedExpr >>= grow config
 
 seedExpr :: BuildOutM (SC.Expr BuildOut)
 seedExpr = do
-  value <- Hog.int (Hog.Range.constant (-128) 128)
+  value <- getRandomR (-128, 128)
   tell ["seedExpr(" <> T.pack (show value) <> ")"]
   return (SC.Constant SC.CInt value)
 
@@ -59,7 +56,7 @@ grow config scExpr = do
     iterateM
       config.growSteps
       ( \e -> do
-          t <- Hog.element transformations
+          t <- uniform transformations
           t e
       )
       scExpr
@@ -77,11 +74,11 @@ grow config scExpr = do
         bitSelect
       ]
 
-newtype BuildOutM a = BuildOutM (WriterT [TransformationLabel] (StateT SCConstState Gen) a)
-  deriving newtype (Applicative, Monad, Alternative, MonadWriter [TransformationLabel], MonadState SCConstState, MonadGen)
+newtype BuildOutM a = BuildOutM (WriterT [TransformationLabel] (StateT SCConstState (Rand StdGen)) a)
+  deriving newtype (Applicative, Monad, MonadWriter [TransformationLabel], MonadState SCConstState, MonadRandom)
   deriving stock (Functor)
 
-runBuildOutM :: BuildOutM a -> Gen ((a, [TransformationLabel]), SCConstState)
+runBuildOutM :: BuildOutM a -> Rand StdGen ((a, [TransformationLabel]), SCConstState)
 runBuildOutM (BuildOutM m) =
   runStateT
     (runWriterT m)
@@ -106,10 +103,10 @@ data SCConstState = SCConstState
 type Transformation = SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
 
 someConstant :: SC.SCType -> BuildOutM (SC.Expr BuildOut)
-someConstant t = SC.Constant t <$> Hog.int (Hog.Range.constant (-1024) 1024)
+someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)
 
-someWidth :: MonadGen m => m Int
-someWidth = Hog.int (Hog.Range.constant 1 64)
+someWidth :: MonadRandom m => m Int
+someWidth = getRandomR (1, 64)
 
 newVar :: BuildOutM Text
 newVar = do
@@ -153,7 +150,7 @@ useAsCondition e =
 arithmetic :: Transformation
 arithmetic e =
   let someOp =
-        Hog.element
+        uniform
           [ SC.Plus,
             SC.Minus,
             SC.Multiply
@@ -163,7 +160,7 @@ arithmetic e =
         (False, _) -> SC.CDouble
         (True, False) -> SC.CUInt
         (True, True) -> SC.CInt
-   in if length (Set.intersection [SC.CInt, SC.CUInt, SC.CDouble] (SC.implicitCastTargetsOf e.annotation)) == 1
+   in if length (Set.intersection (Set.fromList [SC.CInt, SC.CUInt, SC.CDouble]) (SC.implicitCastTargetsOf e.annotation)) == 1
         then do
           op <- someOp
           constant <- someConstant resultType
@@ -172,24 +169,24 @@ arithmetic e =
         else pure e
 
 -- | Generate a type that the input type can be cast to
-castToType :: MonadGen m => SC.SCType -> m SC.SCType
+castToType :: MonadRandom m => SC.SCType -> m SC.SCType
 castToType = \case
   -- FIXME: fixed-to-uint is broken for the version of vcf I am currently
   -- testing. This workaround should be an option at the top level.
-  SC.SCFixed {} -> Hog.choice [someFixed, someUFixed]
-  SC.SCUFixed {} -> Hog.choice [someFixed, someUFixed]
-  SC.SCFxnumSubref {} -> Hog.choice [someInt, someUInt]
-  _ -> Hog.choice [someInt, someUInt, someFixed, someUFixed]
+  SC.SCFixed {} -> join $ uniform [someFixed, someUFixed]
+  SC.SCUFixed {} -> join $ uniform [someFixed, someUFixed]
+  SC.SCFxnumSubref {} -> join $ uniform [someInt, someUInt]
+  _ -> join $ uniform [someInt, someUInt, someFixed, someUFixed]
   where
     someInt = SC.SCInt <$> someWidth
     someUInt = SC.SCUInt <$> someWidth
     someFixed = do
       w <- someWidth
-      i <- Hog.int (Hog.Range.constant 0 w)
+      i <- getRandomR (0, w)
       return (SC.SCFixed w i)
     someUFixed = do
       w <- someWidth
-      i <- Hog.int (Hog.Range.constant 0 w)
+      i <- getRandomR (0, w)
       return (SC.SCUFixed w i)
 
 isFinalType :: SC.SCType -> Bool
@@ -211,8 +208,8 @@ range :: Transformation
 range e =
   case (SC.specifiedWidth e.annotation, SC.supportsRange e.annotation) of
     (Just width, Just subrefType) -> do
-      hi <- Hog.int (Hog.Range.constant 0 (width - 1))
-      lo <- Hog.int (Hog.Range.constant 0 hi)
+      hi <- getRandomR (0, width - 1)
+      lo <- getRandomR (0, hi)
 
       tell ["range(" <> T.pack (show hi) <> ", " <> T.pack (show lo) <> ")"]
       return (SC.Range subrefType e hi lo)
@@ -222,7 +219,7 @@ bitSelect :: Transformation
 bitSelect e =
   case (SC.specifiedWidth e.annotation, SC.supportsBitref e.annotation) of
     (Just width, Just bitrefType) -> do
-      bit <- Hog.int (Hog.Range.constant 0 (width - 1))
+      bit <- getRandomR (0, width - 1)
 
       tell ["bitSelect(" <> T.pack (show bit) <> ")"]
       return (SC.Bitref bitrefType e bit)
