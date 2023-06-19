@@ -9,7 +9,7 @@
 module GenSystemC (GenConfig (..), TransformationLabel, genSystemCConstant) where
 
 import Control.Monad.Random.Strict (MonadRandom, Rand, StdGen, getRandomR, uniform)
-import Control.Monad.State (MonadState (..), StateT (..))
+import Control.Monad.State (MonadState (..), State, runState)
 import Control.Monad.Trans.Writer (WriterT, runWriterT)
 import Control.Monad.Writer.Class (MonadWriter, tell)
 import Data.Set qualified as Set
@@ -29,24 +29,25 @@ newtype GenConfig = GenConfig
 type TransformationLabel = Text
 
 genSystemCConstant :: GenConfig -> Text -> Rand StdGen ([TransformationLabel], SC.FunctionDeclaration BuildOut)
-genSystemCConstant config name = do
-  ((expr, transformations), finalState) <- runBuildOutM (genExpr config)
-  return
-    ( transformations,
-      SC.FunctionDeclaration
-        { returnType = expr.annotation,
-          name,
-          args = [],
-          body = finalState.statements ++ [SC.Return () expr]
-        }
-    )
+genSystemCConstant = _
+-- genSystemCConstant config name = do
+--   ((expr, transformations), finalState) <- runBuildOutM (genExpr config)
+--   return
+--     ( transformations,
+--       SC.FunctionDeclaration
+--         { returnType = expr.annotation,
+--           name,
+--           args = [],
+--           body = finalState.statements ++ [SC.Return () expr]
+--         }
+--     )
 
 genExpr :: GenConfig -> BuildOutM (SC.Expr BuildOut)
-genExpr config = seedExpr >>= grow config
+genExpr config = seedExpr _value >>= grow config
 
-seedExpr :: BuildOutM (SC.Expr BuildOut)
-seedExpr = do
-  value <- getRandomR (-128, 128)
+seedExpr :: Int -> BuildOutM (SC.Expr BuildOut)
+seedExpr value = do
+  -- value <- getRandomR (-128, 128)
   tell ["seedExpr(" <> T.pack (show value) <> ")"]
   return (SC.Constant SC.CInt value)
 
@@ -56,31 +57,31 @@ grow config scExpr = do
     iterateM
       config.growSteps
       ( \e -> do
-          t <- uniform transformations
+          t <- _uniform transformations
           t e
       )
       scExpr
 
   if isFinalType grownScExpr.annotation
     then return grownScExpr
-    else castToFinalType grownScExpr
+    else _castToFinalType grownScExpr
   where
-    transformations :: [Transformation]
+    transformations :: [TransformationFunc]
     transformations =
-      [ castWithDeclaration,
-        range,
-        arithmetic,
-        useAsCondition,
-        bitSelect
+      [ castWithDeclaration _,
+        range _ _,
+        arithmetic _ _,
+        useAsCondition _ _,
+        bitSelect _
       ]
 
-newtype BuildOutM a = BuildOutM (WriterT [TransformationLabel] (StateT SCConstState (Rand StdGen)) a)
-  deriving newtype (Applicative, Monad, MonadWriter [TransformationLabel], MonadState SCConstState, MonadRandom)
+newtype BuildOutM a = BuildOutM (WriterT [TransformationLabel] (State SCConstState) a)
+  deriving newtype (Applicative, Monad, MonadWriter [TransformationLabel], MonadState SCConstState)
   deriving stock (Functor)
 
-runBuildOutM :: BuildOutM a -> Rand StdGen ((a, [TransformationLabel]), SCConstState)
+runBuildOutM :: BuildOutM a -> ((a, [TransformationLabel]), SCConstState)
 runBuildOutM (BuildOutM m) =
-  runStateT
+  runState
     (runWriterT m)
     SCConstState
       { statements = [],
@@ -100,9 +101,10 @@ data SCConstState = SCConstState
   deriving (Generic)
 
 -- | Transformations on SystemC expressions. They should also `tell` a TransformationLabel that they are applying
-type Transformation = SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
+type TransformationFunc = SC.Expr BuildOut -> BuildOutM (SC.Expr BuildOut)
 
-someConstant :: SC.SCType -> BuildOutM (SC.Expr BuildOut)
+-- someConstant :: SC.SCType -> BuildOutM (SC.Expr BuildOut)
+someConstant :: MonadRandom m => SC.AnnExpr ann -> m (SC.Expr ann)
 someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)
 
 someWidth :: MonadRandom m => m Int
@@ -114,56 +116,31 @@ newVar = do
   #nextVarIdx %= (+ 1)
   return ("x" <> T.pack (show varIdx))
 
-castWithDeclaration :: Transformation
-castWithDeclaration e = do
-  varType <- castToType e.annotation
-
+castWithDeclaration :: SC.SCType -> TransformationFunc
+castWithDeclaration targetType e = do
   varName <- newVar
-  #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
+  #statements %= (++ [SC.Declaration () targetType varName (SC.Cast targetType targetType e)])
 
-  tell ["castWithDeclaration(" <> SC.genSource varType <> ")"]
-  return (SC.Variable varType varName)
+  tell ["castWithDeclaration(" <> SC.genSource targetType <> ")"]
+  return (SC.Variable targetType varName)
 
-castToFinalType :: Transformation
-castToFinalType e = do
-  -- TODO Change this to specify the actually allowed "final" types. This works
-  -- for now because all of the types in `castToType` are allowed as final
-  varType <- castToType e.annotation
-  varIdx <- use #nextVarIdx
-  let varName = "x" <> T.pack (show varIdx)
-  #nextVarIdx %= (+ 1)
-  #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
-
-  tell ["castToFinalType(" <> SC.genSource varType <> ")"]
-  return (SC.Variable varType varName)
-
-useAsCondition :: Transformation
-useAsCondition e =
+useAsCondition :: SC.Expr BuildOut -> SC.Expr BuildOut -> TransformationFunc
+useAsCondition trueValue falseValue e =
   if SC.CBool `elem` SC.implicitCastTargetsOf e.annotation
     then do
-      trueValue <- someConstant SC.CInt
-      falseValue <- someConstant SC.CInt
       tell ["useAsCondition(" <> SC.genSource trueValue <> ", " <> SC.genSource falseValue <> ")"]
       return (SC.Conditional SC.CInt e trueValue falseValue)
     else pure e
 
-arithmetic :: Transformation
-arithmetic e =
-  let someOp =
-        uniform
-          [ SC.Plus,
-            SC.Minus,
-            SC.Multiply
-          ]
-
+arithmetic :: SC.BinOp -> SC.Expr BuildOut -> TransformationFunc
+arithmetic op constant e =
+  let
       resultType = case (SC.isIntegral e.annotation, SC.isSigned e.annotation) of
         (False, _) -> SC.CDouble
         (True, False) -> SC.CUInt
         (True, True) -> SC.CInt
    in if length (Set.intersection (Set.fromList [SC.CInt, SC.CUInt, SC.CDouble]) (SC.implicitCastTargetsOf e.annotation)) == 1
         then do
-          op <- someOp
-          constant <- someConstant resultType
           tell ["arithmetic(" <> SC.genSource op <> " " <> SC.genSource constant <> ")"]
           return (SC.BinOp resultType e op constant)
         else pure e
@@ -204,23 +181,19 @@ isFinalType SC.SCUIntSubref = False
 isFinalType SC.SCIntBitref = False
 isFinalType SC.SCUIntBitref = False
 
-range :: Transformation
-range e =
+range :: Int -> Int -> TransformationFunc
+range hi lo e =
   case (SC.specifiedWidth e.annotation, SC.supportsRange e.annotation) of
     (Just width, Just subrefType) -> do
-      hi <- getRandomR (0, width - 1)
-      lo <- getRandomR (0, hi)
 
       tell ["range(" <> T.pack (show hi) <> ", " <> T.pack (show lo) <> ")"]
       return (SC.Range subrefType e hi lo)
     _ -> return e
 
-bitSelect :: Transformation
-bitSelect e =
+bitSelect :: Int -> TransformationFunc
+bitSelect bit e =
   case (SC.specifiedWidth e.annotation, SC.supportsBitref e.annotation) of
     (Just width, Just bitrefType) -> do
-      bit <- getRandomR (0, width - 1)
-
       tell ["bitSelect(" <> T.pack (show bit) <> ")"]
       return (SC.Bitref bitrefType e bit)
     _ -> return e
