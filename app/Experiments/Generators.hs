@@ -9,23 +9,23 @@
 module Experiments.Generators (mkSystemCConstantExperiment) where
 
 import Control.Monad (void)
+import Control.Monad.Random.Strict (evalRandIO)
 import Data.Maybe (fromJust)
 import Data.String.Interpolate (__i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments.Types
-import GenSystemC (GenConfig, genSystemCConstant)
+import GenSystemC (GenConfig, GenerateProcess (..), genSystemCConstant)
 import Optics ((<&>))
 import Shelly qualified as Sh
 import SystemC qualified as SC
-import Control.Monad.Random.Strict (evalRandIO)
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
 mkSystemCConstantExperiment :: GenConfig -> IO Experiment
 mkSystemCConstantExperiment config = do
-  (transformations, systemcModule) <- evalRandIO $ genSystemCConstant config "dut"
+  (GenerateProcess seed transformations, systemcModule) <- evalRandIO $ genSystemCConstant config "dut"
   let wrapperName = "impl"
   let design =
         DesignSource
@@ -54,7 +54,13 @@ mkSystemCConstantExperiment config = do
       { uuid,
         expectedResult = True,
         design,
-        designDescription = T.unlines [T.pack (show n) <> ") " <> t | (n, t) <- zip [0 :: Int ..] transformations],
+        designDescription =
+          T.unlines
+            ( T.pack ("0) " ++ show seed)
+                : [ T.pack (show n) <> ") " <> T.pack (show t)
+                    | (n, t) <- zip [1 :: Int ..] transformations
+                  ]
+            ),
         comparisonValue
       }
 
