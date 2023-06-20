@@ -12,7 +12,7 @@ build-type:         Simple
 extra-source-files: resources/style.css, resources/htmx.js
 
 executable equifuzz
-    ghc-options: -Wall -Wno-unrecognised-pragmas -threaded -rtsopts "-with-rtsopts=-N"
+    ghc-options: -Wall -Wno-unrecognised-pragmas -fdefer-typed-holes -threaded -rtsopts "-with-rtsopts=-N"
     main-is:          Main.hs
     other-modules: Experiments
                  , Experiments.Types
