@@ -38,8 +38,10 @@ webMain test = do
 
 genMain :: IO ()
 genMain = do
-  Experiment {design, comparisonValue} <- mkSystemCConstantExperiment genConfig
+  Experiment {design, designDescription, comparisonValue} <- mkSystemCConstantExperiment genConfig
   T.putStrLn design.source
+  putStrLn "---------"
+  T.putStrLn designDescription
   putStrLn "---------"
   T.putStrLn comparisonValue
 
