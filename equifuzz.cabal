@@ -19,7 +19,9 @@ executable equifuzz
                  , Experiments.Generators
                  , Experiments.Runners
                  , SystemC
-                 , Generation.GenSystemC
+                 , GenSystemC
+                 , GenSystemC.GenTransformations
+                 , GenSystemC.Transformations
                  , Util
                  , WebUI
                  , Orchestration

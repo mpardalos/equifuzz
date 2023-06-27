@@ -18,7 +18,7 @@ import Data.Text qualified as T
 import Data.UUID (UUID)
 import Data.UUID.V4 qualified as UUID
 import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), RunnerError (..), mkSystemCConstantExperiment, saveExperiment)
-import Generation.GenSystemC (GenConfig)
+import GenSystemC (GenConfig)
 import Optics (at, use, (%?), _2)
 import Optics.State.Operators ((%=), (.=))
 import System.Random (getStdRandom, uniformR)
