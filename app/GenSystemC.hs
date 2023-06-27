@@ -5,11 +5,11 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module GenSystemC (GenConfig (..), Transformation (..), GenerateProcess (..), genSystemCConstant) where
+module GenSystemC (GenConfig (..), Transformation (..), GenerateProcess (..), genSystemCConstant, generateFromProcess) where
 
-import Control.Monad (guard, join)
+import Control.Monad (foldM, guard, join)
 import Control.Monad.Random.Strict (MonadRandom, Rand, StdGen, getRandomR, uniform, weighted)
-import Control.Monad.State.Strict (MonadState, runStateT)
+import Control.Monad.State.Strict (MonadState, runState, runStateT)
 import Control.Monad.Writer.Strict (MonadWriter, runWriterT, tell)
 import Data.Maybe (catMaybes, isJust)
 import Data.Set qualified as Set
@@ -38,9 +38,21 @@ data GenerateProcess = GenerateProcess
     transformations :: [Transformation]
   }
 
+generateFromProcess :: GenerateProcess -> Text -> SC.FunctionDeclaration BuildOut
+generateFromProcess GenerateProcess {seed, transformations} name =
+  let (expr, finalState) =
+        foldM (flip applyTransformation) seed transformations
+          `runState` initBuildOutState
+   in SC.FunctionDeclaration
+        { returnType = expr.annotation,
+          name,
+          args = [],
+          body = finalState.statements ++ [SC.Return () expr]
+        }
+
 genSystemCConstant :: GenConfig -> Text -> Rand StdGen (GenerateProcess, SC.FunctionDeclaration BuildOut)
 genSystemCConstant cfg name = do
-  (seed, state1) <- runStateT seedExpr initSCConstState
+  (seed, state1) <- runStateT seedExpr initBuildOutState
 
   ((expr, transformations), finalState) <-
     (`runStateT` state1) $ runWriterT (growExpr seed >>= finalizeExpr)
@@ -55,13 +67,19 @@ genSystemCConstant cfg name = do
         }
     )
   where
-    growExpr :: (MonadBuildOut m, MonadWriter [Transformation] m) => SC.Expr BuildOut -> m (SC.Expr BuildOut)
+    growExpr ::
+      (MonadBuildOut m, MonadRandom m, MonadWriter [Transformation] m) =>
+      SC.Expr BuildOut ->
+      m (SC.Expr BuildOut)
     growExpr = iterateM cfg.growSteps $ \e -> do
       transformation <- randomTransformationFor e
       tell [transformation]
       applyTransformation transformation e
 
-    finalizeExpr :: (MonadBuildOut m, MonadWriter [Transformation] m) => SC.Expr BuildOut -> m (SC.Expr BuildOut)
+    finalizeExpr ::
+      (MonadBuildOut m, MonadRandom m, MonadWriter [Transformation] m) =>
+      SC.Expr BuildOut ->
+      m (SC.Expr BuildOut)
     finalizeExpr e
       | isFinalType e.annotation = return e
       | otherwise = do
@@ -75,17 +93,17 @@ instance SC.Annotation BuildOut where
   type AnnExpr BuildOut = SC.SCType
   type AnnStatement BuildOut = ()
 
-type MonadBuildOut m = (MonadState SCConstState m, MonadRandom m)
+type MonadBuildOut m = MonadState BuildOutState m
 
-data SCConstState = SCConstState
+data BuildOutState = BuildOutState
   { statements :: [SC.Statement BuildOut],
     nextVarIdx :: Int
   }
   deriving (Generic)
 
-initSCConstState :: SCConstState
-initSCConstState =
-  SCConstState
+initBuildOutState :: BuildOutState
+initBuildOutState =
+  BuildOutState
     { statements = [],
       nextVarIdx = 0
     }
