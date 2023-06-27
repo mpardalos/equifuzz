@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module GenSystemC (GenConfig (..), Transformation (..), GenerateProcess (..), genSystemCConstant, generateFromProcess) where
+module Generation.GenSystemC (GenConfig (..), Transformation (..), GenerateProcess (..), genSystemCConstant, generateFromProcess) where
 
 import Control.Monad (foldM, guard, join)
 import Control.Monad.Random.Strict (MonadRandom, Rand, StdGen, getRandomR, uniform, weighted)

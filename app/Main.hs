@@ -7,7 +7,7 @@ module Main where
 import Control.Applicative ((<**>))
 import Data.Text.IO qualified as T
 import Experiments
-import GenSystemC (GenConfig (..))
+import Generation.GenSystemC (GenConfig (..))
 import Options.Applicative qualified as Opt
 import Orchestration
 import WebUI (runWebUI)

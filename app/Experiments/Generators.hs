@@ -16,7 +16,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments.Types
-import GenSystemC (GenConfig, GenerateProcess (..), genSystemCConstant)
+import Generation.GenSystemC (GenConfig, GenerateProcess (..), genSystemCConstant)
 import Optics ((<&>))
 import Shelly qualified as Sh
 import SystemC qualified as SC
