@@ -10,14 +10,13 @@ module Experiments.Generators (mkSystemCConstantExperiment) where
 
 import Control.Monad (void)
 import Control.Monad.Random.Strict (evalRandIO)
-import Data.Maybe (fromJust)
-import Data.String.Interpolate (__i)
+import Data.Either (fromRight)
+import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments.Types
 import GenSystemC (GenConfig, GenerateProcess (..), genSystemCConstant)
-import Optics ((<&>))
 import Shelly qualified as Sh
 import SystemC qualified as SC
 
@@ -25,7 +24,7 @@ import SystemC qualified as SC
 -- icarus verilog (`iverilog`) available locally
 mkSystemCConstantExperiment :: GenConfig -> IO Experiment
 mkSystemCConstantExperiment config = do
-  (GenerateProcess seed transformations, systemcModule) <- evalRandIO $ genSystemCConstant config "dut"
+  (GenerateProcess {seed, transformations}, systemcModule) <- evalRandIO $ genSystemCConstant config "dut"
   let wrapperName = "impl"
   let design =
         DesignSource
@@ -38,15 +37,7 @@ mkSystemCConstantExperiment config = do
                 <> systemCHectorWrapper wrapperName systemcModule
           }
 
-  expectedResult <-
-    simulateSystemCConstant systemcModule
-      <&> T.drop 2 -- 0b prefix
-      <&> T.replace "." "" -- Remove decimal point if present
-
-  -- FIXME: The error from this `fromJust` is unhandled up the stack. Handle
-  -- errors from experiment generation
-  let outWidth = fromJust $ SC.specifiedWidth systemcModule.returnType
-  let comparisonValue = T.pack (show outWidth) <> "'b" <> expectedResult
+  comparisonValue <- simulateSystemCConstant systemcModule
 
   uuid <- UUID.nextRandom
   return
@@ -107,22 +98,48 @@ systemCHectorWrapper wrapperName SC.FunctionDeclaration {returnType, args, name}
     argList :: Text
     argList = T.intercalate ", " [argName | (_, argName) <- args]
 
--- | Run the SystemC function and return its output represented as text of a binary number
--- We use this output format because the normal (decimal) output makes the
--- representation of the output non-obvious. E.g. -1 as an sc_uint<8> or a
--- sc_fixed<10,3> are represented completely differently. With the default
--- SystemC output, we would get "-1" in both cases, but here we (correctly) get
--- "0b11111111" and "0b111.0000000"
+-- | Run the SystemC function and return its output represented as text of a
+-- Verilog-style constant. We use this output format because the normal
+-- (decimal) output makes the representation of the output non-obvious. E.g. -1
+-- as an sc_uint<8> or a sc_fixed<10,3> are represented completely differently.
+-- With the default SystemC output, we would get "-1" in both cases, but here we
+-- (correctly) get "8'hff" and "10'h380"
 simulateSystemCConstant :: SC.Annotation ann => SC.FunctionDeclaration ann -> IO Text
-simulateSystemCConstant decl@SC.FunctionDeclaration {name} = Sh.shelly . Sh.silently $ do
+simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shelly . Sh.silently $ do
+  let widthExprOrWidth :: Either Text Int = case returnType of
+        SC.SCInt n -> Right n
+        SC.SCUInt n -> Right n
+        SC.SCFixed w _ -> Right w
+        SC.SCUFixed w _ -> Right w
+        SC.SCFxnumSubref -> Left [i|#{name}().length()|]
+        SC.SCIntSubref -> Left [i|#{name}().length()|]
+        SC.SCUIntSubref -> Left [i|#{name}().length()|]
+        SC.SCIntBitref -> Right 1
+        SC.SCUIntBitref -> Right 1
+        SC.CUInt -> Right 32
+        SC.CInt -> Right 32
+        SC.CDouble -> Right 32
+        SC.CBool -> Right 1
+
+  let showWidth :: Text = case widthExprOrWidth of
+        Left e -> [i|std::cout << #{e} << std::endl;|]
+        Right _ -> "std::cout << 0 << std::endl;"
+
+  let showValue :: Text =
+        if SC.supportsToString returnType
+          then [i|std::cout << #{name}().to_string(sc_dt::SC_HEX, false) << std::endl;|]
+          else [i|std::cout << std::hex << #{name}() << std::endl;|]
+
   let fullSource =
         [__i|
             #{SC.includeHeader}
+            \#include <iostream>
 
             #{SC.genSource decl}
 
             int sc_main(int argc, char **argv) {
-                std::cout << #{name}().to_string(sc_dt::SC_BIN) << std::endl;
+                #{showWidth}
+                #{showValue}
                 return 0;
             }
             |]
@@ -135,4 +152,10 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {name} = Sh.shelly . Sh.sile
   _compileOutput <- Sh.bash "g++" ["-std=c++11", "-I/usr/include/systemc", "-lsystemc", cppPath, "-o", binPath]
   programOut <- T.strip <$> Sh.bash (T.unpack binPath) []
   void $ Sh.bash "rm" ["-r", tmpDir]
-  return programOut
+
+  let [reportedWidth, reportedValue] = T.lines programOut
+
+  let width = fromRight reportedWidth (T.pack . show <$> widthExprOrWidth)
+  let value = T.replace "." "" reportedValue
+
+  return (width <> "'h" <> value)
