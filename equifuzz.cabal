@@ -22,6 +22,7 @@ executable equifuzz
                  , GenSystemC
                  , GenSystemC.GenTransformations
                  , GenSystemC.Transformations
+                 , GenSystemC.Reduce
                  , Util
                  , WebUI
                  , Orchestration
