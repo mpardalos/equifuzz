@@ -11,9 +11,16 @@ category:           Testing
 build-type:         Simple
 extra-source-files: resources/style.css, resources/htmx.js
 
+Flag evaluation_version
+     description: Compile an evaluation version (some features removed)
+     manual: True
+     default: False
+
 executable equifuzz
     ghc-options: -Wall -Wno-unrecognised-pragmas -threaded -rtsopts "-with-rtsopts=-N"
     main-is:          Main.hs
+    if flag(evaluation_version)
+       cpp-options: -DEVALUATION_VERSION
     other-modules: Experiments
                  , Experiments.Types
                  , Experiments.Generators

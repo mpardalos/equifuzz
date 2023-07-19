@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -Wno-typed-holes #-}
 
 module GenSystemC (GenConfig (..), TransformationLabel, genSystemCConstant) where
@@ -68,11 +69,13 @@ grow config scExpr = do
   where
     transformations :: [Transformation]
     transformations =
-      [ castWithDeclaration,
-        range,
-        arithmetic,
-        useAsCondition,
-        bitSelect
+      [ castWithDeclaration
+      , range
+#ifndef EVALUATION_VERSION
+      , arithmetic
+      , useAsCondition
+      , bitSelect
+#endif
       ]
 
 newtype BuildOutM a = BuildOutM (WriterT [TransformationLabel] (StateT SCConstState (Rand StdGen)) a)
