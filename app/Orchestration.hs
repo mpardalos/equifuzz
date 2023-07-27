@@ -3,7 +3,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NumDecimals #-}
 
-module Orchestration (ProgressChan, OrchestrationConfig (..), startRunners) where
+module Orchestration (ProgressChan, OrchestrationConfig (..), RunnerConfig(..), startRunners) where
 
 import Control.Concurrent (MVar, forkFinally, forkIO, modifyMVar_, newMVar, threadDelay)
 import Control.Concurrent.STM (TBQueue, TChan, atomically, cloneTChan, newTBQueueIO, newTChanIO, readTBQueue, readTChan, writeTBQueue, writeTChan)
@@ -29,9 +29,12 @@ type ExperimentQueue = TBQueue Experiment
 
 type ProgressChan = TChan ExperimentProgress
 
+data RunnerConfig
+  = TestRunner
+  | RunnerConfig ExperimentRunner
+
 data OrchestrationConfig = OrchestrationConfig
-  { runner :: ExperimentRunner,
-    test :: Bool,
+  { runnerConfig :: RunnerConfig,
     logging :: Bool,
     generatorThreads :: Int,
     maxExperiments :: Int,
@@ -43,13 +46,13 @@ startRunners :: OrchestrationConfig -> IO ProgressChan
 startRunners config = do
   progressChan <- newTChanIO
 
-  if config.test
-    then do
+  case config.runnerConfig of
+    TestRunner ->
       replicateM_ 10 $ startTestThread progressChan
-    else do
+    RunnerConfig runner -> do
       experimentQueue <- newTBQueueIO (fromIntegral config.experimentQueueDepth)
       startGeneratorThread config experimentQueue
-      startOrchestratorThread config experimentQueue progressChan
+      startOrchestratorThread runner config.maxExperiments experimentQueue progressChan
       -- We need to clone the progressChan because, otherwise, this thread would
       -- "eat up" all the messages on it. This way it just gets a copy
       startSaverThread =<< atomically (cloneTChan progressChan)
@@ -68,8 +71,8 @@ startGeneratorThread OrchestrationConfig {generatorThreads, genConfig} queue =
       experiment <- mkSystemCConstantExperiment genConfig
       atomically (writeTBQueue queue experiment)
 
-startOrchestratorThread :: OrchestrationConfig -> ExperimentQueue -> ProgressChan -> IO ()
-startOrchestratorThread OrchestrationConfig {runner, maxExperiments} experimentQueue progressChan = do
+startOrchestratorThread :: ExperimentRunner -> Int -> ExperimentQueue -> ProgressChan -> IO ()
+startOrchestratorThread runner maxExperiments experimentQueue progressChan = do
   experimentSem <- atomically (newTSem . toInteger $ maxExperiments)
 
   forkRestarting "Orchestrator thread crashed" $ forever $ do

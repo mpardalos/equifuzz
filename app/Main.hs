@@ -1,11 +1,11 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wno-ambiguous-fields #-}
 
 module Main where
 
-import Control.Applicative ((<**>))
-import Data.Text (Text)
+import Control.Applicative (Alternative (empty, (<|>)), optional, (<**>))
 import Data.Text.IO qualified as T
 import Experiments
 import GenSystemC (GenConfig (..))
@@ -13,14 +13,13 @@ import Options.Applicative qualified as Opt
 import Orchestration
 import WebUI (runWebUI)
 
-orchestrationConfig :: OrchestrationConfig
-orchestrationConfig =
+orchestrationConfig :: RunnerConfig -> OrchestrationConfig
+orchestrationConfig runnerConfig =
   OrchestrationConfig
-    { runner = hector_2023_03_1,
-      test = False,
+    { runnerConfig,
       logging = True,
       generatorThreads = 10,
-      maxExperiments = 10,
+      maxExperiments = 1,
       -- Double the max concurrent experiments to make sure that we are never
       experimentQueueDepth = 20,
       genConfig
@@ -35,8 +34,8 @@ genConfig =
 main :: IO ()
 main =
   parseArgs >>= \case
-    Web {test} -> do
-      progressChan <- startRunners (orchestrationConfig {test})
+    Web runnerConfig -> do
+      progressChan <- startRunners (orchestrationConfig runnerConfig)
       runWebUI progressChan
     Generate -> do
       Experiment {design, designDescription, comparisonValue} <- mkSystemCConstantExperiment genConfig
@@ -49,12 +48,7 @@ main =
 --------------------------- CLI Parser -----------------------------------------
 
 data Command
-  = Web
-      { test :: Bool,
-        runnerHost :: Text,
-        runnerUsername :: Text,
-        runnerPass :: Text
-      }
+  = Web RunnerConfig
   | Generate
 
 commandParser :: Opt.Parser Command
@@ -62,13 +56,8 @@ commandParser =
   Opt.hsubparser . mconcat $
     [ Opt.command "web" $
         Opt.info
-          ( Web
-              <$> testFlag
-              <*> runnerHostOpt
-              <*> runnerUsernameOpt
-              <*> runnerPassOpt
-          )
-          (Opt.progDesc "Run the equifuzz TUI, connected to a remote host"),
+          (Web <$> (testFlag <|> runnerConfig))
+          (Opt.progDesc "Run the equifuzz Web UI, connected to a remote host"),
       Opt.command "generate" $
         Opt.info
           (pure Generate)
@@ -76,29 +65,32 @@ commandParser =
     ]
   where
     testFlag =
-      Opt.switch . mconcat $
+      Opt.flag' TestRunner . mconcat $
         [ Opt.long "test",
           Opt.help "Show test data on the interface, don't run any fuzzing"
         ]
-    runnerHostOpt =
-      Opt.strOption . mconcat $
-        [ Opt.long "host",
-          Opt.metavar "HOSTNAME",
-          Opt.help "Remote hostname or IP to run equivalence checker on"
-        ]
-    runnerUsernameOpt =
-      Opt.strOption . mconcat $
-        [ Opt.long "username",
-          Opt.metavar "USERNAME",
-          Opt.help "Username to connect to remote host"
-        ]
-    runnerPassOpt =
-      Opt.strOption . mconcat $
-        [ Opt.long "password",
-          Opt.metavar "PASSWORD",
-          Opt.help "Password to connect to remote host (Default: no password)",
-          Opt.value ""
-        ]
+
+    runnerConfig = do
+      host <-
+        Opt.strOption . mconcat $
+          [ Opt.long "host",
+            Opt.metavar "HOSTNAME",
+            Opt.help "Remote hostname or IP to run equivalence checker on"
+          ]
+      username <-
+        Opt.strOption . mconcat $
+          [ Opt.long "username",
+            Opt.metavar "USERNAME",
+            Opt.help "Username to connect to remote host"
+          ]
+      activatePath <-
+        optional . Opt.strOption . mconcat $
+          [ Opt.long "activate-script",
+            Opt.metavar "PATH",
+            Opt.help "Script to be sourced on the remote host before running vcf"
+          ]
+
+      return $ RunnerConfig $ ExperimentRunner (runVCFormal username host activatePath)
 
 parseArgs :: IO Command
 parseArgs =

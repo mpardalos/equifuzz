@@ -8,9 +8,7 @@
 
 module Experiments.Runners
   ( ExperimentRunner (..),
-    hector_2022_06_SP2,
-    hector_2022_06_SP2_3,
-    hector_2023_03_1,
+    runVCFormal,
     saveExperiment,
   )
 where
@@ -27,44 +25,17 @@ import Optics ((^.))
 import Shelly ((</>))
 import Shelly qualified as Sh
 import Util (whenJust)
+import Debug.Trace (traceM)
 
 newtype ExperimentRunner = ExperimentRunner
   { run :: Experiment -> IO (Either RunnerError ExperimentResult)
   }
 
-hector_2022_06_SP2 :: ExperimentRunner
-hector_2022_06_SP2 =
-  ExperimentRunner $
-    runVCFormal
-      info
-      "mp5617@ee-beholder0.ee.ic.ac.uk"
-      "/scratch/mp5617/synopsys/vc_static/T-2022.06-SP2/activate.sh"
-  where
-    info = "Hector T-2022.06-SP2"
-
-hector_2022_06_SP2_3 :: ExperimentRunner
-hector_2022_06_SP2_3 =
-  ExperimentRunner $
-    runVCFormal
-      info
-      "mp5617@ee-beholder0.ee.ic.ac.uk"
-      "/scratch/mp5617/synopsys/vc_static/T-2022.06-SP2-3/activate.sh"
-  where
-    info = "Hector T-2022.06-SP2-3"
-
-hector_2023_03_1 :: ExperimentRunner
-hector_2023_03_1 =
-  ExperimentRunner $
-    runVCFormal
-      info
-      "mp5617@ee-beholder0.ee.ic.ac.uk"
-      "/scratch/mp5617/synopsys/vc_static/U-2023.03-1/activate.sh"
-  where
-    info = "Hector U-2023.03-1"
-
 -- | Run an experiment using VC Formal on a remote host
-runVCFormal :: Text -> Text -> Text -> Experiment -> IO (Either RunnerError ExperimentResult)
-runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.silently $ do
+runVCFormal :: Text -> Text -> Maybe Text -> Experiment -> IO (Either RunnerError ExperimentResult)
+runVCFormal username vcfHost mSourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.verbosely $ do
+  let sshString = username <> "@" <> vcfHost
+
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile
     (dir </> filename)
@@ -72,15 +43,17 @@ runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} =
   Sh.writefile
     (dir </> ("compare.tcl" :: Text))
     (hectorCompareScript filename experiment)
-  void $ Sh.bash "ssh" [vcfHost, "mkdir -p " <> remoteDir <> "/"]
-  void $ Sh.bash "scp" ["-r", dir <> "/*", vcfHost <> ":" <> remoteDir <> "/" <> T.pack (show uuid)]
+  void $ Sh.bash "ssh" [sshString, "mkdir -p " <> remoteDir <> "/"]
+  void $ Sh.bash "scp" ["-r", dir <> "/*", sshString <> ":" <> remoteDir <> "/" <> T.pack (show uuid)]
 
-  fullOutput <- Sh.silently $ Sh.run "ssh" [vcfHost, sshCommand]
+  fullOutput <- Sh.run "ssh" [sshString, sshCommand]
+
+  traceM "=== RUN COMPLETE ==="
 
   void . Sh.errExit False $
     Sh.bash
       "scp"
-      [ vcfHost
+      [ sshString
           <> ":"
           <> remoteDir
           <> "/"
@@ -89,7 +62,7 @@ runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} =
         dir <> "/counter_example.txt"
       ]
 
-  void $ Sh.bash "ssh" [vcfHost, [i|"cd ~ && rm -rf ./#{experimentDir}"|]]
+  void $ Sh.bash "ssh" [sshString, [i|"cd ~ && rm -rf ./#{experimentDir}"|]]
 
   counterExample <-
     Sh.test_f (T.unpack dir <> "/counter_example.txt") >>= \case
@@ -116,6 +89,8 @@ runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} =
         (False, True) -> Just False
         _ -> Nothing
 
+  traceM "=== RUN COMPLETE ==="
+
   return $
     if noLicense
       then Left OutOfLicenses
@@ -130,7 +105,9 @@ runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} =
     filename = "impl.cpp"
 
     sshCommand :: Text
-    sshCommand = [i|cd #{experimentDir} && ls -ltr && md5sum * && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
+    sshCommand = case mSourcePath of
+      Just sourcePath -> [i|cd #{experimentDir} && ls -ltr && md5sum * && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
+      Nothing -> [i|cd #{experimentDir} && ls -ltr && md5sum * && vcf -fmode DPV -f compare.tcl|]
 
 hectorCompareScript :: FilePath -> Experiment -> Text
 hectorCompareScript filename experiment =
