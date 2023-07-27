@@ -23,11 +23,12 @@ import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
+import Data.Text (Text)
 import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
-import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), RunnerError, RunnerInfo)
+import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), RunnerError)
 import GHC.Generics (Generic)
 import Network.HTTP.Types (status200, urlDecode, urlEncode)
 import Network.Wai (StreamingBody)
@@ -41,6 +42,8 @@ import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Util (forkRestarting, whenJust)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, raw, scotty, setHeader, status, stream)
+
+type RunnerInfo = Text
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
@@ -83,34 +86,31 @@ handleProgress stateVar progress = do
   state <- readMVar stateVar
 
   modifyMVar_ stateVar . execStateT $ case progress of
-    NewExperiment experiment -> do
-      #runningExperiments % at experiment.uuid .= Just (ExperimentInfo experiment [])
-      liftIO . atomically $ signalSemaphore state.experimentsSem
-    BeginRun uuid runnerInfo -> do
+    ExperimentStarted experiment -> do
       -- FIXME: Report error if uuid does not exist
-      #runningExperiments % at uuid %? #runs % at runnerInfo .= Just (ActiveRun runnerInfo)
+      #runningExperiments % at experiment.uuid .= Just (ExperimentInfo experiment [(runnerInfo, ActiveRun runnerInfo)])
       liftIO . atomically $ signalSemaphore state.experimentsSem
-    RunFailed uuid runnerInfo runnerError -> do
+    ExperimentFailed uuid runnerError -> do
       -- FIXME: Report error if uuid does not exist
       #runningExperiments % at uuid %? #runs % at runnerInfo .= Just (FailedRun runnerError)
       #totalRunCount %= (+ 1)
       liftIO . atomically $ signalSemaphore state.experimentsSem
       liftIO . atomically $ signalSemaphore state.totalRunCountSem
-    RunCompleted result -> do
-      -- FIXME: Report error if uuid does not exist
-      #runningExperiments % at result.uuid %? #runs % at result.runnerInfo .= Just (CompletedRun result)
+    ExperimentCompleted result -> do
+      -- FIXME: Report error if experiment does not exist
+      -- FIXME: Report error if experiment still has active runs
+      #runningExperiments % at result.uuid %? #runs % at runnerInfo .= Just (CompletedRun result)
       #totalRunCount %= (+ 1)
       liftIO . atomically $ signalSemaphore state.experimentsSem
       liftIO . atomically $ signalSemaphore state.totalRunCountSem
-    ExperimentCompleted uuid -> do
-      -- FIXME: Report error if experiment does not exist
-      -- FIXME: Report error if experiment still has active runs
-      mExperiment <- use (#runningExperiments % at uuid)
+      mExperiment <- use (#runningExperiments % at result.uuid)
       whenJust mExperiment $ \experiment -> do
-        #runningExperiments % at uuid .= Nothing
+        #runningExperiments % at result.uuid .= Nothing
         if isInteresting experiment
-          then #interestingExperiments % at uuid .= Just experiment
-          else #uninterestingExperiments % at uuid .= Just experiment
+          then #interestingExperiments % at result.uuid .= Just experiment
+          else #uninterestingExperiments % at result.uuid .= Just experiment
+    where
+      runnerInfo = "Runner"
 
 scottyServer :: MVar WebUIState -> IO ()
 scottyServer stateVar = scotty 8888 $ do

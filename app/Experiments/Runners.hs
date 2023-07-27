@@ -15,7 +15,7 @@ module Experiments.Runners
   )
 where
 
-import Control.Monad (forM_, void)
+import Control.Monad (void)
 import Data.Function ((&))
 import Data.Maybe (isJust)
 import Data.String.Interpolate (i, __i)
@@ -28,47 +28,37 @@ import Shelly ((</>))
 import Shelly qualified as Sh
 import Util (whenJust)
 
-data ExperimentRunner = ExperimentRunner
-  { info :: RunnerInfo,
-    run :: Experiment -> IO (Either RunnerError ExperimentResult)
+newtype ExperimentRunner = ExperimentRunner
+  { run :: Experiment -> IO (Either RunnerError ExperimentResult)
   }
 
 hector_2022_06_SP2 :: ExperimentRunner
 hector_2022_06_SP2 =
-  ExperimentRunner
-    { info,
-      run =
-        runVCFormal
-          info
-          "mp5617@ee-beholder0.ee.ic.ac.uk"
-          "/scratch/mp5617/synopsys/vc_static/T-2022.06-SP2/activate.sh"
-    }
+  ExperimentRunner $
+    runVCFormal
+      info
+      "mp5617@ee-beholder0.ee.ic.ac.uk"
+      "/scratch/mp5617/synopsys/vc_static/T-2022.06-SP2/activate.sh"
   where
     info = "Hector T-2022.06-SP2"
 
 hector_2022_06_SP2_3 :: ExperimentRunner
 hector_2022_06_SP2_3 =
-  ExperimentRunner
-    { info,
-      run =
-        runVCFormal
-          info
-          "mp5617@ee-beholder0.ee.ic.ac.uk"
-          "/scratch/mp5617/synopsys/vc_static/T-2022.06-SP2-3/activate.sh"
-    }
+  ExperimentRunner $
+    runVCFormal
+      info
+      "mp5617@ee-beholder0.ee.ic.ac.uk"
+      "/scratch/mp5617/synopsys/vc_static/T-2022.06-SP2-3/activate.sh"
   where
     info = "Hector T-2022.06-SP2-3"
 
 hector_2023_03_1 :: ExperimentRunner
 hector_2023_03_1 =
-  ExperimentRunner
-    { info,
-      run =
-        runVCFormal
-          info
-          "mp5617@ee-beholder0.ee.ic.ac.uk"
-          "/scratch/mp5617/synopsys/vc_static/U-2023.03-1/activate.sh"
-    }
+  ExperimentRunner $
+    runVCFormal
+      info
+      "mp5617@ee-beholder0.ee.ic.ac.uk"
+      "/scratch/mp5617/synopsys/vc_static/U-2023.03-1/activate.sh"
   where
     info = "Hector U-2023.03-1"
 
@@ -129,7 +119,7 @@ runVCFormal runnerInfo vcfHost sourcePath experiment@Experiment {uuid, design} =
   return $
     if noLicense
       then Left OutOfLicenses
-      else Right ExperimentResult {proofFound, counterExample, fullOutput, uuid, runnerInfo}
+      else Right ExperimentResult {proofFound, counterExample, fullOutput, uuid}
   where
     remoteDir :: Text
     remoteDir = "equifuzz_vcf_experiment"
@@ -165,8 +155,8 @@ hectorCompareScript filename experiment =
   |]
 
 -- | Save information about the experiment to the experiments/ directory
-saveExperiment :: Experiment -> [ExperimentResult] -> IO ()
-saveExperiment experiment results = Sh.shelly . Sh.silently $ do
+saveExperiment :: Experiment -> ExperimentResult -> IO ()
+saveExperiment experiment result = Sh.shelly . Sh.silently $ do
   let dir = "experiments/" <> UUID.toString experiment.uuid
   let filename = "impl.cpp"
 
@@ -174,22 +164,19 @@ saveExperiment experiment results = Sh.shelly . Sh.silently $ do
   Sh.writefile (dir </> filename) experiment.design.source
   Sh.writefile (dir </> ("description.txt" :: Text)) experiment.designDescription
 
-  forM_ results $ \result -> do
-    Sh.mkdir_p (dir </> result.runnerInfo)
-    Sh.writefile
-      (dir </> result.runnerInfo </> ("full_output.txt" :: Text))
-      result.fullOutput
+  Sh.writefile
+    (dir </> ("full_output.txt" :: Text))
+    result.fullOutput
 
-    whenJust result.counterExample $
-      Sh.writefile
-        (dir </> result.runnerInfo </> ("counter_example.txt" :: Text))
-
+  whenJust result.counterExample $
     Sh.writefile
-      (dir </> result.runnerInfo </> ("info.txt" :: Text))
-      [__i|
-          Runner          : #{result ^. #runnerInfo}
-          Proof Found     : #{result ^. #proofFound}
-          Counter Example : #{isJust (result ^. #counterExample)}
-          |]
+      (dir </> ("counter_example.txt" :: Text))
+
+  Sh.writefile
+    (dir </> ("info.txt" :: Text))
+    [__i|
+        Proof Found     : #{result ^. #proofFound}
+        Counter Example : #{isJust (result ^. #counterExample)}
+        |]
 
   Sh.writefile (dir </> ("compare.tcl" :: Text)) (hectorCompareScript filename experiment)

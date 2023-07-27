@@ -44,13 +44,10 @@ data DesignSource = DesignSource
   }
   deriving (Show)
 
-type RunnerInfo = Text
-
 data ExperimentResult = ExperimentResult
   { proofFound :: Maybe Bool,
     counterExample :: Maybe Text,
     fullOutput :: Text,
-    runnerInfo :: RunnerInfo,
     uuid :: UUID
   }
   deriving (Show, Eq, Generic, Data)
@@ -62,11 +59,9 @@ data RunnerError
   deriving anyclass (Exception)
 
 data ExperimentProgress
-  = NewExperiment Experiment
-  | BeginRun UUID RunnerInfo
-  | RunFailed UUID RunnerInfo RunnerError
-  | RunCompleted ExperimentResult
-  | ExperimentCompleted UUID
+  = ExperimentStarted Experiment
+  | ExperimentFailed UUID RunnerError
+  | ExperimentCompleted ExperimentResult
   deriving (Show)
 
 makeFieldLabelsNoPrefix ''Experiment
