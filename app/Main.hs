@@ -5,7 +5,7 @@
 
 module Main where
 
-import Control.Applicative (Alternative (empty, (<|>)), optional, (<**>))
+import Control.Applicative (Alternative ((<|>)), optional, (<**>))
 import Data.Text.IO qualified as T
 import Experiments
 import GenSystemC (GenConfig (..))
