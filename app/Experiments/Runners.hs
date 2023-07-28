@@ -25,7 +25,6 @@ import Optics ((^.))
 import Shelly ((</>))
 import Shelly qualified as Sh
 import Util (whenJust)
-import Debug.Trace (traceM)
 
 newtype ExperimentRunner = ExperimentRunner
   { run :: Experiment -> IO (Either RunnerError ExperimentResult)
@@ -33,7 +32,7 @@ newtype ExperimentRunner = ExperimentRunner
 
 -- | Run an experiment using VC Formal on a remote host
 runVCFormal :: Text -> Text -> Maybe Text -> Experiment -> IO (Either RunnerError ExperimentResult)
-runVCFormal username vcfHost mSourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.verbosely $ do
+runVCFormal username vcfHost mSourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.silently $ do
   let sshString = username <> "@" <> vcfHost
 
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
@@ -47,8 +46,6 @@ runVCFormal username vcfHost mSourcePath experiment@Experiment {uuid, design} = 
   void $ Sh.bash "scp" ["-r", dir <> "/*", sshString <> ":" <> remoteDir <> "/" <> T.pack (show uuid)]
 
   fullOutput <- Sh.run "ssh" [sshString, sshCommand]
-
-  traceM "=== RUN COMPLETE ==="
 
   void . Sh.errExit False $
     Sh.bash
@@ -88,8 +85,6 @@ runVCFormal username vcfHost mSourcePath experiment@Experiment {uuid, design} = 
         (True, False) -> Just True
         (False, True) -> Just False
         _ -> Nothing
-
-  traceM "=== RUN COMPLETE ==="
 
   return $
     if noLicense
