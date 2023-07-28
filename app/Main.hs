@@ -13,18 +13,6 @@ import Options.Applicative qualified as Opt
 import Orchestration
 import WebUI (runWebUI)
 
-orchestrationConfig :: RunnerConfig -> OrchestrationConfig
-orchestrationConfig runnerConfig =
-  OrchestrationConfig
-    { runnerConfig,
-      logging = True,
-      generatorThreads = 10,
-      maxExperiments = 1,
-      -- Double the max concurrent experiments to make sure that we are never
-      experimentQueueDepth = 20,
-      genConfig
-    }
-
 genConfig :: GenConfig
 genConfig =
   GenConfig
@@ -34,8 +22,8 @@ genConfig =
 main :: IO ()
 main =
   parseArgs >>= \case
-    Web runnerConfig -> do
-      progressChan <- startRunners (orchestrationConfig runnerConfig)
+    Web orchestrationConfig -> do
+      progressChan <- startRunners orchestrationConfig
       runWebUI progressChan
     Generate -> do
       Experiment {design, designDescription, comparisonValue} <- mkSystemCConstantExperiment genConfig
@@ -48,7 +36,7 @@ main =
 --------------------------- CLI Parser -----------------------------------------
 
 data Command
-  = Web RunnerConfig
+  = Web OrchestrationConfig
   | Generate
 
 commandParser :: Opt.Parser Command
@@ -56,7 +44,7 @@ commandParser =
   Opt.hsubparser . mconcat $
     [ Opt.command "web" $
         Opt.info
-          (Web <$> (testFlag <|> runnerConfig))
+          (Web <$> orchestrationConfig)
           (Opt.progDesc "Run the equifuzz Web UI, connected to a remote host"),
       Opt.command "generate" $
         Opt.info
@@ -64,13 +52,34 @@ commandParser =
           (Opt.progDesc "Generate a sample of a generator")
     ]
   where
+    orchestrationConfig = do
+      maxExperiments <-
+        Opt.option Opt.auto . mconcat $
+          [ Opt.long "max-experiments",
+            Opt.metavar "COUNT",
+            Opt.help "Maximum number of experiments to allow to run concurrently",
+            Opt.value 10,
+            Opt.showDefault
+          ]
+      runnerConfig <- runnerConfigOpts <|> testFlag
+      return
+        OrchestrationConfig
+          { runnerConfig,
+            logging = True,
+            generatorThreads = 10,
+            maxExperiments,
+            -- Double the max concurrent experiments to make sure that we are never
+            experimentQueueDepth = 20,
+            genConfig
+          }
+
     testFlag =
       Opt.flag' TestRunner . mconcat $
         [ Opt.long "test",
           Opt.help "Show test data on the interface, don't run any fuzzing"
         ]
 
-    runnerConfig = do
+    runnerConfigOpts = do
       host <-
         Opt.strOption . mconcat $
           [ Opt.long "host",
@@ -90,7 +99,7 @@ commandParser =
             Opt.help "Script to be sourced on the remote host before running vcf"
           ]
 
-      return $ RunnerConfig $ ExperimentRunner (runVCFormal username host activatePath)
+      return (RunnerConfig . ExperimentRunner $ runVCFormal username host activatePath)
 
 parseArgs :: IO Command
 parseArgs =
