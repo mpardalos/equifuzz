@@ -48,7 +48,7 @@ startRunners config = do
 
   case config.runnerConfig of
     TestRunner ->
-      replicateM_ 10 $ startTestThread progressChan
+      replicateM_ config.maxExperiments $ startTestThread progressChan
     RunnerConfig runner -> do
       experimentQueue <- newTBQueueIO (fromIntegral config.experimentQueueDepth)
       startGeneratorThread config experimentQueue
