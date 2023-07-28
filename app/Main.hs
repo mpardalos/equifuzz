@@ -61,11 +61,16 @@ commandParser =
             Opt.value 10,
             Opt.showDefault
           ]
+      verbose <-
+        Opt.switch . mconcat $
+          [ Opt.long "verbose",
+            Opt.help "Print experiment status to the console"
+          ]
       runnerConfig <- runnerConfigOpts <|> testFlag
       return
         OrchestrationConfig
           { runnerConfig,
-            logging = True,
+            verbose,
             generatorThreads = 10,
             maxExperiments,
             -- Double the max concurrent experiments to make sure that we are never

@@ -35,7 +35,7 @@ data RunnerConfig
 
 data OrchestrationConfig = OrchestrationConfig
   { runnerConfig :: RunnerConfig,
-    logging :: Bool,
+    verbose :: Bool,
     generatorThreads :: Int,
     maxExperiments :: Int,
     experimentQueueDepth :: Int,
@@ -57,7 +57,7 @@ startRunners config = do
       -- "eat up" all the messages on it. This way it just gets a copy
       startSaverThread =<< atomically (cloneTChan progressChan)
 
-  when config.logging $
+  when config.verbose $
     startLoggerThread =<< atomically (cloneTChan progressChan)
 
   return progressChan
