@@ -128,7 +128,8 @@ hectorCompareScript filename experiment =
             proofwait
             listproof
             simcex -txt counter_example.txt out_equiv
-            quit
+            exit
+            exit
   |]
 
 -- | Save information about the experiment to the experiments/ directory
