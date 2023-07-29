@@ -1,4 +1,4 @@
-FROM haskell:9.2.7 AS BUILDER
+FROM haskell:9.2.7 AS equifuzz-builder
 
 WORKDIR /opt/equifuzz
 
@@ -18,6 +18,24 @@ RUN cabal install
 
 FROM redhat/ubi9-minimal:9.2
 
-RUN microdnf install -y gmp openssh-clients g++
+WORKDIR /
 
-COPY --from=BUILDER /root/.cabal/bin/equifuzz /equifuzz
+RUN microdnf install -y gmp openssh-clients g++ tar gzip cmake
+
+RUN curl -LO https://github.com/accellera-official/systemc/archive/refs/tags/2.3.4.tar.gz && \
+    tar -xzf 2.3.4.tar.gz && \
+    rm 2.3.4.tar.gz && \
+    cd systemc-2.3.4/ && \
+    mkdir build && \
+    cd build && \
+    cmake .. -D CMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_INCLUDEDIR=/usr/include/systemc -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=11 && \
+    make -j$(nproc) && \
+    make install && \
+    cd / && \
+    rm -rf systemc-2.3.4/
+
+COPY --from=equifuzz-builder /root/.cabal/bin/equifuzz /usr/bin/equifuzz
+
+EXPOSE 8888
+
+ENTRYPOINT ["/usr/bin/equifuzz"]
