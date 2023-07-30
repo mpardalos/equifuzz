@@ -20,7 +20,7 @@ FROM redhat/ubi9-minimal:9.2
 
 WORKDIR /
 
-RUN microdnf install -y gmp openssh-clients g++ tar gzip cmake
+RUN microdnf install -y gmp openssh-clients g++ tar gzip cmake sshpass
 
 RUN curl -LO https://github.com/accellera-official/systemc/archive/refs/tags/2.3.4.tar.gz && \
     tar -xzf 2.3.4.tar.gz && \

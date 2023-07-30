@@ -97,6 +97,12 @@ commandParser =
             Opt.metavar "USERNAME",
             Opt.help "Username to connect to remote host"
           ]
+      password <-
+        Opt.strOption . mconcat $
+          [ Opt.long "password",
+            Opt.metavar "PASSWORD",
+            Opt.help "Password to connect to remote host"
+          ]
       activatePath <-
         optional . Opt.strOption . mconcat $
           [ Opt.long "activate-script",
@@ -104,7 +110,12 @@ commandParser =
             Opt.help "Script to be sourced on the remote host before running vcf"
           ]
 
-      return (RunnerConfig . ExperimentRunner $ runVCFormal username host activatePath)
+      return
+        ( RunnerConfig . ExperimentRunner $
+            runVCFormal
+              SSHConnectionTarget {username, host, password}
+              activatePath
+        )
 
 parseArgs :: IO Command
 parseArgs =

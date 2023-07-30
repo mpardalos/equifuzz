@@ -3,11 +3,13 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Experiments.Runners
   ( ExperimentRunner (..),
+    SSHConnectionTarget (..),
     runVCFormal,
     saveExperiment,
   )
@@ -21,8 +23,8 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID qualified as UUID
 import Experiments.Types
-import Optics ((^.))
-import Shelly ((</>))
+import Optics (makeFieldLabelsNoPrefix, (^.))
+import Shelly (Sh, (</>))
 import Shelly qualified as Sh
 import Util (whenJust)
 
@@ -30,10 +32,24 @@ newtype ExperimentRunner = ExperimentRunner
   { run :: Experiment -> IO (Either RunnerError ExperimentResult)
   }
 
+data SSHConnectionTarget = SSHConnectionTarget
+  { host :: Text,
+    username :: Text,
+    password :: Text
+  }
+
+makeFieldLabelsNoPrefix ''SSHConnectionTarget
+
+bashExec :: Text -> Sh Text
+bashExec commands = Sh.run "bash" ["-c", commands]
+
+bashExec_ :: Text -> Sh ()
+bashExec_ = void . bashExec
+
 -- | Run an experiment using VC Formal on a remote host
-runVCFormal :: Text -> Text -> Maybe Text -> Experiment -> IO (Either RunnerError ExperimentResult)
-runVCFormal username vcfHost mSourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.silently $ do
-  let sshString = username <> "@" <> vcfHost
+runVCFormal :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO (Either RunnerError ExperimentResult)
+runVCFormal sshOpts mSourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.verbosely $ do
+  let sshString = sshOpts.username <> "@" <> sshOpts.host
 
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile
@@ -42,24 +58,17 @@ runVCFormal username vcfHost mSourcePath experiment@Experiment {uuid, design} = 
   Sh.writefile
     (dir </> ("compare.tcl" :: Text))
     (hectorCompareScript filename experiment)
-  void $ Sh.bash "ssh" [sshString, "mkdir -p " <> remoteDir <> "/"]
-  void $ Sh.bash "scp" ["-r", dir <> "/*", sshString <> ":" <> remoteDir <> "/" <> T.pack (show uuid)]
+  bashExec_
+    [i|sshpass -p #{sshOpts ^. #password} ssh #{sshString} mkdir -p #{remoteDir}/ |]
+  bashExec_
+    [i|sshpass -p #{sshOpts ^. #password} scp -r #{dir}/* #{sshString}:#{remoteDir}/#{uuid}|]
 
-  fullOutput <- Sh.run "ssh" [sshString, sshCommand]
+  fullOutput <- bashExec [i|sshpass -p #{sshOpts ^. #password} ssh #{sshString} '#{sshCommand}'|]
 
   void . Sh.errExit False $
-    Sh.bash
-      "scp"
-      [ sshString
-          <> ":"
-          <> remoteDir
-          <> "/"
-          <> T.pack (show uuid)
-          <> "/counter_example.txt",
-        dir <> "/counter_example.txt"
-      ]
+    bashExec [i|sshpass -p #{sshOpts ^. #password} scp #{sshString}:#{remoteDir}/#{uuid}/counter_example.txt #{dir}/counter_example.txt|]
 
-  void $ Sh.bash "ssh" [sshString, [i|"cd ~ && rm -rf ./#{experimentDir}"|]]
+  bashExec_ [i|sshpass -p #{sshOpts ^. #password} ssh #{sshString} 'cd ~ && rm -rf ./#{experimentDir}'|]
 
   counterExample <-
     Sh.test_f (T.unpack dir <> "/counter_example.txt") >>= \case
