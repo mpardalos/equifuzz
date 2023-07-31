@@ -1,6 +1,7 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -Wno-ambiguous-fields #-}
 
 module Main where
@@ -12,6 +13,11 @@ import GenSystemC (GenConfig (..))
 import Options.Applicative qualified as Opt
 import Orchestration
 import WebUI (runWebUI)
+#ifdef EVALUATION_VERSION
+import Control.Monad.Random (setStdGen, mkStdGen)
+#endif
+import Paths_equifuzz (version)
+import Data.Version
 
 genConfig :: GenConfig
 genConfig =
@@ -20,7 +26,11 @@ genConfig =
     }
 
 main :: IO ()
-main =
+main = do
+#ifdef EVALUATION_VERSION
+  -- We set a fixed seed for the evaluation version
+  setStdGen (mkStdGen 10)
+#endif
   parseArgs >>= \case
     Web orchestrationConfig -> do
       progressChan <- startRunners orchestrationConfig
@@ -32,12 +42,20 @@ main =
       T.putStrLn designDescription
       putStrLn "---------"
       T.putStrLn comparisonValue
+    PrintVersion -> do
+#ifdef EVALUATION_VERSION
+      putStrLn (showVersion version <> " (evaluation)")
+#else
+      putStrLn (showVersion version <> " (full)")
+#endif
+
 
 --------------------------- CLI Parser -----------------------------------------
 
 data Command
   = Web OrchestrationConfig
   | Generate
+  | PrintVersion
 
 commandParser :: Opt.Parser Command
 commandParser =
@@ -49,6 +67,10 @@ commandParser =
       Opt.command "generate" $
         Opt.info
           (pure Generate)
+          (Opt.progDesc "Generate a sample of a generator"),
+      Opt.command "version" $
+        Opt.info
+          (pure PrintVersion)
           (Opt.progDesc "Generate a sample of a generator")
     ]
   where
