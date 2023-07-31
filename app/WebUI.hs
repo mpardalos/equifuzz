@@ -7,6 +7,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# HLINT ignore "Redundant <$>" #-}
+{-# HLINT ignore "Use ?~" #-}
 
 module WebUI (runWebUI) where
 
@@ -32,7 +33,7 @@ import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..),
 import GHC.Generics (Generic)
 import Network.HTTP.Types (status200, urlDecode, urlEncode)
 import Network.Wai (StreamingBody)
-import Optics (At (at), makeFieldLabelsNoPrefix, use, (%), (%?), (^.), (^?), _Just)
+import Optics (At (at), makeFieldLabelsNoPrefix, use, (%), (&), (.~), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
@@ -92,25 +93,29 @@ handleProgress stateVar progress = do
       liftIO . atomically $ signalSemaphore state.experimentsSem
     ExperimentFailed uuid runnerError -> do
       -- FIXME: Report error if uuid does not exist
-      #runningExperiments % at uuid %? #runs % at runnerInfo .= Just (FailedRun runnerError)
-      #totalRunCount %= (+ 1)
-      liftIO . atomically $ signalSemaphore state.experimentsSem
-      liftIO . atomically $ signalSemaphore state.totalRunCountSem
+      mExperiment <- use (#runningExperiments % at uuid)
+      whenJust mExperiment $ \initExperiment -> do
+        let experiment = initExperiment & #runs % at runnerInfo .~ Just (FailedRun runnerError)
+        #interestingExperiments % at uuid .= Just experiment
+        #runningExperiments % at uuid .= Nothing
+        liftIO . atomically $ signalSemaphore state.experimentsSem
+        liftIO . atomically $ signalSemaphore state.totalRunCountSem
+        #totalRunCount %= (+ 1)
     ExperimentCompleted result -> do
       -- FIXME: Report error if experiment does not exist
       -- FIXME: Report error if experiment still has active runs
-      #runningExperiments % at result.uuid %? #runs % at runnerInfo .= Just (CompletedRun result)
-      #totalRunCount %= (+ 1)
-      liftIO . atomically $ signalSemaphore state.experimentsSem
-      liftIO . atomically $ signalSemaphore state.totalRunCountSem
       mExperiment <- use (#runningExperiments % at result.uuid)
-      whenJust mExperiment $ \experiment -> do
+      whenJust mExperiment $ \runningExperiment -> do
+        let completedExperiment = runningExperiment & #runs % at runnerInfo .~ Just (CompletedRun result)
+        if isInteresting completedExperiment
+          then #interestingExperiments % at result.uuid .= Just completedExperiment
+          else #uninterestingExperiments % at result.uuid .= Just completedExperiment
         #runningExperiments % at result.uuid .= Nothing
-        if isInteresting experiment
-          then #interestingExperiments % at result.uuid .= Just experiment
-          else #uninterestingExperiments % at result.uuid .= Just experiment
-    where
-      runnerInfo = "Runner"
+        liftIO . atomically $ signalSemaphore state.experimentsSem
+        liftIO . atomically $ signalSemaphore state.totalRunCountSem
+        #totalRunCount %= (+ 1)
+  where
+    runnerInfo = "Runner"
 
 scottyServer :: MVar WebUIState -> IO ()
 scottyServer stateVar = scotty 8888 $ do
