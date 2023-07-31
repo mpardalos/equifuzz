@@ -98,7 +98,7 @@ commandParser =
             Opt.help "Username to connect to remote host"
           ]
       password <-
-        Opt.strOption . mconcat $
+        optional . Opt.strOption . mconcat $
           [ Opt.long "password",
             Opt.metavar "PASSWORD",
             Opt.help "Password to connect to remote host"

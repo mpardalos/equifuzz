@@ -35,7 +35,7 @@ newtype ExperimentRunner = ExperimentRunner
 data SSHConnectionTarget = SSHConnectionTarget
   { host :: Text,
     username :: Text,
-    password :: Text
+    password :: Maybe Text
   }
 
 makeFieldLabelsNoPrefix ''SSHConnectionTarget
@@ -50,6 +50,12 @@ bashExec_ = void . bashExec
 runVCFormal :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO (Either RunnerError ExperimentResult)
 runVCFormal sshOpts mSourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.verbosely $ do
   let sshString = sshOpts.username <> "@" <> sshOpts.host
+  let ssh :: Text = case sshOpts.password of
+        Nothing -> "ssh -o PasswordAuthentication=no"
+        Just pass -> [i|sshpass -p #{pass} ssh|]
+  let scp :: Text = case sshOpts.password of
+        Nothing -> "scp -o PasswordAuthentication=no"
+        Just pass -> [i|sshpass -p #{pass} scp|]
 
   dir <- T.strip <$> Sh.run "mktemp" ["-d"]
   Sh.writefile
@@ -59,16 +65,16 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {uuid, design} = Sh.shelly
     (dir </> ("compare.tcl" :: Text))
     (hectorCompareScript filename experiment)
   bashExec_
-    [i|sshpass -p #{sshOpts ^. #password} ssh #{sshString} mkdir -p #{remoteDir}/ |]
+    [i|#{ssh} #{sshString} mkdir -p #{remoteDir}/ |]
   bashExec_
-    [i|sshpass -p #{sshOpts ^. #password} scp -r #{dir}/* #{sshString}:#{remoteDir}/#{uuid}|]
+    [i|#{scp} -r #{dir}/* #{sshString}:#{remoteDir}/#{uuid}|]
 
-  fullOutput <- bashExec [i|sshpass -p #{sshOpts ^. #password} ssh #{sshString} '#{sshCommand}'|]
+  fullOutput <- bashExec [i|#{ssh} #{sshString} '#{sshCommand}'|]
 
   void . Sh.errExit False $
-    bashExec [i|sshpass -p #{sshOpts ^. #password} scp #{sshString}:#{remoteDir}/#{uuid}/counter_example.txt #{dir}/counter_example.txt|]
+    bashExec [i|#{scp} #{sshString}:#{remoteDir}/#{uuid}/counter_example.txt #{dir}/counter_example.txt|]
 
-  bashExec_ [i|sshpass -p #{sshOpts ^. #password} ssh #{sshString} 'cd ~ && rm -rf ./#{experimentDir}'|]
+  bashExec_ [i|#{ssh} #{sshString} 'cd ~ && rm -rf ./#{experimentDir}'|]
 
   counterExample <-
     Sh.test_f (T.unpack dir <> "/counter_example.txt") >>= \case
