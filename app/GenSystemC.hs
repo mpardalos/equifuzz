@@ -175,10 +175,12 @@ arithmetic e =
 -- | Generate a type that the input type can be cast to
 castToType :: MonadRandom m => SC.SCType -> m SC.SCType
 castToType = \case
+#ifndef EVALUATION_VERSION
   -- FIXME: fixed-to-uint is broken for the version of vcf I am currently
   -- testing. This workaround should be an option at the top level.
   SC.SCFixed {} -> join $ uniform [someFixed, someUFixed]
   SC.SCUFixed {} -> join $ uniform [someFixed, someUFixed]
+#endif
   SC.SCFxnumSubref {} -> join $ uniform [someInt, someUInt]
   _ -> join $ uniform [someInt, someUInt, someFixed, someUFixed]
   where
