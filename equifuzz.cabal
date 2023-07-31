@@ -30,6 +30,7 @@ executable equifuzz
                  , Util
                  , WebUI
                  , Orchestration
+                 , Paths_equifuzz
     -- other-extensions:
     build-depends:    base ==4.16.*
                     , text

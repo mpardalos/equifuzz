@@ -1,8 +1,7 @@
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE CPP #-}
-{-# OPTIONS_GHC -Wno-ambiguous-fields #-}
 
 module Main where
 
