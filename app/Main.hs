@@ -22,7 +22,7 @@ main :: IO ()
 main = do
 #ifdef EVALUATION_VERSION
   -- We set a fixed seed for the evaluation version
-  setStdGen (mkStdGen 10)
+  setStdGen (mkStdGen 120)
 #endif
   parseArgs >>= \case
     Web orchestrationConfig -> do
