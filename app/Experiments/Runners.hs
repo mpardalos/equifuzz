@@ -69,7 +69,7 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {uuid, design} = Sh.shelly
   bashExec_
     [i|#{scp} -r #{dir}/* #{sshString}:#{remoteDir}/#{uuid}|]
 
-  fullOutput <- Sh.silently $ bashExec [i|#{ssh} #{sshString} '#{sshCommand}'|]
+  fullOutput <- bashExec [i|#{ssh} #{sshString} '#{sshCommand}'|]
 
   void . Sh.errExit False $
     bashExec [i|#{scp} #{sshString}:#{remoteDir}/#{uuid}/counter_example.txt #{dir}/counter_example.txt|]
