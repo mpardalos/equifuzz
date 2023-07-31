@@ -48,7 +48,7 @@ bashExec_ = void . bashExec
 
 -- | Run an experiment using VC Formal on a remote host
 runVCFormal :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO (Either RunnerError ExperimentResult)
-runVCFormal sshOpts mSourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.verbosely $ do
+runVCFormal sshOpts mSourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.silently $ do
   let sshString = sshOpts.username <> "@" <> sshOpts.host
   let ssh :: Text = case sshOpts.password of
         Nothing -> "ssh -o PasswordAuthentication=no"
