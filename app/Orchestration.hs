@@ -108,7 +108,7 @@ startLoggerThread progressChan =
     atomically (readTChan progressChan) >>= \case
       ExperimentStarted experiment -> printf "Experiment started | %s\n" (show experiment.uuid)
       ExperimentFailed uuid _ -> printf "Experiment failed | %s\n" (show uuid)
-      ExperimentCompleted uuid -> printf "Experiment Completed | %s\n" (show uuid)
+      ExperimentCompleted result -> printf "Experiment Completed | %s\n" (show result.uuid)
 
 startSaverThread :: ProgressChan -> IO ()
 startSaverThread progressChan = do
