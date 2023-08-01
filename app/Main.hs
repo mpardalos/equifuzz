@@ -95,6 +95,9 @@ commandParser =
 
     generateConfigOpts :: Opt.Parser GenConfig
     generateConfigOpts =
+#ifdef EVALUATION_VERSION
+      pure (GenConfig 20)
+#else
       GenConfig
         <$> ( Opt.option Opt.auto . mconcat $
                 [ Opt.long "gen-steps",
@@ -104,6 +107,7 @@ commandParser =
                   Opt.showDefault
                 ]
             )
+#endif
 
     runnerConfigOpts = do
       host <-
