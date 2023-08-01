@@ -180,7 +180,8 @@ startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
                   source = "int main() { return 0; }"
                 },
             comparisonValue = "32'hdeadbeef",
-            expectedResult = False
+            expectedResult = False,
+            designDescription = "Mock experiments"
           }
 
     reportProgress p = atomically (writeTChan progressChan p)
