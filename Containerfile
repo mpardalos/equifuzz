@@ -14,7 +14,7 @@ RUN cabal build --only-dependencies -j4
 
 # Add and Install Application Code
 COPY . /opt/equifuzz
-RUN cabal install
+RUN cabal install -fevaluation_version
 
 FROM redhat/ubi9-minimal:9.2
 
