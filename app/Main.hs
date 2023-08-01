@@ -57,7 +57,7 @@ commandParser =
       Opt.command "version" $
         Opt.info
           (pure PrintVersion)
-          (Opt.progDesc "Generate a sample of a generator")
+          (Opt.progDesc "Print the software version")
     ]
   where
     orchestrationConfigOpts = do
