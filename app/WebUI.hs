@@ -31,6 +31,7 @@ import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), RunnerError)
 import GHC.Generics (Generic)
+import Meta
 import Network.HTTP.Types (status200, urlDecode, urlEncode)
 import Network.Wai (StreamingBody)
 import Optics (At (at), makeFieldLabelsNoPrefix, use, (%), (&), (.~), (^.), (^?), _Just)
@@ -181,8 +182,11 @@ htmlBase content = H.docTypeHtml $ do
     H.script H.! A.src "/resources/htmx.js" $ ""
     H.script H.! A.src "https://unpkg.com/htmx.org/dist/ext/sse.js" $ ""
   H.body H.! hxExt "sse" H.! sseConnect "/events" $ do
-    H.main
-      content
+    H.header "Equifuzz"
+    H.main content
+    H.footer $ do
+      H.span ("Version " <> H.string versionName)
+      H.span "© Michalis Pardalos 2023"
 
 indexPage :: WebUIState -> Html
 indexPage state =

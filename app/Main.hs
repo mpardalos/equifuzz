@@ -15,8 +15,7 @@ import WebUI (runWebUI)
 #ifdef EVALUATION_VERSION
 import Control.Monad.Random (setStdGen, mkStdGen)
 #endif
-import Data.Version
-import Paths_equifuzz (version)
+import Meta (versionName)
 
 main :: IO ()
 main = do
@@ -35,12 +34,7 @@ main = do
       T.putStrLn designDescription
       putStrLn "---------"
       T.putStrLn comparisonValue
-    PrintVersion -> do
-#ifdef EVALUATION_VERSION
-      putStrLn (showVersion version <> " (evaluation)")
-#else
-      putStrLn (showVersion version <> " (full)")
-#endif
+    PrintVersion -> putStrLn versionName
 
 --------------------------- CLI Parser -----------------------------------------
 

@@ -21,17 +21,37 @@
 }
 
 body {
-    margin: var(--body-margin);
+    margin: 0;
+    padding: 0;
+    height: 100vh;
     background-color: var(--bg-color);
     color: var(--fg-color);
     font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+  text-align: center;
+  font-size: xx-large;
+  font-weight: bold;
+  color: var(--accent-color);
+  border-bottom: 1px solid var(--accent-color);
+}
+
+footer {
+  text-align: right;
+  border-top: 1px solid var(--accent-color);
+  font-size: small;
+  display: flex;
+  justify-content: space-between;
 }
 
 main {
     display: flex;
     width: 100%;
     flex-direction: row;
-    height: calc(100vh - 2*var(--body-margin));
+    overflow: hidden;
     gap: 10px;
 }
 
@@ -45,7 +65,6 @@ main > * {
 #experiment-list {
     display: flex;
     flex-direction: column;
-    height: 100%;
 }
 
 #experiment-list > * {
