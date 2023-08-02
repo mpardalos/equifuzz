@@ -7,9 +7,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Build and save image
+      - name: Build image
         run: |
-          podman build -t equifuzz -f Containerfile .
+          podman build -t ghcr.io/mpardalos/equifuzz:v0.1.0.0 -t ghcr.io/mpardalos/equifuzz:latest -f Containerfile .
+
+      - name: Push image to registry
+        run: |
+          podman push ghcr.io/mpardalos/equifuzz:latest
+
+      - name: Save image to archive
+        run: |
           podman save equifuzz | gzip > equifuzz.tar.gz
 
       - name: Upload container image as an artifact
