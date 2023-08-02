@@ -197,6 +197,22 @@ supportsRange CUInt = Nothing
 supportsRange CDouble = Nothing
 supportsRange CBool = Nothing
 
+supportsToString :: SCType -> Bool
+supportsToString SCInt {} = True
+supportsToString SCUInt {} = True
+supportsToString SCFixed {} = True
+supportsToString SCUFixed {} = True
+supportsToString SCFxnumSubref = True
+supportsToString SCIntSubref = True
+supportsToString SCUIntSubref = True
+supportsToString SCIntBitref = False
+supportsToString SCUIntBitref = False
+supportsToString CInt = False
+supportsToString CUInt = False
+supportsToString CDouble = False
+supportsToString CBool = False
+
+
 -- | `Just <subref type>` if the type supports the bitref operator, or `Nothing`
 -- if it does not
 supportsBitref :: SCType -> Maybe SCType

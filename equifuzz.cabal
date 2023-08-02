@@ -27,6 +27,9 @@ executable equifuzz
                  , Experiments.Runners
                  , SystemC
                  , GenSystemC
+                 , GenSystemC.GenTransformations
+                 , GenSystemC.Transformations
+                 , GenSystemC.Reduce
                  , Util
                  , WebUI
                  , Orchestration
