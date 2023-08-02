@@ -1,0 +1,19 @@
+name: build-equifuzz-container
+on: [push]
+jobs:
+  build-container:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Build and save image
+        run: |
+          podman build -t equifuzz -f Containerfile .
+          podman save equifuzz | gzip > equifuzz.tar.gz
+
+      - name: Upload container image as an artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: container-artifact
+          path: my-container-image.tar.gz
