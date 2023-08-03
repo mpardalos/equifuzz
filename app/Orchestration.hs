@@ -6,7 +6,7 @@
 module Orchestration (ProgressChan, OrchestrationConfig (..), RunnerConfig (..), startRunners) where
 
 import Control.Concurrent (MVar, forkFinally, forkIO, modifyMVar_, newMVar, threadDelay)
-import Control.Concurrent.STM (TBQueue, TChan, atomically, cloneTChan, newTBQueueIO, newTChanIO, readTBQueue, readTChan, writeTBQueue, writeTChan)
+import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
 import Control.Concurrent.STM.TSem (newTSem, signalTSem, waitTSem)
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, replicateM_, void, when)
@@ -15,14 +15,12 @@ import Data.Functor ((<&>))
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Experiments (DesignSource (..), Experiment (..), ExperimentId, ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), RunnerError (..), mkSystemCConstantExperiment, newExperimentId, newExperimentSequenceId, saveExperiment)
-import GenSystemC (GenConfig)
+import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
 import System.Random (getStdRandom, uniformR)
 import Text.Printf (printf)
 import Util (forkRestarting, whenJust)
-
-type ExperimentQueue = TBQueue Experiment
 
 type ProgressChan = TChan ExperimentProgress
 
@@ -47,9 +45,7 @@ startRunners config = do
     TestRunner ->
       replicateM_ config.maxExperiments $ startTestThread progressChan
     RunnerConfig runner -> do
-      experimentQueue <- newTBQueueIO (fromIntegral config.experimentQueueDepth)
-      startGeneratorThread config experimentQueue
-      startOrchestratorThread runner config.maxExperiments experimentQueue progressChan
+      startOrchestratorThread config runner progressChan
       -- We need to clone the progressChan because, otherwise, this thread would
       -- "eat up" all the messages on it. This way it just gets a copy
       startSaverThread =<< atomically (cloneTChan progressChan)
@@ -59,24 +55,17 @@ startRunners config = do
 
   return progressChan
 
-startGeneratorThread :: OrchestrationConfig -> ExperimentQueue -> IO ()
-startGeneratorThread OrchestrationConfig {generatorThreads, genConfig} queue =
-  replicateM_ generatorThreads
-    . forkRestarting "Generator thread crashed"
-    . forever
-    $ do
-      experiment <- mkSystemCConstantExperiment genConfig
-      atomically (writeTBQueue queue experiment)
-
-startOrchestratorThread :: ExperimentRunner -> Int -> ExperimentQueue -> ProgressChan -> IO ()
-startOrchestratorThread runner maxExperiments experimentQueue progressChan = do
-  experimentSem <- atomically (newTSem . toInteger $ maxExperiments)
+startOrchestratorThread :: OrchestrationConfig -> ExperimentRunner -> ProgressChan -> IO ()
+startOrchestratorThread config runner progressChan = do
+  experimentSem <- atomically (newTSem . toInteger $ config.maxExperiments)
 
   forkRestarting "Orchestrator thread crashed" $ forever $ do
     atomically (waitTSem experimentSem)
-    experiment <- atomically (readTBQueue experimentQueue)
 
     sequenceId <- newExperimentSequenceId
+    experimentReducible <- mkSystemCConstantExperiment config.genConfig
+    experiment <- experimentReducible.value
+
     forkFinally
       ( do
           progress (ExperimentStarted sequenceId experiment)

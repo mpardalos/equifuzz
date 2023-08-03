@@ -16,6 +16,7 @@ import WebUI (runWebUI)
 import Control.Monad.Random (setStdGen, mkStdGen)
 #endif
 import Meta (versionName)
+import Optics (view)
 
 main :: IO ()
 main = do
@@ -28,7 +29,7 @@ main = do
       progressChan <- startRunners orchestrationConfig
       runWebUI progressChan
     Generate genConfig -> do
-      Experiment {design, designDescription, comparisonValue} <- mkSystemCConstantExperiment genConfig
+      Experiment {design, designDescription, comparisonValue} <- mkSystemCConstantExperiment genConfig >>= view #value
       T.putStrLn design.source
       putStrLn "---------"
       T.putStrLn designDescription

@@ -6,26 +6,37 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+{-# HLINT ignore "Use <$>" #-}
+
 module Experiments.Generators (mkSystemCConstantExperiment) where
 
-import Control.Monad (void)
 import Control.Monad.Random.Strict (evalRandIO)
 import Data.Either (fromRight)
+import Data.Functor
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments.Types
-import GenSystemC (GenConfig, GenerateProcess (..), Reducible (value), genSystemCConstant)
+import GenSystemC
+  ( GenConfig,
+    GenerateProcess (..),
+    Reducible,
+    genSystemCConstant,
+    generateFromProcess,
+  )
 import Shelly qualified as Sh
 import SystemC qualified as SC
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
-mkSystemCConstantExperiment :: GenConfig -> IO Experiment
-mkSystemCConstantExperiment config = do
-  reducible <- evalRandIO $ genSystemCConstant config "dut"
-  let (GenerateProcess {seed, transformations}, systemcModule) = reducible.value
+mkSystemCConstantExperiment :: GenConfig -> IO (Reducible (IO Experiment))
+mkSystemCConstantExperiment config =
+  fmap (fmap generateProcessToExperiment) $
+    evalRandIO (genSystemCConstant config)
 
+generateProcessToExperiment :: GenerateProcess -> IO Experiment
+generateProcessToExperiment process@GenerateProcess {seed, transformations} = do
+  let systemcModule = generateFromProcess "dut" process
   let wrapperName = "impl"
   let design =
         DesignSource

@@ -4,6 +4,7 @@ module GenSystemC
   ( GenConfig (..),
     BuildOut,
     genSystemCConstant,
+    generateFromProcess,
     GenerateProcess (..),
     Reducible (..),
   )
@@ -45,17 +46,15 @@ mapToReturnType SC.SCIntSubref = SC.CInt
 mapToReturnType SC.SCUIntSubref = SC.CUInt
 mapToReturnType t = t
 
-genSystemCConstant :: GenConfig -> Text -> Rand StdGen (Reducible (GenerateProcess, SC.FunctionDeclaration BuildOut))
-genSystemCConstant cfg name = do
+genSystemCConstant :: GenConfig -> Rand StdGen (Reducible GenerateProcess)
+genSystemCConstant cfg = do
   (seed, transformations) <- (`evalStateT` initBuildOutState) . runWriterT $ do
     seed <- seedExpr
     -- We only run the growExpr to output the sta
     _expr <- growExpr seed
     return seed
 
-  return $
-    fmap (\p -> (p, generateFromProcess name p)) . asReducible $
-      GenerateProcess seed transformations
+  return $ asReducible $ GenerateProcess seed transformations
   where
     growExpr ::
       (MonadBuildOut m, MonadRandom m, MonadWriter [Transformation] m) =>
