@@ -1,9 +1,10 @@
 module Util where
 
 import Control.Concurrent (forkFinally)
-import Control.Monad (void)
+import Control.Monad.Random (forever)
 import Data.Time (getZonedTime, zonedTimeToLocalTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
+import GHC.Conc (labelThread)
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
 
@@ -27,14 +28,21 @@ reportError title err = do
   hPutStrLn stderr "========================="
   hPutStrLn stderr ""
 
-forkRestarting :: String -> IO () -> IO ()
-forkRestarting title action =
-  void $
+foreverThread :: String -> IO a -> IO ()
+foreverThread title action = do
+  tid <-
     forkFinally
-      action
+      (forever action)
       ( \result -> do
           case result of
-            Right () -> reportError title "Thread ended"
-            Left e -> reportError title (show e)
-          forkRestarting title action
+            Right () ->
+              reportError
+                (printf "Thread ended: '%s'" title)
+                "Ended successfully, but unexpectedly"
+            Left e ->
+              reportError
+                (printf "Error in thread: '%s'" title)
+                (show e)
+          foreverThread title action
       )
+  labelThread tid title

@@ -20,7 +20,7 @@ import Optics (at, use)
 import Optics.State.Operators ((.=))
 import System.Random (getStdRandom, uniformR)
 import Text.Printf (printf)
-import Util (forkRestarting, whenJust)
+import Util (foreverThread, whenJust)
 
 type ProgressChan = TChan ExperimentProgress
 
@@ -59,7 +59,7 @@ startOrchestratorThread :: OrchestrationConfig -> ExperimentRunner -> ProgressCh
 startOrchestratorThread config runner progressChan = do
   experimentSem <- atomically (newTSem . toInteger $ config.maxExperiments)
 
-  forkRestarting "Orchestrator thread crashed" $ forever $ do
+  foreverThread "Orchestrator" $ do
     atomically (waitTSem experimentSem)
 
     sequenceId <- newExperimentSequenceId
@@ -102,7 +102,7 @@ startOrchestratorThread config runner progressChan = do
 
 startLoggerThread :: ProgressChan -> IO ()
 startLoggerThread progressChan =
-  forkRestarting "Logger thread crashed" . forever $
+  foreverThread "Logger" $
     atomically (readTChan progressChan) >>= \case
       ExperimentStarted sequenceId experiment -> printf "Experiment started | %s (in sequence %s)\n" (show experiment.experimentId) (show sequenceId)
       ExperimentCompleted result -> printf "Experiment Completed | %s\n" (show result.experimentId)
@@ -112,7 +112,7 @@ startSaverThread :: ProgressChan -> IO ()
 startSaverThread progressChan = do
   experimentResults :: MVar (Map ExperimentId Experiment) <- newMVar Map.empty
 
-  forkRestarting "Saver thread crashed" . forever $ do
+  foreverThread "Saver" $ do
     progress <- atomically (readTChan progressChan)
     modifyMVar_ experimentResults . execStateT $ case progress of
       ExperimentStarted _ experiment -> do

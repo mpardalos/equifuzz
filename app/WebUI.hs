@@ -20,6 +20,7 @@ import Control.Monad.State (execStateT)
 import Data.Binary.Builder qualified as Binary
 import Data.ByteString.Lazy qualified as LB
 import Data.ByteString.Lazy.Char8 qualified as LB
+import Data.Coerce (coerce)
 import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -29,7 +30,7 @@ import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
-import Experiments (DesignSource (..), Experiment (..), ExperimentId(..), ExperimentProgress (..), ExperimentResult (..), RunnerError)
+import Experiments (DesignSource (..), Experiment (..), ExperimentId (..), ExperimentProgress (..), ExperimentResult (..), RunnerError)
 import GHC.Generics (Generic)
 import Meta
 import Network.HTTP.Types (status200, urlDecode, urlEncode)
@@ -42,9 +43,8 @@ import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
-import Util (forkRestarting, whenJust)
+import Util (foreverThread, whenJust)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, raw, scotty, setHeader, status, stream)
-import Data.Coerce (coerce)
 
 type RunnerInfo = Text
 
@@ -107,7 +107,6 @@ handleProgress stateVar progress = do
         liftIO . atomically $ signalSemaphore state.totalRunCountSem
         #totalRunCount %= (+ 1)
     ExperimentSequenceCompleted _ -> pure ()
-
   where
     runnerInfo = "Runner"
 
@@ -161,7 +160,7 @@ scottyServer stateVar = scotty 8888 $ do
 runWebUI :: TChan ExperimentProgress -> IO ()
 runWebUI progressChan = do
   stateVar <- newMVar =<< newWebUIState
-  forkRestarting "UI Handler thread crashed" $ forever $ do
+  foreverThread "UI Handler" $ do
     progress <- atomically (readTChan progressChan)
     handleProgress stateVar progress
   scottyServer stateVar
