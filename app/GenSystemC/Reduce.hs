@@ -2,34 +2,14 @@
 
 module GenSystemC.Reduce where
 
-import GenSystemC.Transformations
-import SystemC qualified as SC
-
-data GenerateProcess = GenerateProcess
-  { seed :: SC.Expr BuildOut,
-    transformations :: [Transformation],
-    reductions :: Int -> [GenerateProcess]
+data Reducible a = Reducible
+  { value :: a,
+    reductions :: Int -> [Reducible a]
   }
+  deriving (Functor)
 
-mkGenerateProcess :: SC.Expr BuildOut -> [Transformation] -> GenerateProcess
-mkGenerateProcess seed transformations =
-  GenerateProcess
-    { seed,
-      transformations,
-      reductions = mkReductions seed transformations
-    }
+class HasReductions a where
+  mkReductions :: a -> Int -> [Reducible a]
 
-mkReductions :: SC.Expr BuildOut -> [Transformation] -> Int -> [GenerateProcess]
-mkReductions seed fullTransformations window =
-  [ GenerateProcess
-      { seed,
-        transformations,
-        reductions = mkReductions seed transformations
-      }
-    | transformations <- windowsOf window fullTransformations
-  ]
-
-windowsOf :: Int -> [a] -> [[a]]
-windowsOf size initLst = take (length initLst) (go initLst)
-  where
-    go xs = take size (cycle xs) : go (tail (cycle xs))
+asReducible :: HasReductions a => a -> Reducible a
+asReducible value = Reducible {value, reductions = mkReductions value}

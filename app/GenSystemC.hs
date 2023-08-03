@@ -5,11 +5,12 @@ module GenSystemC
     BuildOut,
     genSystemCConstant,
     GenerateProcess (..),
+    Reducible(..)
   )
 where
 
 import Control.Monad.Random.Strict (MonadRandom, Rand, StdGen, foldM)
-import Control.Monad.State.Strict (runStateT, runState)
+import Control.Monad.State.Strict (evalStateT, runState, runStateT)
 import Control.Monad.Writer.Strict (MonadWriter, runWriterT, tell)
 import Data.Text (Text)
 import GenSystemC.GenTransformations
@@ -19,8 +20,9 @@ import GenSystemC.GenTransformations
     seedExpr,
   )
 import GenSystemC.Reduce
-  ( GenerateProcess (..),
-    mkGenerateProcess,
+  ( HasReductions (mkReductions),
+    Reducible (..),
+    asReducible,
   )
 import GenSystemC.Transformations
   ( BuildOut,
@@ -45,20 +47,17 @@ mapToReturnType SC.SCIntSubref = SC.CInt
 mapToReturnType SC.SCUIntSubref = SC.CUInt
 mapToReturnType t = t
 
-genSystemCConstant :: GenConfig -> Text -> Rand StdGen (GenerateProcess, SC.FunctionDeclaration BuildOut)
+genSystemCConstant :: GenConfig -> Text -> Rand StdGen (Reducible (GenerateProcess, SC.FunctionDeclaration BuildOut))
 genSystemCConstant cfg name = do
-  (seed, state1) <- runStateT seedExpr initBuildOutState
-  ((expr, transformations), finalState) <- runStateT (runWriterT (growExpr seed)) state1
+  (seed, transformations) <- (`evalStateT` initBuildOutState) . runWriterT $ do
+    seed <- seedExpr
+    -- We only run the growExpr to output the sta
+    _expr <- growExpr seed
+    return seed
 
-  return
-    ( mkGenerateProcess seed transformations,
-      SC.FunctionDeclaration
-        { returnType = mapToReturnType expr.annotation,
-          name,
-          args = [],
-          body = finalState.statements ++ [SC.Return () expr]
-        }
-    )
+  return $
+    fmap (\p -> (p, generateFromProcess name p)) . asReducible $
+      GenerateProcess seed transformations
   where
     growExpr ::
       (MonadBuildOut m, MonadRandom m, MonadWriter [Transformation] m) =>
@@ -70,21 +69,8 @@ genSystemCConstant cfg name = do
         tell [transformation]
         applyTransformation transformation e
 
-data Reducible a = Reducible
-  { value :: a,
-    reductions :: Int -> [Reducible a]
-  }
-  deriving Functor
-
-generateProcessToReducible :: Text -> GenerateProcess -> Reducible (SC.FunctionDeclaration BuildOut)
-generateProcessToReducible name process =
-  Reducible
-    { value = generateFromProcess process name,
-      reductions = map (generateProcessToReducible name) . process.reductions
-    }
-
-generateFromProcess :: GenerateProcess -> Text -> SC.FunctionDeclaration BuildOut
-generateFromProcess GenerateProcess {seed, transformations} name =
+generateFromProcess :: Text -> GenerateProcess -> SC.FunctionDeclaration BuildOut
+generateFromProcess name GenerateProcess {seed, transformations} =
   let (expr, finalState) =
         foldM (flip applyTransformation) seed transformations
           `runState` initBuildOutState
@@ -94,3 +80,19 @@ generateFromProcess GenerateProcess {seed, transformations} name =
           args = [],
           body = finalState.statements ++ [SC.Return () expr]
         }
+
+data GenerateProcess = GenerateProcess
+  { seed :: SC.Expr BuildOut,
+    transformations :: [Transformation]
+  }
+
+instance HasReductions GenerateProcess where
+  mkReductions (GenerateProcess seed transformations) window =
+    [ Reducible (GenerateProcess seed ts') (mkReductions (GenerateProcess seed ts'))
+      | ts' <- windowsOf window transformations
+    ]
+
+windowsOf :: Int -> [a] -> [[a]]
+windowsOf size initLst = take (length initLst) (go initLst)
+  where
+    go xs = take size (cycle xs) : go (tail (cycle xs))

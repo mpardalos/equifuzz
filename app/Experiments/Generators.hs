@@ -16,7 +16,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID.V4 qualified as UUID
 import Experiments.Types
-import GenSystemC (GenConfig, GenerateProcess (..), genSystemCConstant)
+import GenSystemC (GenConfig, GenerateProcess (..), genSystemCConstant, Reducible(value))
 import Shelly qualified as Sh
 import SystemC qualified as SC
 
@@ -24,7 +24,9 @@ import SystemC qualified as SC
 -- icarus verilog (`iverilog`) available locally
 mkSystemCConstantExperiment :: GenConfig -> IO Experiment
 mkSystemCConstantExperiment config = do
-  (GenerateProcess {seed, transformations}, systemcModule) <- evalRandIO $ genSystemCConstant config "dut"
+  reducible <- evalRandIO $ genSystemCConstant config "dut"
+  let (GenerateProcess {seed, transformations}, systemcModule) = reducible.value
+
   let wrapperName = "impl"
   let design =
         DesignSource

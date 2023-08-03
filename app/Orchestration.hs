@@ -3,7 +3,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NumDecimals #-}
 
-module Orchestration (ProgressChan, OrchestrationConfig (..), RunnerConfig(..), startRunners) where
+module Orchestration (ProgressChan, OrchestrationConfig (..), RunnerConfig (..), startRunners) where
 
 import Control.Concurrent (MVar, forkFinally, forkIO, modifyMVar_, newMVar, threadDelay)
 import Control.Concurrent.STM (TBQueue, TChan, atomically, cloneTChan, newTBQueueIO, newTChanIO, readTBQueue, readTChan, writeTBQueue, writeTChan)
