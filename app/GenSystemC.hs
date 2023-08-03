@@ -5,18 +5,16 @@ module GenSystemC
     BuildOut,
     genSystemCConstant,
     GenerateProcess (..),
-    Reducible(..)
+    Reducible (..),
   )
 where
 
 import Control.Monad.Random.Strict (MonadRandom, Rand, StdGen, foldM)
-import Control.Monad.State.Strict (evalStateT, runState, runStateT)
+import Control.Monad.State.Strict (evalStateT, runState)
 import Control.Monad.Writer.Strict (MonadWriter, runWriterT, tell)
 import Data.Text (Text)
 import GenSystemC.GenTransformations
-  ( isFinalExpr,
-    randomFinalTransformation,
-    randomTransformationFor,
+  ( randomTransformationFor,
     seedExpr,
   )
 import GenSystemC.Reduce

@@ -29,7 +29,7 @@ import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
-import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), RunnerError)
+import Experiments (DesignSource (..), Experiment (..), ExperimentId(..), ExperimentProgress (..), ExperimentResult (..), RunnerError)
 import GHC.Generics (Generic)
 import Meta
 import Network.HTTP.Types (status200, urlDecode, urlEncode)
@@ -44,6 +44,7 @@ import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Util (forkRestarting, whenJust)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, raw, scotty, setHeader, status, stream)
+import Data.Coerce (coerce)
 
 type RunnerInfo = Text
 
@@ -60,9 +61,9 @@ data RunInfo
   deriving (Show, Generic)
 
 data WebUIState = WebUIState
-  { runningExperiments :: Map UUID ExperimentInfo,
-    interestingExperiments :: Map UUID ExperimentInfo,
-    uninterestingExperiments :: Map UUID ExperimentInfo,
+  { runningExperiments :: Map ExperimentId ExperimentInfo,
+    interestingExperiments :: Map ExperimentId ExperimentInfo,
+    uninterestingExperiments :: Map ExperimentId ExperimentInfo,
     experimentsSem :: Semaphore,
     totalRunCount :: Int,
     totalRunCountSem :: Semaphore
@@ -88,33 +89,25 @@ handleProgress stateVar progress = do
   state <- readMVar stateVar
 
   modifyMVar_ stateVar . execStateT $ case progress of
-    ExperimentStarted experiment -> do
+    ExperimentStarted _sequenceId experiment -> do
       -- FIXME: Report error if uuid does not exist
-      #runningExperiments % at experiment.uuid .= Just (ExperimentInfo experiment [(runnerInfo, ActiveRun runnerInfo)])
+      #runningExperiments % at experiment.experimentId .= Just (ExperimentInfo experiment [(runnerInfo, ActiveRun runnerInfo)])
       liftIO . atomically $ signalSemaphore state.experimentsSem
-    ExperimentFailed uuid runnerError -> do
-      -- FIXME: Report error if uuid does not exist
-      mExperiment <- use (#runningExperiments % at uuid)
-      whenJust mExperiment $ \initExperiment -> do
-        let experiment = initExperiment & #runs % at runnerInfo .~ Just (FailedRun runnerError)
-        #interestingExperiments % at uuid .= Just experiment
-        #runningExperiments % at uuid .= Nothing
-        liftIO . atomically $ signalSemaphore state.experimentsSem
-        liftIO . atomically $ signalSemaphore state.totalRunCountSem
-        #totalRunCount %= (+ 1)
     ExperimentCompleted result -> do
       -- FIXME: Report error if experiment does not exist
       -- FIXME: Report error if experiment still has active runs
-      mExperiment <- use (#runningExperiments % at result.uuid)
+      mExperiment <- use (#runningExperiments % at result.experimentId)
       whenJust mExperiment $ \runningExperiment -> do
         let completedExperiment = runningExperiment & #runs % at runnerInfo .~ Just (CompletedRun result)
         if isInteresting completedExperiment
-          then #interestingExperiments % at result.uuid .= Just completedExperiment
-          else #uninterestingExperiments % at result.uuid .= Just completedExperiment
-        #runningExperiments % at result.uuid .= Nothing
+          then #interestingExperiments % at result.experimentId .= Just completedExperiment
+          else #uninterestingExperiments % at result.experimentId .= Just completedExperiment
+        #runningExperiments % at result.experimentId .= Nothing
         liftIO . atomically $ signalSemaphore state.experimentsSem
         liftIO . atomically $ signalSemaphore state.totalRunCountSem
         #totalRunCount %= (+ 1)
+    ExperimentSequenceCompleted _ -> pure ()
+
   where
     runnerInfo = "Runner"
 
@@ -130,15 +123,15 @@ scottyServer stateVar = scotty 8888 $ do
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/htmx.js")
 
   get "/experiments/:uuid/runs/:runnerInfo" $ do
-    UUIDParam uuid <- param "uuid"
+    experimentId :: ExperimentId <- coerce @UUIDParam <$> param "uuid"
     runnerInfo <- urlDecode False <$> param "runnerInfo"
     state <- liftIO (readMVar stateVar)
     isHtmxRequest <- (Just "true" ==) <$> header "HX-Request"
 
     let mExperimentInfo =
-          Map.lookup uuid state.runningExperiments
-            <|> Map.lookup uuid state.interestingExperiments
-            <|> Map.lookup uuid state.uninterestingExperiments
+          Map.lookup experimentId state.runningExperiments
+            <|> Map.lookup experimentId state.interestingExperiments
+            <|> Map.lookup experimentId state.uninterestingExperiments
     let mExperiment = mExperimentInfo ^? _Just % #experiment
     let mRunInfo = mExperimentInfo ^? _Just % #runs % at (T.decodeUtf8 runnerInfo) % _Just
 
@@ -203,7 +196,7 @@ runInfoPage state experiment run =
 runInfoBlock :: Experiment -> RunInfo -> Html
 runInfoBlock experiment run = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
   infoBoxNoTitle . table $
-    [ ["UUID", H.toHtml (show experiment.uuid)],
+    [ ["UUID", H.toHtml (show experiment.experimentId.uuid)],
       ["Expected Result", if experiment.expectedResult then "Equivalent" else "Non-equivalent"],
       ["Comparison Value", H.text experiment.comparisonValue],
       case run of
@@ -250,7 +243,7 @@ experimentList state = H.div
     experimentListItem info =
       H.div H.! A.class_ "experiment-list-item" $ do
         H.span H.! A.class_ "experiment-list-uuid" $
-          H.toHtml (show info.experiment.uuid)
+          H.toHtml (show info.experiment.experimentId.uuid)
         H.ul H.! A.class_ "experiment-list-run-list" $
           forM_ (Map.keys info.runs) $ \(runnerInfo :: RunnerInfo) ->
             H.li
@@ -258,8 +251,8 @@ experimentList state = H.div
                   H.! hxTarget "#run-info"
                   H.! hxSwap "outerHTML"
                   H.! hxPushUrl "true"
-                  H.! hxGet [i|/experiments/#{show (info ^. #experiment % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
-                  H.! A.href [i|/experiments/#{show (info ^. #experiment % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
+                  H.! hxGet [i|/experiments/#{show (info ^. #experiment % #experimentId % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
+                  H.! A.href [i|/experiments/#{show (info ^. #experiment % #experimentId % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
                   $ H.toHtml runnerInfo
               )
 

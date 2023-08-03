@@ -15,7 +15,9 @@ module Experiments.Runners
   )
 where
 
-import Control.Monad (void)
+import Control.Exception (throwIO)
+import Control.Monad (void, when)
+import Control.Monad.IO.Class (liftIO)
 import Data.Function ((&))
 import Data.Maybe (isJust)
 import Data.String.Interpolate (i, __i)
@@ -29,7 +31,7 @@ import Shelly qualified as Sh
 import Util (whenJust)
 
 newtype ExperimentRunner = ExperimentRunner
-  { run :: Experiment -> IO (Either RunnerError ExperimentResult)
+  { run :: Experiment -> IO ExperimentResult
   }
 
 data SSHConnectionTarget = SSHConnectionTarget
@@ -47,8 +49,8 @@ bashExec_ :: Text -> Sh ()
 bashExec_ = void . bashExec
 
 -- | Run an experiment using VC Formal on a remote host
-runVCFormal :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO (Either RunnerError ExperimentResult)
-runVCFormal sshOpts mSourcePath experiment@Experiment {uuid, design} = Sh.shelly . Sh.silently $ do
+runVCFormal :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentResult
+runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = Sh.shelly . Sh.silently $ do
   let sshString = sshOpts.username <> "@" <> sshOpts.host
   let ssh :: Text = case sshOpts.password of
         Nothing -> "ssh -o PasswordAuthentication=no"
@@ -57,29 +59,30 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {uuid, design} = Sh.shelly
         Nothing -> "scp -o PasswordAuthentication=no"
         Just pass -> [i|sshpass -p #{pass} scp|]
 
-  dir <- T.strip <$> Sh.run "mktemp" ["-d"]
+  localExperimentDir <- T.strip <$> Sh.run "mktemp" ["-d"]
+
   Sh.writefile
-    (dir </> filename)
+    (localExperimentDir </> filename)
     design.source
   Sh.writefile
-    (dir </> ("compare.tcl" :: Text))
+    (localExperimentDir </> ("compare.tcl" :: Text))
     (hectorCompareScript filename experiment)
   bashExec_
-    [i|#{ssh} #{sshString} mkdir -p #{remoteDir}/ |]
+    [i|#{ssh} #{sshString} mkdir -p #{remoteExperimentDir}/ |]
   bashExec_
-    [i|#{scp} -r #{dir}/* #{sshString}:#{remoteDir}/#{uuid}|]
+    [i|#{scp} -r #{localExperimentDir}/* #{sshString}:#{remoteExperimentDir}/|]
 
   fullOutput <- bashExec [i|#{ssh} #{sshString} '#{sshCommand}'|]
 
   void . Sh.errExit False $
-    bashExec [i|#{scp} #{sshString}:#{remoteDir}/#{uuid}/counter_example.txt #{dir}/counter_example.txt|]
+    bashExec [i|#{scp} #{sshString}:#{remoteExperimentDir}/counter_example.txt #{localExperimentDir}/counter_example.txt|]
 
-  bashExec_ [i|#{ssh} #{sshString} 'cd ~ && rm -rf ./#{experimentDir}'|]
+  bashExec_ [i|#{ssh} #{sshString} 'cd ~ && rm -rf ./#{remoteExperimentDir}'|]
 
   counterExample <-
-    Sh.test_f (T.unpack dir <> "/counter_example.txt") >>= \case
+    Sh.test_f (T.unpack localExperimentDir <> "/counter_example.txt") >>= \case
       False -> pure Nothing
-      True -> Just <$> Sh.readfile (T.unpack dir <> "/counter_example.txt")
+      True -> Just <$> Sh.readfile (T.unpack localExperimentDir <> "/counter_example.txt")
 
   let noLicense =
         fullOutput
@@ -101,23 +104,23 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {uuid, design} = Sh.shelly
         (False, True) -> Just False
         _ -> Nothing
 
-  return $
-    if noLicense
-      then Left OutOfLicenses
-      else Right ExperimentResult {proofFound, counterExample, fullOutput, uuid}
+  when noLicense $
+    liftIO (throwIO OutOfLicenses)
+
+  return $ ExperimentResult {proofFound, counterExample, fullOutput, experimentId, runnerError = Nothing}
   where
     remoteDir :: Text
     remoteDir = "equifuzz_vcf_experiment"
 
-    experimentDir :: Text
-    experimentDir = remoteDir <> "/" <> T.pack (show uuid)
+    remoteExperimentDir :: Text
+    remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
 
     filename = "impl.cpp"
 
     sshCommand :: Text
     sshCommand = case mSourcePath of
-      Just sourcePath -> [i|cd #{experimentDir} && ls -ltr && md5sum * && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
-      Nothing -> [i|cd #{experimentDir} && ls -ltr && md5sum * && vcf -fmode DPV -f compare.tcl|]
+      Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
+      Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && vcf -fmode DPV -f compare.tcl|]
 
 hectorCompareScript :: FilePath -> Experiment -> Text
 hectorCompareScript filename experiment =
@@ -145,26 +148,26 @@ hectorCompareScript filename experiment =
 -- | Save information about the experiment to the experiments/ directory
 saveExperiment :: Experiment -> ExperimentResult -> IO ()
 saveExperiment experiment result = Sh.shelly . Sh.silently $ do
-  let dir = "experiments/" <> UUID.toString experiment.uuid
+  let localExperimentDir = "experiments/" <> UUID.toString experiment.experimentId.uuid
   let filename = "impl.cpp"
 
-  Sh.mkdir_p dir
-  Sh.writefile (dir </> filename) experiment.design.source
-  Sh.writefile (dir </> ("description.txt" :: Text)) experiment.designDescription
+  Sh.mkdir_p localExperimentDir
+  Sh.writefile (localExperimentDir </> filename) experiment.design.source
+  Sh.writefile (localExperimentDir </> ("description.txt" :: Text)) experiment.designDescription
 
   Sh.writefile
-    (dir </> ("full_output.txt" :: Text))
+    (localExperimentDir </> ("full_output.txt" :: Text))
     result.fullOutput
 
   whenJust result.counterExample $
     Sh.writefile
-      (dir </> ("counter_example.txt" :: Text))
+      (localExperimentDir </> ("counter_example.txt" :: Text))
 
   Sh.writefile
-    (dir </> ("info.txt" :: Text))
+    (localExperimentDir </> ("info.txt" :: Text))
     [__i|
         Proof Found     : #{result ^. #proofFound}
         Counter Example : #{isJust (result ^. #counterExample)}
         |]
 
-  Sh.writefile (dir </> ("compare.tcl" :: Text)) (hectorCompareScript filename experiment)
+  Sh.writefile (localExperimentDir </> ("compare.tcl" :: Text)) (hectorCompareScript filename experiment)

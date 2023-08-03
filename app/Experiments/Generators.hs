@@ -14,9 +14,8 @@ import Data.Either (fromRight)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.UUID.V4 qualified as UUID
 import Experiments.Types
-import GenSystemC (GenConfig, GenerateProcess (..), genSystemCConstant, Reducible(value))
+import GenSystemC (GenConfig, GenerateProcess (..), Reducible (value), genSystemCConstant)
 import Shelly qualified as Sh
 import SystemC qualified as SC
 
@@ -41,10 +40,10 @@ mkSystemCConstantExperiment config = do
 
   comparisonValue <- simulateSystemCConstant systemcModule
 
-  uuid <- UUID.nextRandom
+  experimentId <- newExperimentId
   return
     Experiment
-      { uuid,
+      { experimentId,
         expectedResult = True,
         design,
         designDescription =

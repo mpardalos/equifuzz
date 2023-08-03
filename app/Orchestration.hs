@@ -14,10 +14,7 @@ import Control.Monad.State (execStateT, liftIO)
 import Data.Functor ((<&>))
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Text qualified as T
-import Data.UUID (UUID)
-import Data.UUID.V4 qualified as UUID
-import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), RunnerError (..), mkSystemCConstantExperiment, saveExperiment)
+import Experiments (DesignSource (..), Experiment (..), ExperimentId, ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), RunnerError (..), mkSystemCConstantExperiment, newExperimentId, newExperimentSequenceId, saveExperiment)
 import GenSystemC (GenConfig)
 import Optics (at, use)
 import Optics.State.Operators ((.=))
@@ -78,72 +75,71 @@ startOrchestratorThread runner maxExperiments experimentQueue progressChan = do
   forkRestarting "Orchestrator thread crashed" $ forever $ do
     atomically (waitTSem experimentSem)
     experiment <- atomically (readTBQueue experimentQueue)
+
+    sequenceId <- newExperimentSequenceId
     forkFinally
       ( do
-          progress (ExperimentStarted experiment)
-          result <- try @SomeException (runner.run experiment)
+          progress (ExperimentStarted sequenceId experiment)
+          result :: Either RunnerError ExperimentResult <- try @RunnerError (runner.run experiment)
 
           case result of
-            Left e -> progress (ExperimentFailed experiment.uuid (RunnerCrashed e))
-            Right (Left OutOfLicenses) -> do
+            Right r -> progress (ExperimentCompleted r)
+            (Left (RunnerCrashed e)) ->
+              progress (ExperimentCompleted (errorResult experiment.experimentId (RunnerCrashed e)))
+            (Left OutOfLicenses) -> do
               -- We have one less license than we thought, so reduce the max
               -- number of experiments allowed
               atomically (waitTSem experimentSem)
-              progress (ExperimentFailed experiment.uuid OutOfLicenses)
-            Right (Left e) -> progress (ExperimentFailed experiment.uuid e)
-            Right (Right r) -> progress (ExperimentCompleted r)
+              progress (ExperimentCompleted (errorResult experiment.experimentId OutOfLicenses))
       )
       ( \result -> do
           atomically (signalTSem experimentSem)
           case result of
-            Left e -> progress (ExperimentFailed experiment.uuid (RunnerCrashed e))
+            Left e -> progress (ExperimentCompleted (errorResult experiment.experimentId (RunnerCrashed e)))
             Right () -> pure ()
+          progress (ExperimentSequenceCompleted sequenceId)
       )
   where
     progress = atomically . writeTChan progressChan
+
+    errorResult experimentId err =
+      ExperimentResult
+        { experimentId = experimentId,
+          proofFound = Nothing,
+          counterExample = Nothing,
+          fullOutput = "",
+          runnerError = Just err
+        }
 
 startLoggerThread :: ProgressChan -> IO ()
 startLoggerThread progressChan =
   forkRestarting "Logger thread crashed" . forever $
     atomically (readTChan progressChan) >>= \case
-      ExperimentStarted experiment -> printf "Experiment started | %s\n" (show experiment.uuid)
-      ExperimentFailed uuid _ -> printf "Experiment failed | %s\n" (show uuid)
-      ExperimentCompleted result -> printf "Experiment Completed | %s\n" (show result.uuid)
+      ExperimentStarted sequenceId experiment -> printf "Experiment started | %s (in sequence %s)\n" (show experiment.experimentId) (show sequenceId)
+      ExperimentCompleted result -> printf "Experiment Completed | %s\n" (show result.experimentId)
+      ExperimentSequenceCompleted sequenceId -> printf "Experiment Sequence Completed | %s\n" (show sequenceId)
 
 startSaverThread :: ProgressChan -> IO ()
 startSaverThread progressChan = do
-  experimentResults :: MVar (Map UUID Experiment) <- newMVar Map.empty
+  experimentResults :: MVar (Map ExperimentId Experiment) <- newMVar Map.empty
 
   forkRestarting "Saver thread crashed" . forever $ do
     progress <- atomically (readTChan progressChan)
     modifyMVar_ experimentResults . execStateT $ case progress of
-      ExperimentStarted experiment -> do
-        at experiment.uuid .= Just experiment
-      ExperimentFailed uuid err -> do
-        mExperiment <- use (at uuid)
-        whenJust mExperiment $ \experiment ->
-          liftIO
-            ( saveExperiment
-                experiment
-                ( ExperimentResult
-                    { proofFound = Nothing,
-                      counterExample = Nothing,
-                      fullOutput = T.pack (show err),
-                      uuid
-                    }
-                )
-            )
+      ExperimentStarted _ experiment -> do
+        at experiment.experimentId .= Just experiment
       ExperimentCompleted result -> do
-        mExperiment <- use (at result.uuid)
+        mExperiment <- use (at result.experimentId)
         whenJust mExperiment $ \experiment -> do
-          let isInteresting = result.proofFound /= Just experiment.expectedResult
-          when isInteresting $
+          when (result.proofFound /= Just experiment.expectedResult) $
             liftIO (saveExperiment experiment result)
+      ExperimentSequenceCompleted _ -> pure ()
 
 --------------------------- Testing --------------------------------------------
 
 startTestThread :: ProgressChan -> IO ()
 startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
+  sequenceId <- newExperimentSequenceId
   experiment <- mkTestExperiment
 
   threadDelay =<< getStdRandom (uniformR (1e6, 2e6))
@@ -155,7 +151,7 @@ startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
           | x < 20 -> Just True
           | otherwise -> Just False
 
-  reportProgress (ExperimentStarted experiment)
+  reportProgress (ExperimentStarted sequenceId experiment)
 
   threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
   reportProgress
@@ -164,16 +160,17 @@ startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
           { proofFound,
             counterExample = Just "counter example goes here",
             fullOutput = "blah\nblah\nblah",
-            uuid = experiment.uuid
+            experimentId = experiment.experimentId,
+            runnerError = Nothing
           }
     )
   where
     mkTestExperiment :: IO Experiment
     mkTestExperiment = do
-      uuid <- UUID.nextRandom
+      experimentId <- newExperimentId
       return
         Experiment
-          { uuid,
+          { experimentId,
             design =
               DesignSource
                 { topName = "main",
