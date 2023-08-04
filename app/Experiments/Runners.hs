@@ -15,9 +15,7 @@ module Experiments.Runners
   )
 where
 
-import Control.Exception (throwIO)
-import Control.Monad (void, when)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad (void)
 import Data.Function ((&))
 import Data.Maybe (isJust)
 import Data.String.Interpolate (i, __i)

@@ -8,7 +8,7 @@ module Orchestration (ProgressChan, OrchestrationConfig (..), RunnerConfig (..),
 import Control.Concurrent (MVar, forkFinally, forkIO, modifyMVar_, newMVar, threadDelay)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
 import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
-import Control.Exception (SomeException, catch, try, bracket)
+import Control.Exception (SomeException, catch, try)
 import Control.Monad (forever, replicateM_, void, when)
 import Control.Monad.State (execStateT, liftIO)
 import Data.Functor ((<&>))
@@ -59,8 +59,6 @@ startRunners config = do
       replicateM_ config.maxExperiments $ startTestThread progressChan
     RunnerConfig runner -> do
       startOrchestratorThread config runner progressChan
-      -- We need to clone the progressChan because, otherwise, this thread would
-      -- "eat up" all the messages on it. This way it just gets a copy
       startSaverThread =<< atomically (cloneTChan progressChan)
 
   when config.verbose $

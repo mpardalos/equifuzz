@@ -11,7 +11,6 @@
 
 module Experiments.Types where
 
-import Control.Exception (Exception, SomeException)
 import Data.Data (Data)
 import Data.Text (Text)
 import Data.UUID (UUID)
