@@ -57,11 +57,11 @@ data ExperimentResult = ExperimentResult
     counterExample :: Maybe Text,
     fullOutput :: Text
   }
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 data ExperimentProgress
   = ExperimentStarted ExperimentSequenceId Experiment
-  | ExperimentCompleted ExperimentResult
+  | ExperimentCompleted ExperimentSequenceId ExperimentResult
   | ExperimentSequenceCompleted ExperimentSequenceId
   deriving (Show)
 

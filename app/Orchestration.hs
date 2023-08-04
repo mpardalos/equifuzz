@@ -18,11 +18,11 @@ import Data.Text qualified as T
 import Experiments
   ( DesignSource (..),
     Experiment (..),
-    ExperimentId,
+    ExperimentId(uuid),
     ExperimentProgress (..),
     ExperimentResult (..),
     ExperimentRunner (..),
-    ExperimentSequenceId,
+    ExperimentSequenceId(uuid),
     mkSystemCConstantExperiment,
     newExperimentId,
     newExperimentSequenceId,
@@ -91,7 +91,7 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
       result <-
         runner.run experiment
           `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
-      progress (ExperimentCompleted result)
+      progress (ExperimentCompleted sequenceId result)
 
     endExperimentSequence :: ExperimentSequenceId -> IO ()
     endExperimentSequence sequenceId = do
@@ -112,9 +112,9 @@ startLoggerThread :: ProgressChan -> IO ()
 startLoggerThread progressChan =
   foreverThread "Logger" $
     atomically (readTChan progressChan) >>= \case
-      ExperimentStarted sequenceId experiment -> printf "Experiment started | %s (in sequence %s)\n" (show experiment.experimentId) (show sequenceId)
-      ExperimentCompleted result -> printf "Experiment Completed | %s\n" (show result.experimentId)
-      ExperimentSequenceCompleted sequenceId -> printf "Experiment Sequence Completed | %s\n" (show sequenceId)
+      ExperimentStarted sequenceId experiment -> printf "Experiment started | %s (in sequence %s)\n" (show experiment.experimentId.uuid) (show sequenceId.uuid)
+      ExperimentCompleted sequenceId result -> printf "Experiment Completed | %s (in sequence %s)\n" (show result.experimentId.uuid) (show sequenceId.uuid)
+      ExperimentSequenceCompleted sequenceId -> printf "Experiment Sequence Completed | %s\n" (show sequenceId.uuid)
 
 startSaverThread :: ProgressChan -> IO ()
 startSaverThread progressChan = do
@@ -125,7 +125,7 @@ startSaverThread progressChan = do
     modifyMVar_ experimentResults . execStateT $ case progress of
       ExperimentStarted _ experiment -> do
         at experiment.experimentId .= Just experiment
-      ExperimentCompleted result -> do
+      ExperimentCompleted _ result -> do
         mExperiment <- use (at result.experimentId)
         whenJust mExperiment $ \experiment -> do
           when (result.proofFound /= Just experiment.expectedResult) $
@@ -153,6 +153,7 @@ startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
   threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
   reportProgress
     ( ExperimentCompleted
+        sequenceId
         ExperimentResult
           { proofFound,
             counterExample = Just "counter example goes here",
@@ -160,6 +161,7 @@ startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
             experimentId = experiment.experimentId
           }
     )
+  reportProgress (ExperimentSequenceCompleted sequenceId)
   where
     mkTestExperiment :: IO Experiment
     mkTestExperiment = do

@@ -11,7 +11,7 @@
 
 module WebUI (runWebUI) where
 
-import Control.Applicative ((<|>))
+import Control.Applicative (asum)
 import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar)
 import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTChan, takeTMVar, tryPutTMVar)
 import Control.Monad (forM_, forever, void)
@@ -25,17 +25,22 @@ import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
-import Data.Text (Text)
-import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
-import Experiments (DesignSource (..), Experiment (..), ExperimentId (..), ExperimentProgress (..), ExperimentResult (..))
+import Experiments
+  ( DesignSource (..),
+    Experiment (..),
+    ExperimentId (..),
+    ExperimentProgress (..),
+    ExperimentResult (..),
+    ExperimentSequenceId (..),
+  )
 import GHC.Generics (Generic)
 import Meta
-import Network.HTTP.Types (status200, urlDecode, urlEncode)
+import Network.HTTP.Types (status200)
 import Network.Wai (StreamingBody)
-import Optics (At (at), makeFieldLabelsNoPrefix, use, (%), (&), (.~), (^.), (^?), _Just)
+import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
@@ -46,23 +51,22 @@ import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Util (foreverThread, whenJust)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, raw, scotty, setHeader, status, stream)
 
-type RunnerInfo = Text
+data ExperimentSequenceInfo = ExperimentSequenceInfo
+  { sequenceId :: ExperimentSequenceId,
+    experiments :: Map ExperimentId ExperimentInfo
+  }
+  deriving (Generic, Eq, Show)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment,
-    runs :: Map RunnerInfo RunInfo
+    result :: Maybe ExperimentResult
   }
-  deriving (Generic)
-
-data RunInfo
-  = CompletedRun ExperimentResult
-  | ActiveRun RunnerInfo
-  deriving (Show, Generic)
+  deriving (Generic, Eq, Show)
 
 data WebUIState = WebUIState
-  { runningExperiments :: Map ExperimentId ExperimentInfo,
-    interestingExperiments :: Map ExperimentId ExperimentInfo,
-    uninterestingExperiments :: Map ExperimentId ExperimentInfo,
+  { runningExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo,
+    interestingExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo,
+    uninterestingExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo,
     experimentsSem :: Semaphore,
     totalRunCount :: Int,
     totalRunCountSem :: Semaphore
@@ -83,31 +87,34 @@ newWebUIState = do
         totalRunCountSem
       }
 
+at2 :: ExperimentSequenceId -> ExperimentId -> Lens' (Map ExperimentSequenceId ExperimentSequenceInfo) (Maybe ExperimentInfo)
+at2 sequenceId experimentId =
+  at sequenceId % non (ExperimentSequenceInfo sequenceId Map.empty) % #experiments % at experimentId
+
 handleProgress :: MVar WebUIState -> ExperimentProgress -> IO ()
 handleProgress stateVar progress = do
   state <- readMVar stateVar
 
   modifyMVar_ stateVar . execStateT $ case progress of
-    ExperimentStarted _sequenceId experiment -> do
-      -- FIXME: Report error if uuid does not exist
-      #runningExperiments % at experiment.experimentId .= Just (ExperimentInfo experiment [(runnerInfo, ActiveRun runnerInfo)])
+    ExperimentStarted sequenceId experiment -> do
+      #runningExperiments % at2 sequenceId experiment.experimentId .= Just (ExperimentInfo experiment Nothing)
       liftIO . atomically $ signalSemaphore state.experimentsSem
-    ExperimentCompleted result -> do
+    ExperimentCompleted sequenceId result -> do
       -- FIXME: Report error if experiment does not exist
       -- FIXME: Report error if experiment still has active runs
-      mExperiment <- use (#runningExperiments % at result.experimentId)
+      mExperiment <- use (#runningExperiments % at2 sequenceId result.experimentId)
       whenJust mExperiment $ \runningExperiment -> do
-        let completedExperiment = runningExperiment & #runs % at runnerInfo .~ Just (CompletedRun result)
+        let completedExperiment = runningExperiment {result = Just result}
         if isInteresting completedExperiment
-          then #interestingExperiments % at result.experimentId .= Just completedExperiment
-          else #uninterestingExperiments % at result.experimentId .= Just completedExperiment
-        #runningExperiments % at result.experimentId .= Nothing
+          then #interestingExperiments % at2 sequenceId result.experimentId .= Just completedExperiment
+          else #uninterestingExperiments % at2 sequenceId result.experimentId .= Just completedExperiment
+        #runningExperiments % at2 sequenceId result.experimentId .= Nothing
         liftIO . atomically $ signalSemaphore state.experimentsSem
         liftIO . atomically $ signalSemaphore state.totalRunCountSem
         #totalRunCount %= (+ 1)
-    ExperimentSequenceCompleted _ -> pure ()
-  where
-    runnerInfo = "Runner"
+    ExperimentSequenceCompleted sequenceId -> do
+      #runningExperiments % at sequenceId .= Nothing
+      liftIO . atomically $ signalSemaphore state.experimentsSem
 
 scottyServer :: MVar WebUIState -> IO ()
 scottyServer stateVar = scotty 8888 $ do
@@ -120,23 +127,23 @@ scottyServer stateVar = scotty 8888 $ do
     raw $
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/htmx.js")
 
-  get "/experiments/:uuid/runs/:runnerInfo" $ do
-    experimentId :: ExperimentId <- coerce @UUIDParam <$> param "uuid"
-    runnerInfo <- urlDecode False <$> param "runnerInfo"
+  get "/experiments/:sequenceId/:experimentId" $ do
+    sequenceId :: ExperimentSequenceId <- coerce @UUIDParam <$> param "sequenceId"
+    experimentId :: ExperimentId <- coerce @UUIDParam <$> param "experimentId"
     state <- liftIO (readMVar stateVar)
     isHtmxRequest <- (Just "true" ==) <$> header "HX-Request"
 
-    let mExperimentInfo =
-          Map.lookup experimentId state.runningExperiments
-            <|> Map.lookup experimentId state.interestingExperiments
-            <|> Map.lookup experimentId state.uninterestingExperiments
-    let mExperiment = mExperimentInfo ^? _Just % #experiment
-    let mRunInfo = mExperimentInfo ^? _Just % #runs % at (T.decodeUtf8 runnerInfo) % _Just
+    let mExperimentInfo :: Maybe ExperimentInfo =
+          asum . map (view (at2 sequenceId experimentId)) $
+            [ state.runningExperiments,
+              state.interestingExperiments,
+              state.uninterestingExperiments
+            ]
 
-    case (mExperiment, mRunInfo) of
-      (Just experiment, Just ri)
-        | isHtmxRequest -> blazeHtml (runInfoBlock experiment ri)
-        | otherwise -> blazeHtml (runInfoPage state experiment ri)
+    case mExperimentInfo of
+      (Just experimentInfo)
+        | isHtmxRequest -> blazeHtml (experimentInfoBlock experimentInfo)
+        | otherwise -> blazeHtml (experimentInfoPage state experimentInfo)
       _ -> next
 
   get "/events" $ do
@@ -185,20 +192,20 @@ indexPage state =
     experimentList state
     H.div H.! A.id "run-info" $ pure ()
 
-runInfoPage :: WebUIState -> Experiment -> RunInfo -> Html
-runInfoPage state experiment run =
+experimentInfoPage :: WebUIState -> ExperimentInfo -> Html
+experimentInfoPage state info =
   htmlBase $ do
     experimentList state
-    runInfoBlock experiment run
+    experimentInfoBlock info
 
-runInfoBlock :: Experiment -> RunInfo -> Html
-runInfoBlock experiment run = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
+experimentInfoBlock :: ExperimentInfo -> Html
+experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
   infoBoxNoTitle . table $
-    [ ["UUID", H.toHtml (show experiment.experimentId.uuid)],
-      ["Expected Result", if experiment.expectedResult then "Equivalent" else "Non-equivalent"],
-      ["Comparison Value", H.text experiment.comparisonValue],
-      case run of
-        CompletedRun result ->
+    [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)],
+      ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"],
+      ["Comparison Value", H.text info.experiment.comparisonValue],
+      case info.result of
+        Just result ->
           [ "Actual Result",
             case result.proofFound of
               Just True -> "Equivalent"
@@ -208,18 +215,19 @@ runInfoBlock experiment run = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
         _ -> []
     ]
 
-  infoBox "Description" (H.pre $ H.text ("\n" <> experiment.designDescription))
+  infoBox "Description" (H.pre $ H.text ("\n" <> info.experiment.designDescription))
 
-  infoBox "Design" (H.pre $ H.text ("\n" <> experiment.design.source))
+  infoBox "Design" (H.pre $ H.text ("\n" <> info.experiment.design.source))
 
-  whenJust (run ^? #_CompletedRun % #counterExample % _Just) $ \counterExample ->
+  whenJust (info ^? #result %? #counterExample % _Just) $ \counterExample ->
     infoBox
       "Counter-example"
       (H.pre $ H.text ("\n" <> counterExample))
 
-  case run of
-    CompletedRun result -> infoBox "Full output" (H.pre $ H.text ("\n" <> result.fullOutput))
-    ActiveRun _ -> pure ()
+  whenJust info.result $ \result ->
+    infoBox
+      "Full output"
+      (H.pre $ H.text ("\n" <> result.fullOutput))
 
 experimentList :: WebUIState -> Html
 experimentList state = H.div
@@ -236,21 +244,21 @@ experimentList state = H.div
         (H.toHtml (length experiments))
         (mapM_ experimentListItem experiments)
 
-    experimentListItem :: ExperimentInfo -> Html
+    experimentListItem :: ExperimentSequenceInfo -> Html
     experimentListItem info =
       H.div H.! A.class_ "experiment-list-item" $ do
         H.span H.! A.class_ "experiment-list-uuid" $
-          H.toHtml (show info.experiment.experimentId.uuid)
+          H.toHtml (show info.sequenceId.uuid)
         H.ul H.! A.class_ "experiment-list-run-list" $
-          forM_ (Map.keys info.runs) $ \(runnerInfo :: RunnerInfo) ->
+          forM_ (Map.keys info.experiments) $ \experimentId ->
             H.li
               ( H.a
                   H.! hxTarget "#run-info"
                   H.! hxSwap "outerHTML"
                   H.! hxPushUrl "true"
-                  H.! hxGet [i|/experiments/#{show (info ^. #experiment % #experimentId % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
-                  H.! A.href [i|/experiments/#{show (info ^. #experiment % #experimentId % #uuid)}/runs/#{urlEncode False (T.encodeUtf8 runnerInfo)}|]
-                  $ H.toHtml runnerInfo
+                  H.! hxGet [i|/experiments/#{show (info ^. #sequenceId % #uuid)}/#{show (experimentId ^. #uuid)}|]
+                  H.! A.href [i|/experiments/#{show (info ^. #sequenceId % #uuid)}/#{show (experimentId ^. #uuid)}|]
+                  $ H.toHtml (show experimentId.uuid)
               )
 
 table :: [[Html]] -> Html
@@ -337,10 +345,10 @@ signalSemaphore :: Semaphore -> STM ()
 signalSemaphore (Semaphore mvar) = void $ tryPutTMVar mvar ()
 
 isInteresting :: ExperimentInfo -> Bool
-isInteresting info =
-  let proofsFound = [proofFound | CompletedRun (ExperimentResult {proofFound}) <- Map.elems info.runs]
-   in any (/= Just info.experiment.expectedResult) proofsFound
+isInteresting info = case info.result of
+  Just result -> result.proofFound /= Just info.experiment.expectedResult
+  Nothing -> False
 
 makeFieldLabelsNoPrefix ''WebUIState
+makeFieldLabelsNoPrefix ''ExperimentSequenceInfo
 makeFieldLabelsNoPrefix ''ExperimentInfo
-makeFieldLabelsNoPrefix ''RunInfo
