@@ -14,7 +14,7 @@ import Control.Monad.State (execStateT, liftIO)
 import Data.Functor ((<&>))
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Experiments (DesignSource (..), Experiment (..), ExperimentId, ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), RunnerError (..), mkSystemCConstantExperiment, newExperimentId, newExperimentSequenceId, saveExperiment)
+import Experiments (DesignSource (..), Experiment (..), ExperimentId, ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), ExperimentSequenceId, RunnerError (..), mkSystemCConstantExperiment, newExperimentId, newExperimentSequenceId, saveExperiment)
 import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
@@ -63,16 +63,14 @@ startOrchestratorThread config runner progressChan = do
     atomically (waitTSem experimentSem)
 
     sequenceId <- newExperimentSequenceId
-    experimentReducible <- mkSystemCConstantExperiment config.genConfig
-    experiment <- experimentReducible.value
 
-    forkFinally
-      ( do
+    let runReduceLoop :: Reducible (IO Experiment) -> IO ()
+        runReduceLoop experimentReducible = do
+          experiment <- experimentReducible.value
           progress (ExperimentStarted sequenceId experiment)
           result :: Either RunnerError ExperimentResult <- try @RunnerError (runner.run experiment)
 
           case result of
-            Right r -> progress (ExperimentCompleted r)
             (Left (RunnerCrashed e)) ->
               progress (ExperimentCompleted (errorResult experiment.experimentId (RunnerCrashed e)))
             (Left OutOfLicenses) -> do
@@ -80,7 +78,15 @@ startOrchestratorThread config runner progressChan = do
               -- number of experiments allowed
               atomically (waitTSem experimentSem)
               progress (ExperimentCompleted (errorResult experiment.experimentId OutOfLicenses))
-      )
+            Right r -> do
+              progress (ExperimentCompleted r)
+              -- TODO: Recurse on reductions
+
+    experimentReducible <- mkSystemCConstantExperiment config.genConfig
+    experiment <- experimentReducible.value
+
+    forkFinally
+      (runReduceLoop experimentReducible)
       ( \result -> do
           atomically (signalTSem experimentSem)
           case result of
