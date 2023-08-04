@@ -53,6 +53,7 @@ main {
     flex-direction: row;
     overflow: hidden;
     gap: 10px;
+    height: 100%;
 }
 
 main > * {
