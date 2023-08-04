@@ -7,14 +7,27 @@ module Orchestration (ProgressChan, OrchestrationConfig (..), RunnerConfig (..),
 
 import Control.Concurrent (MVar, forkFinally, forkIO, modifyMVar_, newMVar, threadDelay)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
-import Control.Concurrent.STM.TSem (newTSem, signalTSem, waitTSem)
-import Control.Exception (SomeException, try)
+import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
+import Control.Exception (SomeException, catch, try, bracket)
 import Control.Monad (forever, replicateM_, void, when)
 import Control.Monad.State (execStateT, liftIO)
 import Data.Functor ((<&>))
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Experiments (DesignSource (..), Experiment (..), ExperimentId, ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), ExperimentSequenceId, RunnerError (..), mkSystemCConstantExperiment, newExperimentId, newExperimentSequenceId, saveExperiment)
+import Data.Text qualified as T
+import Experiments
+  ( DesignSource (..),
+    Experiment (..),
+    ExperimentId,
+    ExperimentProgress (..),
+    ExperimentResult (..),
+    ExperimentRunner (..),
+    ExperimentSequenceId,
+    mkSystemCConstantExperiment,
+    newExperimentId,
+    newExperimentSequenceId,
+    saveExperiment,
+  )
 import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
@@ -61,40 +74,32 @@ startOrchestratorThread config runner progressChan = do
 
   foreverThread "Orchestrator" $ do
     atomically (waitTSem experimentSem)
-
-    sequenceId <- newExperimentSequenceId
-
-    let runReduceLoop :: Reducible (IO Experiment) -> IO ()
-        runReduceLoop experimentReducible = do
-          experiment <- experimentReducible.value
-          progress (ExperimentStarted sequenceId experiment)
-          result :: Either RunnerError ExperimentResult <- try @RunnerError (runner.run experiment)
-
-          case result of
-            (Left (RunnerCrashed e)) ->
-              progress (ExperimentCompleted (errorResult experiment.experimentId (RunnerCrashed e)))
-            (Left OutOfLicenses) -> do
-              -- We have one less license than we thought, so reduce the max
-              -- number of experiments allowed
-              atomically (waitTSem experimentSem)
-              progress (ExperimentCompleted (errorResult experiment.experimentId OutOfLicenses))
-            Right r -> do
-              progress (ExperimentCompleted r)
-              -- TODO: Recurse on reductions
-
     experimentReducible <- mkSystemCConstantExperiment config.genConfig
-    experiment <- experimentReducible.value
+    startRunReduceThread experimentSem progressChan runner experimentReducible
 
+startRunReduceThread :: TSem -> ProgressChan -> ExperimentRunner -> Reducible (IO Experiment) -> IO ()
+startRunReduceThread experimentSem progressChan runner initialExperimentReducible = do
+  sequenceId <- newExperimentSequenceId
+
+  void $
     forkFinally
-      (runReduceLoop experimentReducible)
-      ( \result -> do
-          atomically (signalTSem experimentSem)
-          case result of
-            Left e -> progress (ExperimentCompleted (errorResult experiment.experimentId (RunnerCrashed e)))
-            Right () -> pure ()
-          progress (ExperimentSequenceCompleted sequenceId)
-      )
+      (runReduceLoop sequenceId initialExperimentReducible)
+      (const (endExperimentSequence sequenceId))
   where
+    runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO ()
+    runReduceLoop sequenceId experimentReducible = do
+      experiment <- experimentReducible.value
+      progress (ExperimentStarted sequenceId experiment)
+      result <-
+        runner.run experiment
+          `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
+      progress (ExperimentCompleted result)
+
+    endExperimentSequence :: ExperimentSequenceId -> IO ()
+    endExperimentSequence sequenceId = do
+      atomically (signalTSem experimentSem)
+      progress (ExperimentSequenceCompleted sequenceId)
+
     progress = atomically . writeTChan progressChan
 
     errorResult experimentId err =
@@ -102,8 +107,7 @@ startOrchestratorThread config runner progressChan = do
         { experimentId = experimentId,
           proofFound = Nothing,
           counterExample = Nothing,
-          fullOutput = "",
-          runnerError = Just err
+          fullOutput = "Runner crashed with exception:\n" <> T.pack (show err)
         }
 
 startLoggerThread :: ProgressChan -> IO ()
@@ -155,8 +159,7 @@ startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
           { proofFound,
             counterExample = Just "counter example goes here",
             fullOutput = "blah\nblah\nblah",
-            experimentId = experiment.experimentId,
-            runnerError = Nothing
+            experimentId = experiment.experimentId
           }
     )
   where

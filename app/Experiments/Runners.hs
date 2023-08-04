@@ -84,11 +84,6 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
       False -> pure Nothing
       True -> Just <$> Sh.readfile (T.unpack localExperimentDir <> "/counter_example.txt")
 
-  let noLicense =
-        fullOutput
-          & T.lines
-          & any ("Unable to check out license feature" `T.isInfixOf`)
-
   let proofSuccessful =
         fullOutput
           & T.lines
@@ -104,10 +99,7 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
         (False, True) -> Just False
         _ -> Nothing
 
-  when noLicense $
-    liftIO (throwIO OutOfLicenses)
-
-  return $ ExperimentResult {proofFound, counterExample, fullOutput, experimentId, runnerError = Nothing}
+  return $ ExperimentResult {proofFound, counterExample, fullOutput, experimentId}
   where
     remoteDir :: Text
     remoteDir = "equifuzz_vcf_experiment"

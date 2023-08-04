@@ -30,7 +30,7 @@ import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
-import Experiments (DesignSource (..), Experiment (..), ExperimentId (..), ExperimentProgress (..), ExperimentResult (..), RunnerError)
+import Experiments (DesignSource (..), Experiment (..), ExperimentId (..), ExperimentProgress (..), ExperimentResult (..))
 import GHC.Generics (Generic)
 import Meta
 import Network.HTTP.Types (status200, urlDecode, urlEncode)
@@ -56,7 +56,6 @@ data ExperimentInfo = ExperimentInfo
 
 data RunInfo
   = CompletedRun ExperimentResult
-  | FailedRun RunnerError
   | ActiveRun RunnerInfo
   deriving (Show, Generic)
 
@@ -220,7 +219,6 @@ runInfoBlock experiment run = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
 
   case run of
     CompletedRun result -> infoBox "Full output" (H.pre $ H.text ("\n" <> result.fullOutput))
-    FailedRun err -> infoBox "Error" (H.pre $ H.string (show err))
     ActiveRun _ -> pure ()
 
 experimentList :: WebUIState -> Html

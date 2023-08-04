@@ -20,14 +20,14 @@ import GHC.Generics (Generic)
 import Optics (makeFieldLabelsNoPrefix)
 
 -- | Identifies a sequence of experiments
-newtype ExperimentSequenceId = ExperimentSequenceId { uuid :: UUID }
+newtype ExperimentSequenceId = ExperimentSequenceId {uuid :: UUID}
   deriving (Show, Eq, Ord, Generic, Data)
 
 newExperimentSequenceId :: IO ExperimentSequenceId
 newExperimentSequenceId = ExperimentSequenceId <$> UUID.nextRandom
 
 -- | Identifies a single experiment within a sequence of experiments
-newtype ExperimentId = ExperimentId { uuid :: UUID }
+newtype ExperimentId = ExperimentId {uuid :: UUID}
   deriving (Show, Eq, Ord, Generic, Data)
 
 newExperimentId :: IO ExperimentId
@@ -56,16 +56,9 @@ data ExperimentResult = ExperimentResult
   { experimentId :: ExperimentId,
     proofFound :: Maybe Bool,
     counterExample :: Maybe Text,
-    runnerError :: Maybe RunnerError,
     fullOutput :: Text
   }
   deriving (Show, Generic)
-
-data RunnerError
-  = OutOfLicenses
-  | RunnerCrashed SomeException
-  deriving stock (Show)
-  deriving anyclass (Exception)
 
 data ExperimentProgress
   = ExperimentStarted ExperimentSequenceId Experiment
