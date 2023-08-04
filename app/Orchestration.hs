@@ -137,30 +137,32 @@ startSaverThread progressChan = do
 startTestThread :: ProgressChan -> IO ()
 startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
   sequenceId <- newExperimentSequenceId
-  experiment <- mkTestExperiment
 
-  threadDelay =<< getStdRandom (uniformR (1e6, 2e6))
+  replicateM_ 3 $ do
+    experiment <- mkTestExperiment
+    threadDelay =<< getStdRandom (uniformR (1e6, 2e6))
 
-  proofFound <-
-    getStdRandom (uniformR (1 :: Int, 100)) <&> \x ->
-      if
-          | x < 10 -> Nothing
-          | x < 20 -> Just True
-          | otherwise -> Just False
+    proofFound <-
+      getStdRandom (uniformR (1 :: Int, 100)) <&> \x ->
+        if
+            | x < 10 -> Nothing
+            | x < 20 -> Just True
+            | otherwise -> Just False
 
-  reportProgress (ExperimentStarted sequenceId experiment)
+    reportProgress (ExperimentStarted sequenceId experiment)
 
-  threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
-  reportProgress
-    ( ExperimentCompleted
-        sequenceId
-        ExperimentResult
-          { proofFound,
-            counterExample = Just "counter example goes here",
-            fullOutput = "blah\nblah\nblah",
-            experimentId = experiment.experimentId
-          }
-    )
+    threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
+    reportProgress
+      ( ExperimentCompleted
+          sequenceId
+          ExperimentResult
+            { proofFound,
+              counterExample = Just "counter example goes here",
+              fullOutput = "blah\nblah\nblah",
+              experimentId = experiment.experimentId
+            }
+      )
+
   reportProgress (ExperimentSequenceCompleted sequenceId)
   where
     mkTestExperiment :: IO Experiment
