@@ -12,7 +12,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}     - name: Build image
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
         uses: firehed/multistage-docker-build-action@v1
