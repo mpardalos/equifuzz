@@ -16,7 +16,7 @@ RUN cabal build --only-dependencies -j4
 COPY . /opt/equifuzz
 RUN cabal install -fevaluation_version
 
-FROM redhat/ubi9-minimal:9.2
+FROM redhat/ubi9-minimal:9.2 AS equifuzz
 
 WORKDIR /
 
