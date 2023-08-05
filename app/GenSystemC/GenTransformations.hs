@@ -18,28 +18,30 @@ import GenSystemC.Transformations
   )
 import SystemC qualified as SC
 
-randomTransformationFor :: MonadRandom m => SC.Expr BuildOut -> m Transformation
+randomTransformationFor :: forall m. MonadRandom m => SC.Expr BuildOut -> m Transformation
 randomTransformationFor e =
   join . weighted . map (,1) . catMaybes $
-    [ Just castWithDeclaration,
-      guard (isJust $ SC.supportsRange e.annotation)
-        >> range <$> SC.specifiedWidth e.annotation,
+    [ Just castWithDeclaration
+    , guard (isJust $ SC.supportsRange e.annotation)
+        >> range <$> SC.specifiedWidth e.annotation
 #ifndef EVALUATION_VERSION
-      arithmetic <$> arithmeticResultType,
-      guard canBeBool
-        >> Just useAsCondition,
-      guard (isJust $ SC.supportsBitref e.annotation)
+    , arithmetic <$> arithmeticResultType
+    , guard canBeBool
+        >> Just useAsCondition
+    , guard (isJust $ SC.supportsBitref e.annotation)
         >> bitSelect <$> SC.specifiedWidth e.annotation
 #endif
     ]
   where
     castWithDeclaration = CastWithDeclaration <$> castTargetType e.annotation
 
+    range :: Int -> m Transformation
     range width = do
       hi <- getRandomR (0, width - 1)
       lo <- getRandomR (0, hi)
       return (Range hi lo)
 
+    arithmeticResultType :: Maybe SC.SCType
     arithmeticResultType
       | [t] <-
           Set.toList $
@@ -49,6 +51,7 @@ randomTransformationFor e =
           Just t
       | otherwise = Nothing
 
+    arithmetic :: SC.SCType -> m Transformation
     arithmetic resultType = do
       op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
       constant <- someConstant resultType
@@ -57,14 +60,16 @@ randomTransformationFor e =
     canBeBool :: Bool
     canBeBool = SC.CBool `elem` SC.implicitCastTargetsOf e.annotation
 
+    useAsCondition :: m Transformation
     useAsCondition =
       UseAsCondition
         <$> someConstant SC.CInt
         <*> someConstant SC.CInt
 
+    bitSelect :: Int -> m Transformation
     bitSelect width = BitSelect <$> getRandomR (0, width - 1)
 
-    someConstant :: MonadRandom m => SC.SCType -> m (SC.Expr BuildOut)
+    someConstant :: SC.SCType -> m (SC.Expr BuildOut)
     someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)
 
 seedExpr :: MonadRandom m => m (SC.Expr BuildOut)
