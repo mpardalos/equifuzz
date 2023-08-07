@@ -103,9 +103,12 @@ startLoggerThread :: ProgressChan -> IO ()
 startLoggerThread progressChan =
   foreverThread "Logger" $
     atomically (readTChan progressChan) >>= \case
-      ExperimentStarted sequenceId experiment -> printf "Experiment started | %s (in sequence %s)\n" (show experiment.experimentId.uuid) (show sequenceId.uuid)
-      ExperimentCompleted sequenceId result -> printf "Experiment Completed | %s (in sequence %s)\n" (show result.experimentId.uuid) (show sequenceId.uuid)
-      ExperimentSequenceCompleted sequenceId -> printf "Experiment Sequence Completed | %s\n" (show sequenceId.uuid)
+      ExperimentStarted sequenceId experiment ->
+        printf "Experiment started | %s (in sequence %s)\n" (show experiment.experimentId.uuid) (show sequenceId.uuid)
+      ExperimentCompleted sequenceId result ->
+        printf "Experiment Completed | %s (in sequence %s)\n" (show result.experimentId.uuid) (show sequenceId.uuid)
+      ExperimentSequenceCompleted sequenceId ->
+        printf "Experiment Sequence Completed | %s\n" (show sequenceId.uuid)
 
 startSaverThread :: ProgressChan -> IO ()
 startSaverThread progressChan = do
