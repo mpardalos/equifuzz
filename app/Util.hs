@@ -1,7 +1,7 @@
 module Util where
 
 import Control.Concurrent (forkFinally)
-import Control.Monad.Random (forever)
+import Control.Monad.Random (foldM_, forever)
 import Data.Time (getZonedTime, zonedTimeToLocalTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import GHC.Conc (labelThread)
@@ -46,3 +46,15 @@ foreverThread title action = do
           foreverThread title action
       )
   labelThread tid title
+
+-- | Like `forM_`, but if the operation returns True, break (i.e. do not process
+-- the remaining elements).
+forUntilM_ :: (Foldable t, Monad m) => (a -> m Bool) -> t a -> m ()
+forUntilM_ action =
+  foldM_
+    ( \done acc ->
+        if done
+          then pure done
+          else action acc
+    )
+    False

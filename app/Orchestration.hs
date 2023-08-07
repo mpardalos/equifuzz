@@ -29,7 +29,7 @@ import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
 import Text.Printf (printf)
-import Util (foreverThread, whenJust)
+import Util (forUntilM_, foreverThread, whenJust)
 
 type ProgressChan = TChan ExperimentProgress
 
@@ -75,7 +75,7 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
       (runReduceLoop sequenceId initialExperimentReducible)
       (const (endExperimentSequence sequenceId))
   where
-    runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO ()
+    runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO Bool
     runReduceLoop sequenceId experimentReducible = do
       experiment <- experimentReducible.value
       progress (ExperimentStarted sequenceId experiment)
@@ -83,6 +83,16 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
         runner.run experiment
           `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
       progress (ExperimentCompleted sequenceId result)
+
+      let isInteresting = result.proofFound == Just (not experiment.expectedResult)
+
+      when (isInteresting && experimentReducible.size > 1) $
+        void $
+          forUntilM_
+            (runReduceLoop sequenceId)
+            (experimentReducible.reductions (experimentReducible.size - 1))
+
+      return isInteresting
 
     endExperimentSequence :: ExperimentSequenceId -> IO ()
     endExperimentSequence sequenceId = do

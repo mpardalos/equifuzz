@@ -19,7 +19,7 @@ import GenSystemC.GenTransformations
     seedExpr,
   )
 import GenSystemC.Reduce
-  ( HasReductions (mkReductions),
+  ( HasReductions (..),
     Reducible (..),
     asReducible,
   )
@@ -85,9 +85,11 @@ data GenerateProcess = GenerateProcess
 
 instance HasReductions GenerateProcess where
   mkReductions (GenerateProcess seed transformations) window =
-    [ Reducible (GenerateProcess seed ts') (mkReductions (GenerateProcess seed ts'))
+    [ Reducible (GenerateProcess seed ts') window (mkReductions (GenerateProcess seed ts'))
       | ts' <- windowsOf window transformations
     ]
+
+  getSize GenerateProcess {transformations} = length transformations
 
 windowsOf :: Int -> [a] -> [[a]]
 windowsOf size initLst = take (length initLst) (go initLst)
