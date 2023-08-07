@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
 
 module Main where
 
@@ -17,6 +18,10 @@ import Control.Monad.Random (setStdGen, mkStdGen)
 #endif
 import Meta (versionName)
 import Optics (view)
+import Control.Monad.Random (getStdRandom)
+import System.Random (uniformR)
+import Data.Functor ((<&>))
+import Control.Concurrent (threadDelay)
 
 main :: IO ()
 main = do
@@ -75,12 +80,17 @@ commandParser =
           [ Opt.long "verbose",
             Opt.help "Print experiment status to the console"
           ]
-      runnerConfig <- runnerConfigOpts <|> testFlag
+      saveResults <- not <$> (Opt.switch . mconcat $
+          [ Opt.long "no-save",
+            Opt.help "Do not save successful experiment results"
+          ])
+      runner <- runnerConfigOpts <|> testFlag
       genConfig <- generateConfigOpts
       return
         OrchestrationConfig
-          { runnerConfig,
+          { runner,
             verbose,
+            saveResults,
             generatorThreads = 10,
             maxExperiments,
             -- Double the max concurrent experiments to make sure that we are never
@@ -88,10 +98,11 @@ commandParser =
             genConfig
           }
 
+    testFlag :: Opt.Parser ExperimentRunner
     testFlag =
-      Opt.flag' TestRunner . mconcat $
+      Opt.flag' testRunner . mconcat $
         [ Opt.long "test",
-          Opt.help "Show test data on the interface, don't run any fuzzing"
+          Opt.help "Use a 'test' runner, that just gives random results (for testing)"
         ]
 
     generateConfigOpts :: Opt.Parser GenConfig
@@ -137,7 +148,7 @@ commandParser =
           ]
 
       return
-        ( RunnerConfig . ExperimentRunner $
+        ( ExperimentRunner $
             runVCFormal
               SSHConnectionTarget {username, host, password}
               activatePath
@@ -153,3 +164,29 @@ parseArgs =
             Opt.progDesc "Fuzzer for formal equivalence checkers"
           ]
       )
+
+--------------------------- Testing --------------------------------------------
+
+testRunner :: ExperimentRunner
+testRunner = ExperimentRunner $ \experiment -> do
+  getStdRandom (uniformR (1_000_000, 10_000_000)) >>= threadDelay
+
+  proofFound <-
+    getStdRandom (uniformR (1 :: Int, 100)) <&> \x ->
+      if
+          | x < 10 -> Nothing
+          | x < 20 -> Just True
+          | otherwise -> Just False
+  let counterExample =
+        if proofFound == Just False
+          then Nothing
+          else Just "Counter-example goes here"
+  let fullOutput = "blah\nblah\nblah"
+
+  return
+    ExperimentResult
+      { experimentId = experiment.experimentId,
+        proofFound,
+        counterExample,
+        fullOutput
+      }

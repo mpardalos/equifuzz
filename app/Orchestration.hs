@@ -3,47 +3,40 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NumDecimals #-}
 
-module Orchestration (ProgressChan, OrchestrationConfig (..), RunnerConfig (..), startRunners) where
+module Orchestration (ProgressChan, OrchestrationConfig (..), startRunners) where
 
-import Control.Concurrent (MVar, forkFinally, forkIO, modifyMVar_, newMVar, threadDelay)
+import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
 import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
-import Control.Exception (SomeException, catch, try)
-import Control.Monad (forever, replicateM_, void, when)
+import Control.Exception (SomeException, catch)
+import Control.Monad (void, when)
 import Control.Monad.State (execStateT, liftIO)
-import Data.Functor ((<&>))
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text qualified as T
 import Experiments
-  ( DesignSource (..),
-    Experiment (..),
-    ExperimentId(uuid),
+  ( Experiment (..),
+    ExperimentId (uuid),
     ExperimentProgress (..),
     ExperimentResult (..),
     ExperimentRunner (..),
-    ExperimentSequenceId(uuid),
+    ExperimentSequenceId (uuid),
     mkSystemCConstantExperiment,
-    newExperimentId,
     newExperimentSequenceId,
     saveExperiment,
   )
 import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
-import System.Random (getStdRandom, uniformR)
 import Text.Printf (printf)
 import Util (foreverThread, whenJust)
 
 type ProgressChan = TChan ExperimentProgress
 
-data RunnerConfig
-  = TestRunner
-  | RunnerConfig ExperimentRunner
-
 data OrchestrationConfig = OrchestrationConfig
-  { runnerConfig :: RunnerConfig,
+  { runner :: ExperimentRunner,
     verbose :: Bool,
+    saveResults :: Bool,
     generatorThreads :: Int,
     maxExperiments :: Int,
     experimentQueueDepth :: Int,
@@ -54,12 +47,10 @@ startRunners :: OrchestrationConfig -> IO ProgressChan
 startRunners config = do
   progressChan <- newTChanIO
 
-  case config.runnerConfig of
-    TestRunner ->
-      replicateM_ config.maxExperiments $ startTestThread progressChan
-    RunnerConfig runner -> do
-      startOrchestratorThread config runner progressChan
-      startSaverThread =<< atomically (cloneTChan progressChan)
+  startOrchestratorThread config config.runner progressChan
+
+  when config.saveResults $
+    startSaverThread =<< atomically (cloneTChan progressChan)
 
   when config.verbose $
     startLoggerThread =<< atomically (cloneTChan progressChan)
@@ -131,54 +122,3 @@ startSaverThread progressChan = do
           when (result.proofFound /= Just experiment.expectedResult) $
             liftIO (saveExperiment experiment result)
       ExperimentSequenceCompleted _ -> pure ()
-
---------------------------- Testing --------------------------------------------
-
-startTestThread :: ProgressChan -> IO ()
-startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
-  sequenceId <- newExperimentSequenceId
-
-  replicateM_ 3 $ do
-    experiment <- mkTestExperiment
-    threadDelay =<< getStdRandom (uniformR (1e6, 2e6))
-
-    proofFound <-
-      getStdRandom (uniformR (1 :: Int, 100)) <&> \x ->
-        if
-            | x < 10 -> Nothing
-            | x < 20 -> Just True
-            | otherwise -> Just False
-
-    reportProgress (ExperimentStarted sequenceId experiment)
-
-    threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
-    reportProgress
-      ( ExperimentCompleted
-          sequenceId
-          ExperimentResult
-            { proofFound,
-              counterExample = Just "counter example goes here",
-              fullOutput = "blah\nblah\nblah",
-              experimentId = experiment.experimentId
-            }
-      )
-
-  reportProgress (ExperimentSequenceCompleted sequenceId)
-  where
-    mkTestExperiment :: IO Experiment
-    mkTestExperiment = do
-      experimentId <- newExperimentId
-      return
-        Experiment
-          { experimentId,
-            design =
-              DesignSource
-                { topName = "main",
-                  source = "int main() { return 0; }"
-                },
-            comparisonValue = "32'hdeadbeef",
-            expectedResult = False,
-            designDescription = "Mock experiments"
-          }
-
-    reportProgress p = atomically (writeTChan progressChan p)
