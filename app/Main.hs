@@ -99,11 +99,19 @@ commandParser =
           }
 
     testFlag :: Opt.Parser ExperimentRunner
-    testFlag =
-      Opt.flag' testRunner . mconcat $
+    testFlag = do
+      Opt.flag' () . mconcat $
         [ Opt.long "test",
           Opt.help "Use a 'test' runner, that just gives random results (for testing)"
         ]
+
+      inconclusiveResults <-
+        Opt.switch . mconcat $
+          [ Opt.long "inconclusive",
+            Opt.help "Include inconclusive results in the test results"
+          ]
+
+      return (testRunner inconclusiveResults)
 
     generateConfigOpts :: Opt.Parser GenConfig
     generateConfigOpts =
@@ -167,16 +175,16 @@ parseArgs =
 
 --------------------------- Testing --------------------------------------------
 
-testRunner :: ExperimentRunner
-testRunner = ExperimentRunner $ \experiment -> do
-  getStdRandom (uniformR (1_000_000, 10_000_000)) >>= threadDelay
+testRunner :: Bool -> ExperimentRunner
+testRunner inconclusiveResults = ExperimentRunner $ \experiment -> do
+  getStdRandom (uniformR (1_000_000, 5_000_000)) >>= threadDelay
 
   proofFound <-
-    getStdRandom (uniformR (1 :: Int, 100)) <&> \x ->
-      if
-          | x < 10 -> Nothing
-          | x < 20 -> Just True
-          | otherwise -> Just False
+    getStdRandom (uniformR (1 :: Int, 100)) <&> \x -> if
+      | x < 10 && inconclusiveResults -> Nothing
+      | x < 20 -> Just (not experiment.expectedResult)
+      | otherwise -> Just experiment.expectedResult
+
   let counterExample =
         if proofFound == Just False
           then Nothing
