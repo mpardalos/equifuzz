@@ -50,7 +50,7 @@ genSystemCConstant :: GenConfig -> Rand StdGen (Reducible GenerateProcess)
 genSystemCConstant cfg = do
   (seed, transformations) <- (`evalStateT` initBuildOutState) . runWriterT $ do
     seed <- seedExpr
-    -- We only run the growExpr to output the sta
+    -- We only run the growExpr for its Writer output. We can ignore the result
     _expr <- growExpr seed
     return seed
 
