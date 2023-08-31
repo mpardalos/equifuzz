@@ -16,5 +16,7 @@ podman build \
 podman build \
     --tag $registry/equifuzz-evaluation:$revision \
     --tag $registry/equifuzz-evaluation:latest \
+    --tag equifuzz-evaluation:$revision \
+    --tag equifuzz-evaluation:latest \
     --file containers/Containerfile-evaluation \
     "$project_root"
