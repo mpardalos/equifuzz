@@ -21,25 +21,26 @@ import SystemC qualified as SC
 randomTransformationFor :: forall m. MonadRandom m => SC.Expr BuildOut -> m Transformation
 randomTransformationFor e =
   join . weighted . map (,1) . catMaybes $
-    [ Just castWithDeclaration
-    , guard (isJust $ SC.supportsRange e.annotation)
-        >> range <$> SC.specifiedWidth e.annotation
+    [ castWithDeclaration
+    , range
 #ifndef EVALUATION_VERSION
-    , arithmetic <$> arithmeticResultType
-    , guard canBeBool
-        >> Just useAsCondition
-    , guard (isJust $ SC.supportsBitref e.annotation)
-        >> bitSelect <$> SC.specifiedWidth e.annotation
+    , arithmetic
+    , useAsCondition
+    , bitSelect
 #endif
     ]
   where
-    castWithDeclaration = CastWithDeclaration <$> castTargetType e.annotation
+    castWithDeclaration :: Maybe (m Transformation)
+    castWithDeclaration = Just (CastWithDeclaration <$> castTargetType e.annotation)
 
-    range :: Int -> m Transformation
-    range width = do
-      hi <- getRandomR (0, width - 1)
-      lo <- getRandomR (0, hi)
-      return (Range hi lo)
+    range :: Maybe (m Transformation)
+    range = do
+      guard (isJust $ SC.supportsRange e.annotation)
+      exprWidth <- SC.specifiedWidth e.annotation
+      return $ do
+        hi <- getRandomR (0, exprWidth - 1)
+        lo <- getRandomR (0, hi)
+        return (Range hi lo)
 
     arithmeticResultType :: Maybe SC.SCType
     arithmeticResultType
@@ -51,23 +52,28 @@ randomTransformationFor e =
           Just t
       | otherwise = Nothing
 
-    arithmetic :: SC.SCType -> m Transformation
-    arithmetic resultType = do
-      op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
-      constant <- someConstant resultType
-      return (Arithmetic op constant)
+    arithmetic :: Maybe (m Transformation)
+    arithmetic = do
+      resultType <- arithmeticResultType
+      return $ do
+        op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
+        constant <- someConstant resultType
+        return (Arithmetic op constant)
 
-    canBeBool :: Bool
-    canBeBool = SC.CBool `elem` SC.implicitCastTargetsOf e.annotation
+    useAsCondition :: Maybe (m Transformation)
+    useAsCondition = do
+      guard (SC.CBool `elem` SC.implicitCastTargetsOf e.annotation)
+      return
+        ( UseAsCondition
+            <$> someConstant SC.CInt
+            <*> someConstant SC.CInt
+        )
 
-    useAsCondition :: m Transformation
-    useAsCondition =
-      UseAsCondition
-        <$> someConstant SC.CInt
-        <*> someConstant SC.CInt
-
-    bitSelect :: Int -> m Transformation
-    bitSelect width = BitSelect <$> getRandomR (0, width - 1)
+    bitSelect :: Maybe (m Transformation)
+    bitSelect = do
+      guard (isJust $ SC.supportsBitref e.annotation)
+      width <- SC.specifiedWidth e.annotation
+      return (BitSelect <$> getRandomR (0, width - 1))
 
     someConstant :: SC.SCType -> m (SC.Expr BuildOut)
     someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)
