@@ -10,6 +10,8 @@ registry="ghcr.io/mpardalos"
 podman build \
     --tag $registry/equifuzz-full:$revision \
     --tag $registry/equifuzz-full:latest \
+    --tag equifuzz-full:$revision \
+    --tag equifuzz-full:latest \
     --file containers/Containerfile-full \
     "$project_root"
 
