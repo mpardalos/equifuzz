@@ -123,6 +123,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         SC.SCUInt n -> Right n
         SC.SCFixed w _ -> Right w
         SC.SCUFixed w _ -> Right w
+        SC.SCBV n -> Right n
         SC.SCFxnumSubref {} -> Left [i|#{name}().length()|]
         SC.SCIntSubref {} -> Left [i|#{name}().length()|]
         SC.SCUIntSubref {} -> Left [i|#{name}().length()|]
