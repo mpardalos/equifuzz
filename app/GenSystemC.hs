@@ -10,9 +10,10 @@ module GenSystemC
   )
 where
 
-import Control.Monad.Random.Strict (MonadRandom, Rand, StdGen, foldM)
-import Control.Monad.State.Strict (evalStateT, runState)
-import Control.Monad.Writer.Strict (MonadWriter, runWriterT, tell)
+import Control.Monad (replicateM_)
+import Control.Monad.Random.Strict (Rand, StdGen)
+import Control.Monad.State.Strict (evalStateT, execState)
+import Control.Monad.Writer.Strict (MonadWriter (tell), runWriterT)
 import Data.Text (Text)
 import GenSystemC.GenTransformations
   ( randomTransformationFor,
@@ -25,14 +26,13 @@ import GenSystemC.Reduce
   )
 import GenSystemC.Transformations
   ( BuildOut,
-    BuildOutState (statements),
-    MonadBuildOut,
+    BuildOutState (headExpr, statements),
     Transformation,
     applyTransformation,
     initBuildOutState,
   )
+import Optics (use)
 import SystemC qualified as SC
-import Util (iterateM)
 
 newtype GenConfig = GenConfig
   { growSteps :: Int
@@ -40,34 +40,26 @@ newtype GenConfig = GenConfig
 
 genSystemCConstant :: GenConfig -> Rand StdGen (Reducible GenerateProcess)
 genSystemCConstant cfg = do
-  (seed, transformations) <- (`evalStateT` initBuildOutState) . runWriterT $ do
-    seed <- seedExpr
-    -- We only run the growExpr for its Writer output. We can ignore the result
-    _expr <- growExpr seed
-    return seed
+  seed <- seedExpr
+  ((), transformations) <- runWriterT . (`evalStateT` initBuildOutState seed) $
+    replicateM_ cfg.growSteps $ do
+      e <- use #headExpr
+      transformation <- randomTransformationFor e
+      tell [transformation]
+      applyTransformation transformation
 
   return $ asReducible $ GenerateProcess seed transformations
-  where
-    growExpr ::
-      (MonadBuildOut m, MonadRandom m, MonadWriter [Transformation] m) =>
-      SC.Expr BuildOut ->
-      m (SC.Expr BuildOut)
-    growExpr =
-      iterateM cfg.growSteps $ \e -> do
-        transformation <- randomTransformationFor e
-        tell [transformation]
-        applyTransformation transformation e
 
 generateFromProcess :: Text -> GenerateProcess -> SC.FunctionDeclaration BuildOut
 generateFromProcess name GenerateProcess {seed, transformations} =
-  let (expr, finalState) =
-        foldM (flip applyTransformation) seed transformations
-          `runState` initBuildOutState
+  let finalState =
+        mapM_ applyTransformation transformations
+          `execState` initBuildOutState seed
    in SC.FunctionDeclaration
-        { returnType = expr.annotation,
+        { returnType = finalState.headExpr.annotation,
           name,
           args = [],
-          body = finalState.statements ++ [SC.Return () expr]
+          body = finalState.statements ++ [SC.Return () finalState.headExpr]
         }
 
 data GenerateProcess = GenerateProcess
