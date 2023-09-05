@@ -1,4 +1,5 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE LambdaCase #-}
 
 module GenSystemC
   ( GenConfig (..),
@@ -27,11 +28,12 @@ import GenSystemC.Reduce
 import GenSystemC.Transformations
   ( BuildOut,
     BuildOutState (headExpr, statements),
-    Transformation,
+    MonadBuildOut,
+    Transformation (..),
     applyTransformation,
     initBuildOutState,
   )
-import Optics (use)
+import Optics (use, (%))
 import SystemC qualified as SC
 
 newtype GenConfig = GenConfig
@@ -52,15 +54,36 @@ genSystemCConstant cfg = do
 
 generateFromProcess :: Text -> GenerateProcess -> SC.FunctionDeclaration BuildOut
 generateFromProcess name GenerateProcess {seed, transformations} =
-  let finalState =
+  let finalState = (`execState` initBuildOutState seed) $ do
         mapM_ applyTransformation transformations
-          `execState` initBuildOutState seed
+        -- This is only used here, in generateFromProcess. We don't want this to
+        -- \*not* be in the GenerateProcess, so that it is dynamically added in
+        -- the reduced experiments, depending on what the reduction has left as the final expression.
+        finalizeIfNeeded
    in SC.FunctionDeclaration
         { returnType = finalState.headExpr.annotation,
           name,
           args = [],
           body = finalState.statements ++ [SC.Return () finalState.headExpr]
         }
+  where
+    finalizeIfNeeded :: MonadBuildOut m => m ()
+    finalizeIfNeeded =
+      use (#headExpr % #annotation) >>= \case
+        SC.SCInt {} -> pure ()
+        SC.SCFixed {} -> pure ()
+        SC.SCUInt {} -> pure ()
+        SC.SCUFixed {} -> pure ()
+        SC.CInt -> pure ()
+        SC.CUInt -> pure ()
+        SC.CDouble -> pure ()
+        SC.CBool -> pure ()
+        SC.SCBV {} -> pure ()
+        SC.SCFxnumSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))
+        SC.SCIntSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))
+        SC.SCUIntSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))
+        SC.SCIntBitref -> applyTransformation (CastWithDeclaration SC.CBool)
+        SC.SCUIntBitref -> applyTransformation (CastWithDeclaration SC.CBool)
 
 data GenerateProcess = GenerateProcess
   { seed :: SC.Expr BuildOut,
