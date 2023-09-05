@@ -1,13 +1,14 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE OverloadedLists #-}
 
 module SystemC where
 
 import Data.Data (Data, Typeable)
 import Data.Kind (Constraint, Type)
+import Data.Set (Set)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import GHC.Records (HasField (getField))
@@ -30,7 +31,7 @@ import Prettyprinter
     (<+>),
   )
 import Prettyprinter.Render.Text (renderStrict)
-import Data.Set (Set)
+import Data.Maybe (isJust)
 
 type AnnConstraint (c :: Type -> Constraint) ann =
   ( c (AnnExpr ann),
@@ -113,17 +114,20 @@ instance (annType ~ AnnStatement ann) => HasField "annotation" (Statement ann) a
   getField (Declaration ann _ _ _) = ann
   getField (Block ann _) = ann
 
--- | SystemC types. Constructor parameters correspond to template arguments
+-- | SystemC types. Parameters include template parameters as well as extra
+-- information that is useful to track, but will not be present in the source
+-- (e.g. width for subref types)
 data SCType
   = SCInt Int
   | SCUInt Int
   | SCFixed {w :: Int, i :: Int}
   | SCUFixed {w :: Int, i :: Int}
-  | SCFxnumSubref
-  | SCIntSubref
-  | SCUIntSubref
+  | SCFxnumSubref {width :: Int}
+  | SCIntSubref {width :: Int}
+  | SCUIntSubref {width :: Int}
   | SCIntBitref
   | SCUIntBitref
+  | SCBV {w :: Int}
   | CUInt
   | CInt
   | CDouble
@@ -139,9 +143,11 @@ implicitCastTargetsOf t@SCUIntSubref {} = [t, CUInt]
 -- FIXME: sc_fixed -> int and sc_ufixed -> uint only exist as implicit casts in hector
 implicitCastTargetsOf t@SCFixed {} = [t, CInt, CDouble]
 implicitCastTargetsOf t@SCUFixed {} = [t, CUInt, CDouble]
-implicitCastTargetsOf t@SCFxnumSubref = [t] -- TODO: Add bv_base
+-- FIXME: Subrefs can be implicitly cast to sc_bv_base (which has no explicit width)
+implicitCastTargetsOf t@SCFxnumSubref {} = [t] -- TODO: Add bv_base
 implicitCastTargetsOf t@SCIntBitref = [t, CBool]
 implicitCastTargetsOf t@SCUIntBitref = [t, CBool]
+implicitCastTargetsOf t@SCBV{} = [t]
 -- TODO: Can we say that CUInt and CInt can be implicitly cast to each other?
 implicitCastTargetsOf t@CUInt = [t]
 implicitCastTargetsOf t@CInt = [t]
@@ -154,9 +160,10 @@ isSigned SCFixed {} = True
 isSigned CInt = True
 -- TODO: SCSubref includes both signed and unsigned types. Add the "real" subref
 -- types
-isSigned SCFxnumSubref = False
-isSigned SCIntSubref = False
-isSigned SCUIntSubref = False
+isSigned SCFxnumSubref {} = False
+isSigned SCIntSubref {} = False
+isSigned SCUIntSubref {} = False
+isSigned SCBV {} = False
 isSigned SCIntBitref = False
 isSigned SCUIntBitref = False
 isSigned SCUInt {} = False
@@ -168,50 +175,55 @@ isSigned CBool = False
 isIntegral :: SCType -> Bool
 isIntegral SCInt {} = True
 isIntegral CInt = True
-isIntegral SCIntSubref = True
-isIntegral SCUIntSubref = True
+isIntegral SCIntSubref {} = True
+isIntegral SCUIntSubref {} = True
+isIntegral SCBV {} = True
 isIntegral SCIntBitref = True
 isIntegral SCUIntBitref = True
 isIntegral SCUInt {} = True
 isIntegral CUInt = True
 isIntegral SCFixed {} = False
 isIntegral SCUFixed {} = False
-isIntegral SCFxnumSubref = False
+isIntegral SCFxnumSubref {} = False
 isIntegral CDouble = False
 isIntegral CBool = True
 
 -- | `Just <subref type>` if the type supports the range operator, or `Nothing`
--- if it does not
-supportsRange :: SCType -> Maybe SCType
-supportsRange SCInt {} = Just SCIntSubref
-supportsRange SCUInt {} = Just SCUIntSubref
-supportsRange SCFixed {} = Just SCFxnumSubref
-supportsRange SCUFixed {} = Just SCFxnumSubref
-supportsRange SCFxnumSubref = Nothing
-supportsRange SCIntSubref = Nothing
-supportsRange SCUIntSubref = Nothing
-supportsRange SCIntBitref = Nothing
-supportsRange SCUIntBitref = Nothing
-supportsRange CInt = Nothing
-supportsRange CUInt = Nothing
-supportsRange CDouble = Nothing
-supportsRange CBool = Nothing
+-- if it does not. Range bounds are needed to keep track of the width on the
+-- result type. (See `SCType`)
+rangeType :: SCType -> Int -> Int -> Maybe SCType
+rangeType _ hi lo | hi < lo = Nothing
+rangeType SCInt {} hi lo = Just (SCIntSubref (hi - lo + 1))
+rangeType SCUInt {} hi lo = Just (SCUIntSubref (hi - lo + 1))
+rangeType SCFixed {} hi lo = Just (SCFxnumSubref (hi - lo + 1))
+rangeType SCUFixed {} hi lo = Just (SCFxnumSubref (hi - lo + 1))
+rangeType SCFxnumSubref {} _ _ = Nothing
+rangeType SCIntSubref {} _ _ = Nothing
+rangeType SCUIntSubref {} _ _ = Nothing
+rangeType SCIntBitref _ _ = Nothing
+rangeType SCUIntBitref _ _ = Nothing
+rangeType CInt _ _ = Nothing
+rangeType CUInt _ _ = Nothing
+rangeType CDouble _ _ = Nothing
+rangeType CBool _ _ = Nothing
+
+supportsRange :: SCType -> Bool
+supportsRange t = isJust (rangeType t 0 0)
 
 supportsToString :: SCType -> Bool
 supportsToString SCInt {} = True
 supportsToString SCUInt {} = True
 supportsToString SCFixed {} = True
 supportsToString SCUFixed {} = True
-supportsToString SCFxnumSubref = True
-supportsToString SCIntSubref = True
-supportsToString SCUIntSubref = True
+supportsToString SCFxnumSubref {} = True
+supportsToString SCIntSubref {} = True
+supportsToString SCUIntSubref {} = True
 supportsToString SCIntBitref = False
 supportsToString SCUIntBitref = False
 supportsToString CInt = False
 supportsToString CUInt = False
 supportsToString CDouble = False
 supportsToString CBool = False
-
 
 -- | `Just <subref type>` if the type supports the bitref operator, or `Nothing`
 -- if it does not
@@ -221,9 +233,9 @@ supportsBitref SCUInt {} = Just SCUIntBitref
 -- TODO: Fxnum bitrefs
 supportsBitref SCFixed {} = Nothing
 supportsBitref SCUFixed {} = Nothing
-supportsBitref SCFxnumSubref = Nothing
-supportsBitref SCIntSubref = Nothing
-supportsBitref SCUIntSubref = Nothing
+supportsBitref SCFxnumSubref {} = Nothing
+supportsBitref SCIntSubref {} = Nothing
+supportsBitref SCUIntSubref {} = Nothing
 supportsBitref SCIntBitref = Nothing
 supportsBitref SCUIntBitref = Nothing
 supportsBitref CInt = Nothing
@@ -233,20 +245,20 @@ supportsBitref CBool = Nothing
 
 -- | Give the bitwidth of the type where that exists (i.e. SystemC types with a
 -- width template parameters)
-specifiedWidth :: SCType -> Maybe Int
-specifiedWidth (SCInt n) = Just n
-specifiedWidth SCFixed {w} = Just w
-specifiedWidth (SCUInt n) = Just n
-specifiedWidth SCUFixed {w} = Just w
-specifiedWidth SCFxnumSubref = Nothing
-specifiedWidth SCIntSubref = Nothing
-specifiedWidth SCUIntSubref = Nothing
-specifiedWidth SCIntBitref = Nothing
-specifiedWidth SCUIntBitref = Nothing
-specifiedWidth CInt = Nothing
-specifiedWidth CUInt = Nothing
-specifiedWidth CDouble = Nothing
-specifiedWidth CBool = Nothing
+knownWidth :: SCType -> Maybe Int
+knownWidth (SCInt n) = Just n
+knownWidth SCFixed {w} = Just w
+knownWidth (SCUInt n) = Just n
+knownWidth SCUFixed {w} = Just w
+knownWidth SCFxnumSubref {width} = Just width
+knownWidth SCIntSubref {width} = Just width
+knownWidth SCUIntSubref {width} = Just width
+knownWidth SCIntBitref = Nothing
+knownWidth SCUIntBitref = Nothing
+knownWidth CInt = Nothing
+knownWidth CUInt = Nothing
+knownWidth CDouble = Nothing
+knownWidth CBool = Nothing
 
 data FunctionDeclaration ann = FunctionDeclaration
   { returnType :: SCType,
@@ -341,9 +353,9 @@ instance Pretty SCType where
   pretty (SCUInt size) = "sc_dt::sc_uint<" <> pretty size <> ">"
   pretty (SCFixed w i) = "sc_dt::sc_fixed<" <> pretty w <> "," <> pretty i <> ">"
   pretty (SCUFixed w i) = "sc_dt::sc_ufixed<" <> pretty w <> "," <> pretty i <> ">"
-  pretty SCFxnumSubref = "sc_dt::sc_fxnum_subref"
-  pretty SCIntSubref = "sc_dt::sc_int_subref"
-  pretty SCUIntSubref = "sc_dt::sc_uint_subref"
+  pretty SCFxnumSubref {} = "sc_dt::sc_fxnum_subref"
+  pretty SCIntSubref {} = "sc_dt::sc_int_subref"
+  pretty SCUIntSubref {} = "sc_dt::sc_uint_subref"
   pretty SCIntBitref = "sc_dt::sc_int_bitref"
   pretty SCUIntBitref = "sc_dt::sc_uint_bitref"
   pretty CInt = "int"

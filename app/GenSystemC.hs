@@ -38,14 +38,6 @@ newtype GenConfig = GenConfig
   { growSteps :: Int
   }
 
--- | Some systemc types shouldn't be used explicitly at function boundaries.
-mapToReturnType :: SC.SCType -> SC.SCType
-mapToReturnType SC.SCIntBitref = SC.CBool
-mapToReturnType SC.SCUIntBitref = SC.CBool
-mapToReturnType SC.SCIntSubref = SC.CInt
-mapToReturnType SC.SCUIntSubref = SC.CUInt
-mapToReturnType t = t
-
 genSystemCConstant :: GenConfig -> Rand StdGen (Reducible GenerateProcess)
 genSystemCConstant cfg = do
   (seed, transformations) <- (`evalStateT` initBuildOutState) . runWriterT $ do
@@ -72,7 +64,7 @@ generateFromProcess name GenerateProcess {seed, transformations} =
         foldM (flip applyTransformation) seed transformations
           `runState` initBuildOutState
    in SC.FunctionDeclaration
-        { returnType = mapToReturnType expr.annotation,
+        { returnType = expr.annotation,
           name,
           args = [],
           body = finalState.statements ++ [SC.Return () expr]

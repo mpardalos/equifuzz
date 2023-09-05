@@ -6,7 +6,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module GenSystemC.GenTransformations (seedExpr, randomTransformationFor, isFinalExpr, randomFinalTransformation) where
+module GenSystemC.GenTransformations (seedExpr, randomTransformationFor, randomFinalTransformation) where
 
 import Control.Monad (guard, join)
 import Control.Monad.Random.Strict (MonadRandom, getRandomR, uniform, weighted)
@@ -35,8 +35,8 @@ randomTransformationFor e =
 
     range :: Maybe (m Transformation)
     range = do
-      guard (isJust $ SC.supportsRange e.annotation)
-      exprWidth <- SC.specifiedWidth e.annotation
+      guard (SC.supportsRange e.annotation)
+      exprWidth <- SC.knownWidth e.annotation
       return $ do
         hi <- getRandomR (0, exprWidth - 1)
         lo <- getRandomR (0, hi)
@@ -72,7 +72,7 @@ randomTransformationFor e =
     bitSelect :: Maybe (m Transformation)
     bitSelect = do
       guard (isJust $ SC.supportsBitref e.annotation)
-      width <- SC.specifiedWidth e.annotation
+      width <- SC.knownWidth e.annotation
       return (BitSelect <$> getRandomR (0, width - 1))
 
     someConstant :: SC.SCType -> m (SC.Expr BuildOut)
@@ -85,23 +85,6 @@ seedExpr = do
 
 randomFinalTransformation :: MonadRandom m => SC.Expr BuildOut -> m Transformation
 randomFinalTransformation e = CastWithDeclaration <$> finalCastType e.annotation
-
-isFinalExpr :: SC.Expr BuildOut -> Bool
-isFinalExpr e = case e.annotation of
-  SC.SCInt {} -> True
-  SC.SCFixed {} -> True
-  SC.SCUInt {} -> True
-  SC.SCUFixed {} -> True
-  SC.CInt -> False
-  SC.CUInt -> False
-  SC.CDouble -> False
-  SC.CBool -> False
-  SC.SCFxnumSubref -> False
-  SC.SCIntSubref -> False
-  SC.SCUIntSubref -> False
-  SC.SCIntBitref -> False
-  SC.SCUIntBitref -> False
-
 
 finalCastType :: MonadRandom m => SC.SCType -> m SC.SCType
 finalCastType =

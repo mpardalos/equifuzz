@@ -123,9 +123,9 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         SC.SCUInt n -> Right n
         SC.SCFixed w _ -> Right w
         SC.SCUFixed w _ -> Right w
-        SC.SCFxnumSubref -> Left [i|#{name}().length()|]
-        SC.SCIntSubref -> Left [i|#{name}().length()|]
-        SC.SCUIntSubref -> Left [i|#{name}().length()|]
+        SC.SCFxnumSubref {} -> Left [i|#{name}().length()|]
+        SC.SCIntSubref {} -> Left [i|#{name}().length()|]
+        SC.SCUIntSubref {} -> Left [i|#{name}().length()|]
         SC.SCIntBitref -> Right 1
         SC.SCUIntBitref -> Right 1
         SC.CUInt -> Right 32

@@ -28,7 +28,7 @@ applyTransformation (CastWithDeclaration varType) e = do
   #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
   return (SC.Variable varType varName)
 applyTransformation (Range hi lo) e
-  | Just subrefType <- SC.supportsRange e.annotation =
+  | Just subrefType <- SC.rangeType e.annotation hi lo =
       return (SC.Range subrefType e hi lo)
   | otherwise =
       return e
