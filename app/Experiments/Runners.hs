@@ -51,10 +51,10 @@ runVCFormal :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentR
 runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = Sh.shelly . Sh.silently $ do
   let sshString = sshOpts.username <> "@" <> sshOpts.host
   let ssh :: Text = case sshOpts.password of
-        Nothing -> "ssh -o PasswordAuthentication=no,StrictHostKeychecking=no"
+        Nothing -> "ssh -o PasswordAuthentication=no -o StrictHostKeychecking=no"
         Just pass -> [i|sshpass -p #{pass} ssh -o StrictHostKeychecking=no|]
   let scp :: Text = case sshOpts.password of
-        Nothing -> "scp -o PasswordAuthentication=no,StrictHostKeychecking=no"
+        Nothing -> "scp -o PasswordAuthentication=no -o StrictHostKeychecking=no"
         Just pass -> [i|sshpass -p #{pass} scp -o StrictHostKeychecking=no|]
 
   localExperimentDir <- T.strip <$> Sh.run "mktemp" ["-d"]
