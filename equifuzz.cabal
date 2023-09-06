@@ -1,6 +1,6 @@
 cabal-version:      3.4
 name:               equifuzz
-version:            0.1.0.0
+version:            0.1.1
 -- synopsis:
 -- description:
 license:            GPL-3.0-only
