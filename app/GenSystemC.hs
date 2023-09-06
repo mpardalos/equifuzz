@@ -78,7 +78,6 @@ generateFromProcess name GenerateProcess {seed, transformations} =
         SC.CUInt -> pure ()
         SC.CDouble -> pure ()
         SC.CBool -> pure ()
-        SC.SCBV {} -> pure ()
         SC.SCFxnumSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))
         SC.SCIntSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))
         SC.SCUIntSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))

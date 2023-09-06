@@ -127,7 +127,6 @@ data SCType
   | SCUIntSubref {width :: Int}
   | SCIntBitref
   | SCUIntBitref
-  | SCBV {w :: Int}
   | CUInt
   | CInt
   | CDouble
@@ -147,46 +146,11 @@ implicitCastTargetsOf t@SCUFixed {} = [t, CUInt, CDouble]
 implicitCastTargetsOf t@SCFxnumSubref {} = [t] -- TODO: Add bv_base
 implicitCastTargetsOf t@SCIntBitref = [t, CBool]
 implicitCastTargetsOf t@SCUIntBitref = [t, CBool]
-implicitCastTargetsOf t@SCBV{} = [t]
 -- TODO: Can we say that CUInt and CInt can be implicitly cast to each other?
 implicitCastTargetsOf t@CUInt = [t]
 implicitCastTargetsOf t@CInt = [t]
 implicitCastTargetsOf t@CDouble = [t]
 implicitCastTargetsOf t@CBool = [t]
-
-isSigned :: SCType -> Bool
-isSigned SCInt {} = True
-isSigned SCFixed {} = True
-isSigned CInt = True
--- TODO: SCSubref includes both signed and unsigned types. Add the "real" subref
--- types
-isSigned SCFxnumSubref {} = False
-isSigned SCIntSubref {} = False
-isSigned SCUIntSubref {} = False
-isSigned SCBV {} = False
-isSigned SCIntBitref = False
-isSigned SCUIntBitref = False
-isSigned SCUInt {} = False
-isSigned SCUFixed {} = False
-isSigned CUInt = False
-isSigned CDouble = True
-isSigned CBool = False
-
-isIntegral :: SCType -> Bool
-isIntegral SCInt {} = True
-isIntegral CInt = True
-isIntegral SCIntSubref {} = True
-isIntegral SCUIntSubref {} = True
-isIntegral SCBV {} = True
-isIntegral SCIntBitref = True
-isIntegral SCUIntBitref = True
-isIntegral SCUInt {} = True
-isIntegral CUInt = True
-isIntegral SCFixed {} = False
-isIntegral SCUFixed {} = False
-isIntegral SCFxnumSubref {} = False
-isIntegral CDouble = False
-isIntegral CBool = True
 
 -- | `Just <subref type>` if the type supports the range operator, or `Nothing`
 -- if it does not. Range bounds are needed to keep track of the width on the
@@ -209,21 +173,6 @@ rangeType CBool _ _ = Nothing
 
 supportsRange :: SCType -> Bool
 supportsRange t = isJust (rangeType t 0 0)
-
-supportsToString :: SCType -> Bool
-supportsToString SCInt {} = True
-supportsToString SCUInt {} = True
-supportsToString SCFixed {} = True
-supportsToString SCUFixed {} = True
-supportsToString SCFxnumSubref {} = True
-supportsToString SCIntSubref {} = True
-supportsToString SCUIntSubref {} = True
-supportsToString SCIntBitref = False
-supportsToString SCUIntBitref = False
-supportsToString CInt = False
-supportsToString CUInt = False
-supportsToString CDouble = False
-supportsToString CBool = False
 
 -- | `Just <subref type>` if the type supports the bitref operator, or `Nothing`
 -- if it does not
