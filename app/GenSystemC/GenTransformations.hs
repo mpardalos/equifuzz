@@ -35,7 +35,7 @@ randomTransformationFor e =
 
     range :: Maybe (m Transformation)
     range = do
-      guard (SC.supportsRange e.annotation)
+      guard (e.annotation `SC.supports` SC.PartSelect)
       exprWidth <- SC.knownWidth e.annotation
       return $ do
         hi <- getRandomR (0, exprWidth - 1)
@@ -71,7 +71,7 @@ randomTransformationFor e =
 
     bitSelect :: Maybe (m Transformation)
     bitSelect = do
-      guard (isJust $ SC.supportsBitref e.annotation)
+      guard (e.annotation `SC.supports` SC.BitSelect)
       width <- SC.knownWidth e.annotation
       return (BitSelect <$> getRandomR (0, width - 1))
 

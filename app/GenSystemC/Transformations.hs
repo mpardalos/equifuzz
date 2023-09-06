@@ -43,7 +43,7 @@ applyTransformation (UseAsCondition tExpr fExpr) = do
   #headExpr .= SC.Conditional tExpr.annotation e tExpr fExpr
 applyTransformation (BitSelect idx) = do
   e <- use #headExpr
-  case SC.supportsBitref e.annotation of
+  case SC.bitrefType e.annotation of
     Just bitrefType ->
       #headExpr .= SC.Bitref bitrefType e idx
     Nothing ->

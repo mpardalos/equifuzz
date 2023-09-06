@@ -9,6 +9,7 @@ module SystemC where
 import Data.Data (Data, Typeable)
 import Data.Kind (Constraint, Type)
 import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import GHC.Records (HasField (getField))
@@ -31,7 +32,6 @@ import Prettyprinter
     (<+>),
   )
 import Prettyprinter.Render.Text (renderStrict)
-import Data.Maybe (isJust)
 
 type AnnConstraint (c :: Type -> Constraint) ann =
   ( c (AnnExpr ann),
@@ -133,6 +133,74 @@ data SCType
   | CBool
   deriving (Eq, Show, Ord, Generic, Data)
 
+data SCOperation
+  = BitSelect
+  | PartSelect
+  | AndReduce
+  | NandReduce
+  | OrReduce
+  | NorReduce
+  | XorReduce
+  | XNorReduce
+  deriving (Eq, Show, Ord, Generic, Data)
+
+supportedOperations :: SCType -> Set SCOperation
+supportedOperations SCInt {} =
+  [ BitSelect,
+    PartSelect,
+    AndReduce,
+    NandReduce,
+    OrReduce,
+    NorReduce,
+    XorReduce,
+    XNorReduce
+  ]
+supportedOperations SCUInt {} =
+  [ BitSelect,
+    PartSelect,
+    AndReduce,
+    NandReduce,
+    OrReduce,
+    NorReduce,
+    XorReduce,
+    XNorReduce
+  ]
+supportedOperations SCIntSubref {} =
+  [ AndReduce,
+    NandReduce,
+    OrReduce,
+    NorReduce,
+    XorReduce,
+    XNorReduce
+  ]
+supportedOperations SCUIntSubref {} =
+  [ AndReduce,
+    NandReduce,
+    OrReduce,
+    NorReduce,
+    XorReduce,
+    XNorReduce
+  ]
+supportedOperations SCFixed {} = []
+supportedOperations SCUFixed {} = []
+supportedOperations SCFxnumSubref {} =
+  [ AndReduce,
+    NandReduce,
+    OrReduce,
+    NorReduce,
+    XorReduce,
+    XNorReduce
+  ]
+supportedOperations SCIntBitref = []
+supportedOperations SCUIntBitref = []
+supportedOperations CUInt = []
+supportedOperations CInt = []
+supportedOperations CDouble = []
+supportedOperations CBool = []
+
+supports :: SCType -> SCOperation -> Bool
+t `supports` op = op `Set.member` supportedOperations t
+
 -- | The list of types that this type can be *implicitly* cast to, including itself
 implicitCastTargetsOf :: SCType -> Set SCType
 implicitCastTargetsOf t@SCInt {} = [t, CInt]
@@ -144,6 +212,7 @@ implicitCastTargetsOf t@SCFixed {} = [t, CInt, CDouble]
 implicitCastTargetsOf t@SCUFixed {} = [t, CUInt, CDouble]
 -- FIXME: Subrefs can be implicitly cast to sc_bv_base (which has no explicit width)
 implicitCastTargetsOf t@SCFxnumSubref {} = [t] -- TODO: Add bv_base
+-- FIXME: This is a lie, bitrefs actually implement `operator uint64()`
 implicitCastTargetsOf t@SCIntBitref = [t, CBool]
 implicitCastTargetsOf t@SCUIntBitref = [t, CBool]
 -- TODO: Can we say that CUInt and CInt can be implicitly cast to each other?
@@ -171,26 +240,23 @@ rangeType CUInt _ _ = Nothing
 rangeType CDouble _ _ = Nothing
 rangeType CBool _ _ = Nothing
 
-supportsRange :: SCType -> Bool
-supportsRange t = isJust (rangeType t 0 0)
-
 -- | `Just <subref type>` if the type supports the bitref operator, or `Nothing`
 -- if it does not
-supportsBitref :: SCType -> Maybe SCType
-supportsBitref SCInt {} = Just SCIntBitref
-supportsBitref SCUInt {} = Just SCUIntBitref
+bitrefType :: SCType -> Maybe SCType
+bitrefType SCInt {} = Just SCIntBitref
+bitrefType SCUInt {} = Just SCUIntBitref
 -- TODO: Fxnum bitrefs
-supportsBitref SCFixed {} = Nothing
-supportsBitref SCUFixed {} = Nothing
-supportsBitref SCFxnumSubref {} = Nothing
-supportsBitref SCIntSubref {} = Nothing
-supportsBitref SCUIntSubref {} = Nothing
-supportsBitref SCIntBitref = Nothing
-supportsBitref SCUIntBitref = Nothing
-supportsBitref CInt = Nothing
-supportsBitref CUInt = Nothing
-supportsBitref CDouble = Nothing
-supportsBitref CBool = Nothing
+bitrefType SCFixed {} = Nothing
+bitrefType SCUFixed {} = Nothing
+bitrefType SCFxnumSubref {} = Nothing
+bitrefType SCIntSubref {} = Nothing
+bitrefType SCUIntSubref {} = Nothing
+bitrefType SCIntBitref = Nothing
+bitrefType SCUIntBitref = Nothing
+bitrefType CInt = Nothing
+bitrefType CUInt = Nothing
+bitrefType CDouble = Nothing
+bitrefType CBool = Nothing
 
 -- | Give the bitwidth of the type where that exists (i.e. SystemC types with a
 -- width template parameters)
