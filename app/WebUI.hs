@@ -14,7 +14,7 @@ module WebUI (runWebUI) where
 import Control.Applicative (asum)
 import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar)
 import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTChan, takeTMVar, tryPutTMVar)
-import Control.Monad (forM_, forever, void)
+import Control.Monad (forM_, forever, void, when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (execStateT)
 import Data.Binary.Builder qualified as Binary
@@ -22,8 +22,10 @@ import Data.ByteString.Lazy qualified as LB
 import Data.ByteString.Lazy.Char8 qualified as LB
 import Data.Coerce (coerce)
 import Data.FileEmbed (embedFile, makeRelativeToProject)
+import Data.List (find)
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Maybe (isJust)
 import Data.String.Interpolate (i)
 import Data.Text.Lazy qualified as LT
 import Data.UUID (UUID)
@@ -40,7 +42,7 @@ import GHC.Generics (Generic)
 import Meta
 import Network.HTTP.Types (status200)
 import Network.Wai (StreamingBody)
-import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (^.), (^?), _Just)
+import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
@@ -48,8 +50,8 @@ import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
-import Util (foreverThread, whenJust)
-import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, raw, scotty, setHeader, status, stream)
+import Util (foreverThread, mwhen, whenJust)
+import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, params, raw, scotty, setHeader, status, stream)
 
 data ExperimentSequenceInfo = ExperimentSequenceInfo
   { sequenceId :: ExperimentSequenceId,
@@ -69,7 +71,8 @@ data WebUIState = WebUIState
     uninterestingExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo,
     experimentsSem :: Semaphore,
     totalRunCount :: Int,
-    totalRunCountSem :: Semaphore
+    totalRunCountSem :: Semaphore,
+    liveUpdates :: Bool
   }
   deriving (Generic)
 
@@ -84,7 +87,8 @@ newWebUIState = do
         uninterestingExperiments = Map.empty,
         experimentsSem,
         totalRunCount = 0,
-        totalRunCountSem
+        totalRunCountSem,
+        liveUpdates = True
       }
 
 at2 :: ExperimentSequenceId -> ExperimentId -> Lens' (Map ExperimentSequenceId ExperimentSequenceInfo) (Maybe ExperimentInfo)
@@ -155,8 +159,12 @@ scottyServer stateVar = scotty 8888 $ do
       pure [EventStreamEvent {event = "experiment-list", data_ = "update"}]
 
   get "/experiments" $ do
-    state <- liftIO (readMVar stateVar)
+    toggleUpdates <- isJust . find ((== "toggle-updates") . fst) <$> params
+    when toggleUpdates $
+      liftIO $
+        modifyMVar_ stateVar (pure . (#liveUpdates %~ not))
 
+    state <- liftIO (readMVar stateVar)
     blazeHtml (experimentList state)
 
   get "/" $ do
@@ -231,13 +239,26 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
 
 experimentList :: WebUIState -> Html
 experimentList state = H.div
-  H.! A.id "experiment-list"
-  H.! (hxTrigger "sse:experiment-list" <> hxGet "/experiments" <> hxSwap "outerHTML")
+  H.! A.id "experiment-list-area"
+  H.! mwhen
+    state.liveUpdates
+    (hxTrigger "sse:experiment-list" <> hxGet "/experiments" <> hxSwap "outerHTML")
   $ do
-    experimentSubList "Running" state.runningExperiments
-    experimentSubList "Interesting" state.interestingExperiments
-    experimentSubList "Uninteresting" state.uninterestingExperiments
+    toggleUpdatesButton
+    H.div H.! A.id "experiment-list" $ do
+      experimentSubList "Running" state.runningExperiments
+      experimentSubList "Interesting" state.interestingExperiments
+      experimentSubList "Uninteresting" state.uninterestingExperiments
   where
+    toggleUpdatesButton =
+      H.button
+        H.! hxGet "/experiments?toggle-updates=1"
+        H.! hxTarget "closest #experiment-list-area"
+        H.! hxSwap "outerHTML"
+        $ if state.liveUpdates
+          then "Updates: ON"
+          else "Updates: OFF"
+
     experimentSubList title experiments =
       infoBoxWithSideTitle
         title

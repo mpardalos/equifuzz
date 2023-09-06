@@ -58,3 +58,7 @@ forUntilM_ action =
           else action acc
     )
     False
+
+mwhen :: Monoid a => Bool -> a -> a
+mwhen True a = a
+mwhen False _ = mempty
