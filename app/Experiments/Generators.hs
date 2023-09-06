@@ -115,7 +115,7 @@ systemCHectorWrapper wrapperName SC.FunctionDeclaration {returnType, args, name}
 -- (decimal) output makes the representation of the output non-obvious. E.g. -1
 -- as an sc_uint<8> or a sc_fixed<10,3> are represented completely differently.
 -- With the default SystemC output, we would get "-1" in both cases, but here we
--- (correctly) get "8'hff" and "10'h380"
+-- (correctly) get "8'b11111111" and "10'b1110000000"
 simulateSystemCConstant :: SC.Annotation ann => SC.FunctionDeclaration ann -> IO Text
 simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shelly . Sh.silently $ do
   let widthExprOrWidth :: Either Text Int = case returnType of
@@ -138,15 +138,31 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         Left e -> [i|std::cout << #{e} << std::endl;|]
         Right _ -> "std::cout << 0 << std::endl;"
 
-  let showValue :: Text =
-        if SC.supportsToString returnType
-          then [i|std::cout << #{name}().to_string(sc_dt::SC_HEX, false) << std::endl;|]
-          else [i|std::cout << std::hex << #{name}() << std::endl;|]
+  let scToString :: Text = [i|std::cout << #{name}().to_string(sc_dt::SC_BIN, false) << std::endl;|]
+  let boolToString :: Text = [i| std::cout << (#{name}() ? "1" : "0") << std::endl|]
+  let bitsetToString :: Text = [i| std::cout << std::bitset<32>(#{name}()) << std::endl|]
+
+  let showValue :: Text = case returnType of
+        SC.SCInt {} -> scToString
+        SC.SCUInt {} -> scToString
+        SC.SCFixed {} -> scToString
+        SC.SCUFixed {} -> scToString
+        SC.SCBV {} -> scToString
+        SC.SCFxnumSubref {} -> scToString
+        SC.SCIntSubref {} -> scToString
+        SC.SCUIntSubref {} -> scToString
+        SC.SCIntBitref -> boolToString
+        SC.SCUIntBitref -> boolToString
+        SC.CUInt -> bitsetToString
+        SC.CInt -> bitsetToString
+        SC.CDouble -> bitsetToString
+        SC.CBool -> boolToString
 
   let fullSource =
         [__i|
             #{SC.includeHeader}
             \#include <iostream>
+            \#include <bitset>
 
             #{SC.genSource decl}
 
@@ -171,4 +187,4 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
   let width = fromRight reportedWidth (T.pack . show <$> widthExprOrWidth)
   let value = T.replace "." "" reportedValue
 
-  return (width <> "'h" <> value)
+  return (width <> "'b" <> value)
