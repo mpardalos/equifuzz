@@ -281,13 +281,16 @@ experimentList state = H.div
     state.liveUpdates
     (hxTrigger "sse:experiment-list" <> hxGet "/experiments" <> hxSwap "outerHTML")
   $ do
-    toggleUpdatesButton
-    pruneUninterestingButton
     H.div H.! A.id "experiment-list" $ do
       experimentSubList "Running" state.runningExperiments
       experimentSubList "Interesting" state.interestingExperiments
       experimentSubList "Uninteresting" state.uninterestingExperiments
-    runCount
+    table
+      [ ["Total runs", H.toHtml (show state.totalRunCount)],
+        ["Running time", H.toHtml (diffTimeHMSFormat state.runTime)],
+        ["Live Updates", toggleUpdatesButton]
+      ]
+    pruneUninterestingButton
   where
     toggleUpdatesButton =
       H.button
@@ -295,8 +298,8 @@ experimentList state = H.div
         H.! hxTarget "closest #experiment-list-area"
         H.! hxSwap "outerHTML"
         $ if state.liveUpdates
-          then "Updates: ON"
-          else "Updates: OFF"
+          then "ON"
+          else "OFF"
 
     pruneUninterestingButton =
       H.button
@@ -304,12 +307,6 @@ experimentList state = H.div
         H.! hxTarget "closest #experiment-list-area"
         H.! hxSwap "outerHTML"
         $ "Prune uninteresting"
-
-    runCount =
-      table
-        [ ["Total runs", H.toHtml (show state.totalRunCount)],
-          ["Running time", H.toHtml (diffTimeHMSFormat state.runTime)]
-        ]
 
     experimentSubList title experiments =
       infoBoxWithSideTitle
