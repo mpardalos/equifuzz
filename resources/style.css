@@ -127,6 +127,8 @@ main > * {
     padding-left: 10px;
     padding-right: 10px;
     border-bottom: var(--border);
+    display: flex;
+    justify-content: space-between;
 }
 
 .info-box-content {
