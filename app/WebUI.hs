@@ -17,12 +17,13 @@ import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar)
 import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTChan, takeTMVar, tryPutTMVar)
 import Control.Monad (forM_, forever, void, when)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State (execStateT)
+import Control.Monad.State (execState, execStateT)
 import Data.Binary.Builder qualified as Binary
 import Data.ByteString.Lazy qualified as LB
 import Data.ByteString.Lazy.Char8 qualified as LB
 import Data.Coerce (coerce)
 import Data.FileEmbed (embedFile, makeRelativeToProject)
+import Data.Function ((&))
 import Data.List (find, sort)
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -51,7 +52,7 @@ import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
-import Util (foreverThread, mwhen, whenJust)
+import Util (foreverThread, modifyMVarPure_, mwhen, whenJust, whenM)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, params, raw, scotty, setHeader, status, stream)
 
 data ExperimentSequenceInfo = ExperimentSequenceInfo
@@ -160,10 +161,11 @@ scottyServer stateVar = scotty 8888 $ do
       pure [EventStreamEvent {event = "experiment-list", data_ = "update"}]
 
   get "/experiments" $ do
-    toggleUpdates <- isJust . find ((== "toggle-updates") . fst) <$> params
-    when toggleUpdates $
-      liftIO $
-        modifyMVar_ stateVar (pure . (#liveUpdates %~ not))
+    whenM (paramExists "toggle-updates") $
+      liftIO (modifyMVarPure_ stateVar toggleLiveUpdates)
+
+    whenM (paramExists "prune-uninteresting") $
+      liftIO (modifyMVarPure_ stateVar pruneUninterestingSequences)
 
     state <- liftIO (readMVar stateVar)
     blazeHtml (experimentList state)
@@ -171,6 +173,22 @@ scottyServer stateVar = scotty 8888 $ do
   get "/" $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (indexPage state)
+
+toggleLiveUpdates :: WebUIState -> WebUIState
+toggleLiveUpdates = #liveUpdates %~ not
+
+pruneUninterestingSequences :: WebUIState -> WebUIState
+pruneUninterestingSequences state =
+  state
+    & #uninterestingExperiments
+      %~ Map.filter
+        ( \sequenceInfo ->
+            sequenceInfo.sequenceId `Map.member` state.runningExperiments
+              || sequenceInfo.sequenceId `Map.member` state.interestingExperiments
+        )
+
+paramExists :: LT.Text -> ActionM Bool
+paramExists p = isJust . find ((== p) . fst) <$> params
 
 runWebUI :: TChan ExperimentProgress -> IO ()
 runWebUI progressChan = do
@@ -246,6 +264,7 @@ experimentList state = H.div
     (hxTrigger "sse:experiment-list" <> hxGet "/experiments" <> hxSwap "outerHTML")
   $ do
     toggleUpdatesButton
+    pruneUninterestingButton
     H.div H.! A.id "experiment-list" $ do
       experimentSubList "Running" state.runningExperiments
       experimentSubList "Interesting" state.interestingExperiments
@@ -259,6 +278,13 @@ experimentList state = H.div
         $ if state.liveUpdates
           then "Updates: ON"
           else "Updates: OFF"
+
+    pruneUninterestingButton =
+      H.button
+        H.! hxGet "/experiments?prune-uninteresting=1"
+        H.! hxTarget "closest #experiment-list-area"
+        H.! hxSwap "outerHTML"
+        $ "Prune uninteresting"
 
     experimentSubList title experiments =
       infoBoxWithSideTitle

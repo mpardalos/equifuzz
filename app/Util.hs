@@ -1,6 +1,7 @@
 module Util where
 
-import Control.Concurrent (forkFinally)
+import Control.Concurrent (forkFinally, modifyMVar_, MVar)
+import Control.Monad (when)
 import Control.Monad.Random (foldM_, forever)
 import Data.Time (getZonedTime, zonedTimeToLocalTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
@@ -62,3 +63,11 @@ forUntilM_ action =
 mwhen :: Monoid a => Bool -> a -> a
 mwhen True a = a
 mwhen False _ = mempty
+
+whenM :: Monad m => m Bool -> m () -> m ()
+whenM cond action = do
+  v <- cond
+  when v action
+
+modifyMVarPure_ :: MVar a -> (a -> a) -> IO ()
+modifyMVarPure_ var f = modifyMVar_ var (pure . f)
