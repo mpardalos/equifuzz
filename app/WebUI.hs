@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -22,7 +23,7 @@ import Data.ByteString.Lazy qualified as LB
 import Data.ByteString.Lazy.Char8 qualified as LB
 import Data.Coerce (coerce)
 import Data.FileEmbed (embedFile, makeRelativeToProject)
-import Data.List (find)
+import Data.List (find, sort)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (isJust)
@@ -42,7 +43,7 @@ import GHC.Generics (Generic)
 import Meta
 import Network.HTTP.Types (status200)
 import Network.Wai (StreamingBody)
-import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (^.), (^?), _Just)
+import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
@@ -223,7 +224,7 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
         _ -> []
     ]
 
-  infoBox "Description" (H.pre $ H.text ("\n" <> info.experiment.designDescription))
+  infoBox "Description" (H.pre $ H.text ("\n" <> info.experiment.longDescription))
 
   infoBox "Design" (H.pre $ H.text ("\n" <> info.experiment.design.source))
 
@@ -266,21 +267,27 @@ experimentList state = H.div
         (mapM_ experimentListItem experiments)
 
     experimentListItem :: ExperimentSequenceInfo -> Html
-    experimentListItem info =
+    experimentListItem sequenceInfo =
       H.div H.! A.class_ "experiment-list-item" $ do
         H.span H.! A.class_ "experiment-list-uuid" $
-          H.toHtml (show info.sequenceId.uuid)
+          H.toHtml (show sequenceInfo.sequenceId.uuid)
         H.ul H.! A.class_ "experiment-list-run-list" $
-          forM_ (Map.keys info.experiments) $ \experimentId ->
-            H.li
-              ( H.a
-                  H.! hxTarget "#run-info"
-                  H.! hxSwap "outerHTML"
-                  H.! hxPushUrl "true"
-                  H.! hxGet [i|/experiments/#{show (info ^. #sequenceId % #uuid)}/#{show (experimentId ^. #uuid)}|]
-                  H.! A.href [i|/experiments/#{show (info ^. #sequenceId % #uuid)}/#{show (experimentId ^. #uuid)}|]
-                  $ H.toHtml (show experimentId.uuid)
-              )
+          let items =
+                sort
+                  [ (shortDescription, experimentId.uuid)
+                    | ExperimentInfo {experiment = Experiment {shortDescription, experimentId}} <- Map.elems sequenceInfo.experiments
+                  ]
+              sequenceId = sequenceInfo.sequenceId.uuid
+           in forM_ items $ \(shortDescription, uuid) ->
+                H.li
+                  ( H.a
+                      H.! hxTarget "#run-info"
+                      H.! hxSwap "outerHTML"
+                      H.! hxPushUrl "true"
+                      H.! hxGet [i|/experiments/#{show sequenceId}/#{show uuid}|]
+                      H.! A.href [i|/experiments/#{show sequenceId}/#{show uuid}|]
+                      $ H.toHtml shortDescription
+                  )
 
 table :: [[Html]] -> Html
 table rows = H.table $

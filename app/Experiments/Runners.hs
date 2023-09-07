@@ -143,7 +143,7 @@ saveExperiment experiment result = Sh.shelly . Sh.silently $ do
 
   Sh.mkdir_p localExperimentDir
   Sh.writefile (localExperimentDir </> filename) experiment.design.source
-  Sh.writefile (localExperimentDir </> ("description.txt" :: Text)) experiment.designDescription
+  Sh.writefile (localExperimentDir </> ("description.txt" :: Text)) experiment.longDescription
 
   Sh.writefile
     (localExperimentDir </> ("full_output.txt" :: Text))

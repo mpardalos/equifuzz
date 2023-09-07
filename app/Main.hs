@@ -34,10 +34,10 @@ main = do
       progressChan <- startRunners orchestrationConfig
       runWebUI progressChan
     Generate genConfig -> do
-      Experiment {design, designDescription, comparisonValue} <- mkSystemCConstantExperiment genConfig >>= view #value
+      Experiment {design, longDescription, comparisonValue} <- mkSystemCConstantExperiment genConfig >>= view #value
       T.putStrLn design.source
       putStrLn "---------"
-      T.putStrLn designDescription
+      T.putStrLn longDescription
       putStrLn "---------"
       T.putStrLn comparisonValue
     PrintVersion -> putStrLn versionName
