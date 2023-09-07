@@ -9,7 +9,7 @@ author:             Michalis Pardalos
 maintainer:         me@mpardalos.com
 category:           Testing
 build-type:         Simple
-extra-source-files: resources/style.css, resources/htmx.js
+extra-source-files: resources/style.css, resources/htmx.min.js.gz, resources/sse.js.gz
 
 Flag evaluation_version
      description: Compile an evaluation version (some features removed)
