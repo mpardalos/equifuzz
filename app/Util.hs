@@ -3,11 +3,14 @@ module Util where
 import Control.Concurrent (forkFinally, modifyMVar_, MVar)
 import Control.Monad (when)
 import Control.Monad.Random (foldM_, forever)
-import Data.Time (getZonedTime, zonedTimeToLocalTime)
+import Data.Time (getZonedTime, zonedTimeToLocalTime, NominalDiffTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import GHC.Conc (labelThread)
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
+import Data.Time.Format (formatTime)
+import Data.Time (defaultTimeLocale)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 
 iterateM :: Monad m => Int -> (a -> m a) -> a -> m a
 iterateM 0 _ x = pure x
@@ -71,3 +74,6 @@ whenM cond action = do
 
 modifyMVarPure_ :: MVar a -> (a -> a) -> IO ()
 modifyMVarPure_ var f = modifyMVar_ var (pure . f)
+
+diffTimeHMSFormat :: NominalDiffTime -> String
+diffTimeHMSFormat = formatTime defaultTimeLocale "%H:%M:%S" . posixSecondsToUTCTime

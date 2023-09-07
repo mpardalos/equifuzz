@@ -13,7 +13,7 @@
 module WebUI (runWebUI) where
 
 import Control.Applicative (asum)
-import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar)
+import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar, threadDelay)
 import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTChan, takeTMVar, tryPutTMVar)
 import Control.Monad (forM_, forever, void)
 import Control.Monad.IO.Class (liftIO)
@@ -30,6 +30,7 @@ import Data.Map qualified as Map
 import Data.Maybe (isJust)
 import Data.String.Interpolate (i)
 import Data.Text.Lazy qualified as LT
+import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime)
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Experiments
@@ -44,7 +45,7 @@ import GHC.Generics (Generic)
 import Meta
 import Network.HTTP.Types (status200)
 import Network.Wai (StreamingBody)
-import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (^?), _Just)
+import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (.~), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
@@ -52,7 +53,7 @@ import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
-import Util (foreverThread, modifyMVarPure_, mwhen, whenJust, whenM)
+import Util (diffTimeHMSFormat, foreverThread, modifyMVarPure_, mwhen, whenJust, whenM)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, params, raw, scotty, setHeader, status, stream)
 
 data ExperimentSequenceInfo = ExperimentSequenceInfo
@@ -74,7 +75,8 @@ data WebUIState = WebUIState
     experimentsSem :: Semaphore,
     totalRunCount :: Int,
     totalRunCountSem :: Semaphore,
-    liveUpdates :: Bool
+    liveUpdates :: Bool,
+    runTime :: NominalDiffTime
   }
   deriving (Generic)
 
@@ -90,7 +92,8 @@ newWebUIState = do
         experimentsSem,
         totalRunCount = 0,
         totalRunCountSem,
-        liveUpdates = True
+        liveUpdates = True,
+        runTime = 0
       }
 
 at2 :: ExperimentSequenceId -> ExperimentId -> Lens' (Map ExperimentSequenceId ExperimentSequenceInfo) (Maybe ExperimentInfo)
@@ -200,9 +203,18 @@ paramExists p = isJust . find ((== p) . fst) <$> params
 runWebUI :: TChan ExperimentProgress -> IO ()
 runWebUI progressChan = do
   stateVar <- newMVar =<< newWebUIState
+
   foreverThread "UI Handler" $ do
     progress <- atomically (readTChan progressChan)
     handleProgress stateVar progress
+
+  startTime <- getCurrentTime
+  foreverThread "UI timer" $ do
+    currentTime <- getCurrentTime
+    modifyMVarPure_ stateVar $
+      #runTime .~ diffUTCTime currentTime startTime
+    threadDelay 1_000_000 -- 1s
+
   scottyServer stateVar
 
 htmlBase :: Html -> Html
@@ -293,7 +305,11 @@ experimentList state = H.div
         H.! hxSwap "outerHTML"
         $ "Prune uninteresting"
 
-    runCount = table [["Total runs", H.toHtml (show state.totalRunCount)]]
+    runCount =
+      table
+        [ ["Total runs", H.toHtml (show state.totalRunCount)],
+          ["Running time", H.toHtml (diffTimeHMSFormat state.runTime)]
+        ]
 
     experimentSubList title experiments =
       infoBoxWithSideTitle
