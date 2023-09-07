@@ -275,6 +275,7 @@ experimentList state = H.div
       experimentSubList "Running" state.runningExperiments
       experimentSubList "Interesting" state.interestingExperiments
       experimentSubList "Uninteresting" state.uninterestingExperiments
+    runCount
   where
     toggleUpdatesButton =
       H.button
@@ -291,6 +292,8 @@ experimentList state = H.div
         H.! hxTarget "closest #experiment-list-area"
         H.! hxSwap "outerHTML"
         $ "Prune uninteresting"
+
+    runCount = table [["Total runs", H.toHtml (show state.totalRunCount)]]
 
     experimentSubList title experiments =
       infoBoxWithSideTitle
