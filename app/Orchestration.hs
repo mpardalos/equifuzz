@@ -73,7 +73,14 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
   void $
     forkFinally
       (runReduceLoop sequenceId initialExperimentReducible)
-      (const (endExperimentSequence sequenceId))
+      ( \case
+          Right _ -> endExperimentSequence sequenceId
+          Left err -> do
+            printf "Experiment sequence aborted %s\n" (show sequenceId)
+            printf "==============================\n"
+            printf "%s\n" (show err)
+            printf "==============================\n\n"
+      )
   where
     runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO Bool
     runReduceLoop sequenceId experimentReducible = do
