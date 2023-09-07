@@ -15,9 +15,9 @@ module WebUI (runWebUI) where
 import Control.Applicative (asum)
 import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar)
 import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTChan, takeTMVar, tryPutTMVar)
-import Control.Monad (forM_, forever, void, when)
+import Control.Monad (forM_, forever, void)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State (execState, execStateT)
+import Control.Monad.State (execStateT)
 import Data.Binary.Builder qualified as Binary
 import Data.ByteString.Lazy qualified as LB
 import Data.ByteString.Lazy.Char8 qualified as LB
@@ -128,10 +128,17 @@ scottyServer stateVar = scotty 8888 $ do
     raw $
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/style.css")
 
-  get "/resources/htmx.js" $ do
+  get "/resources/htmx.min.js.gz" $ do
     addHeader "Content-Type" "application/javascript"
+    addHeader "Content-Encoding" "gzip"
     raw $
-      LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/htmx.js")
+      LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/htmx.min.js.gz")
+
+  get "/resources/sse.js.gz" $ do
+    addHeader "Content-Type" "application/javascript"
+    addHeader "Content-Encoding" "gzip"
+    raw $
+      LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/sse.js.gz")
 
   get "/experiments/:sequenceId/:experimentId" $ do
     sequenceId :: ExperimentSequenceId <- coerce @UUIDParam <$> param "sequenceId"
@@ -203,9 +210,8 @@ htmlBase content = H.docTypeHtml $ do
   H.head $ do
     H.title "Equifuzz"
     H.link H.! A.rel "stylesheet" H.! A.href "/resources/style.css"
-    -- H.script H.! A.src "/resources/htmx.min.js.gz" $ ""
-    H.script H.! A.src "/resources/htmx.js" $ ""
-    H.script H.! A.src "https://unpkg.com/htmx.org/dist/ext/sse.js" $ ""
+    H.script H.! A.src "/resources/htmx.min.js.gz" $ ""
+    H.script H.! A.src "/resources/sse.js.gz" $ ""
   H.body H.! hxExt "sse" H.! sseConnect "/events" $ do
     H.header "Equifuzz"
     H.main content
