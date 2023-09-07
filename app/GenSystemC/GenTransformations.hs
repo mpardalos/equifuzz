@@ -10,7 +10,7 @@ module GenSystemC.GenTransformations (seedExpr, randomTransformationFor, randomF
 
 import Control.Monad (guard, join)
 import Control.Monad.Random.Strict (MonadRandom, getRandomR, uniform, weighted)
-import Data.Maybe (catMaybes, isJust)
+import Data.Maybe (catMaybes)
 import Data.Set qualified as Set
 import GenSystemC.Transformations
   ( BuildOut,
@@ -96,10 +96,6 @@ finalCastType =
 -- Generate a type that the input type can be cast to
 castTargetType :: MonadRandom m => SC.SCType -> m SC.SCType
 castTargetType = \case
-  -- FIXME: fixed-to-uint is broken for the version of vcf I am currently
-  -- testing. This workaround should be an option at the top level.
-  SC.SCFixed {} -> join $ uniform [someFixed, someUFixed]
-  SC.SCUFixed {} -> join $ uniform [someFixed, someUFixed]
   SC.SCFxnumSubref {} -> join $ uniform [someInt, someUInt]
   _ -> join $ uniform [someInt, someUInt, someFixed, someUFixed]
   where
