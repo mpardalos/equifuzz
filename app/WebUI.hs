@@ -148,8 +148,8 @@ scottyServer stateVar = scotty 8888 $ do
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/sse.js.gz")
 
   get "/experiments/:sequenceId/:experimentId" $ do
-    sequenceId :: ExperimentSequenceId <- coerce @UUIDParam <$> param "sequenceId"
-    experimentId :: ExperimentId <- coerce @UUIDParam <$> param "experimentId"
+    sequenceId <- coerce @UUIDParam @ExperimentSequenceId <$> param "sequenceId"
+    experimentId <- coerce @UUIDParam @ExperimentId <$> param "experimentId"
     state <- liftIO (readMVar stateVar)
     isHtmxRequest <- (Just "true" ==) <$> header "HX-Request"
 
