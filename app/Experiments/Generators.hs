@@ -57,7 +57,7 @@ generateProcessToExperiment process@GenerateProcess {seed, transformations} = do
       { experimentId,
         expectedResult = True,
         design,
-        shortDescription = "Steps: " <> T.pack (show (length transformations)),
+        size = length transformations,
         longDescription =
           T.unlines
             ( T.pack ("0) " ++ show seed)

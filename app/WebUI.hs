@@ -15,7 +15,7 @@ module WebUI (runWebUI) where
 import Control.Applicative (asum)
 import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar, threadDelay)
 import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTChan, takeTMVar, tryPutTMVar)
-import Control.Monad (forM_, forever, void)
+import Control.Monad (forM_, forever, void, when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (execStateT)
 import Data.Binary.Builder qualified as Binary
@@ -45,8 +45,10 @@ import GHC.Generics (Generic)
 import Meta
 import Network.HTTP.Types (status200)
 import Network.Wai (StreamingBody)
-import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (.~), (^?), _Just)
+import Network.Wai.Middleware.Gzip (def, gzip)
+import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (.~), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
+import Safe (headMay, tailSafe)
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
@@ -54,8 +56,7 @@ import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Util (diffTimeHMSFormat, foreverThread, modifyMVarPure_, mwhen, whenJust, whenM)
-import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, params, raw, scotty, setHeader, status, stream, middleware)
-import Network.Wai.Middleware.Gzip (gzip, def)
+import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, middleware, next, param, params, raw, scotty, setHeader, status, stream)
 
 data ExperimentSequenceInfo = ExperimentSequenceInfo
   { sequenceId :: ExperimentSequenceId,
@@ -218,7 +219,6 @@ runWebUI progressChan = do
     modifyMVarPure_ stateVar $
       #runTime .~ diffUTCTime currentTime startTime
     threadDelay 1_000_000 -- 1s
-
   scottyServer stateVar
 
 htmlBase :: Html -> Html
@@ -316,30 +316,42 @@ experimentList state = H.div
       infoBoxWithSideTitle
         title
         (H.toHtml (length experiments))
-        (mapM_ experimentListItem experiments)
+        (mapM_ experimentSequenceList experiments)
 
-    experimentListItem :: ExperimentSequenceInfo -> Html
-    experimentListItem sequenceInfo =
-      H.div H.! A.class_ "experiment-list-item" $ do
-        H.span H.! A.class_ "experiment-list-uuid" $
-          H.toHtml (show sequenceInfo.sequenceId.uuid)
-        H.ul H.! A.class_ "experiment-list-run-list" $
-          let items =
-                sort
-                  [ (shortDescription, experimentId.uuid)
-                    | ExperimentInfo {experiment = Experiment {shortDescription, experimentId}} <- Map.elems sequenceInfo.experiments
-                  ]
-              sequenceId = sequenceInfo.sequenceId.uuid
-           in forM_ items $ \(shortDescription, uuid) ->
-                H.li
-                  ( H.a
-                      H.! hxTarget "#run-info"
-                      H.! hxSwap "outerHTML"
-                      H.! hxPushUrl "true"
-                      H.! hxGet [i|/experiments/#{sequenceId}/#{uuid}|]
-                      H.! A.href [i|/experiments/#{sequenceId}/#{uuid}|]
-                      $ H.toHtml shortDescription
-                  )
+    experimentSequenceList :: ExperimentSequenceInfo -> Html
+    experimentSequenceList sequenceInfo =
+      let items =
+            sort
+              [ (size, experimentId)
+                | ExperimentInfo {experiment = Experiment {size, experimentId}} <-
+                    Map.elems sequenceInfo.experiments
+              ]
+       in H.div H.! A.class_ "experiment-list-item" $ do
+            H.span H.! A.class_ "experiment-list-uuid" $ do
+              H.toHtml (show sequenceInfo.sequenceId.uuid)
+
+              whenJust (headMay items) $ \(size, experimentId) ->
+                H.div $
+                  experimentLink sequenceInfo.sequenceId experimentId size
+
+              when (length items > 1) $
+                H.details $ do
+                  H.summary "Other runs"
+                  H.ul H.! A.class_ "experiment-list-run-list" $ do
+                    sequence_
+                      [ H.li (experimentLink sequenceInfo.sequenceId experimentId size)
+                        | (size, experimentId) <- tailSafe items
+                      ]
+
+    experimentLink :: ExperimentSequenceId -> ExperimentId -> Int -> Html
+    experimentLink sequenceId experimentId size =
+      H.a
+        H.! hxTarget "#run-info"
+        H.! hxSwap "outerHTML"
+        H.! hxPushUrl "true"
+        H.! hxGet [i|/experiments/#{sequenceId ^. #uuid}/#{experimentId ^. #uuid}|]
+        H.! A.href [i|/experiments/#{sequenceId ^. #uuid}/#{experimentId ^. #uuid}|]
+        $ H.toHtml ("Size " <> show size)
 
 table :: [[Html]] -> Html
 table rows = H.table $

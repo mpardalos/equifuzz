@@ -37,9 +37,9 @@ data Experiment = Experiment
     -- | True if we expect the modules to be equivalent, False if we expect them not to be
     expectedResult :: Bool,
     design :: DesignSource,
-    -- | Single-line, human-readable text identifying the design. Used in the UI
-    -- as a header
-    shortDescription :: Text,
+    -- | Used for ordering reductions of the same experiment. Will probably be
+    -- the number of transformations used to generate it
+    size :: Int,
     -- | Human-readable text describing the design/how it was generated
     -- E.g. The series of transformations that generated it
     longDescription :: Text,
