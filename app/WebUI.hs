@@ -336,8 +336,8 @@ experimentList state = H.div
                       H.! hxTarget "#run-info"
                       H.! hxSwap "outerHTML"
                       H.! hxPushUrl "true"
-                      H.! hxGet [i|/experiments/#{show sequenceId}/#{show uuid}|]
-                      H.! A.href [i|/experiments/#{show sequenceId}/#{show uuid}|]
+                      H.! hxGet [i|/experiments/#{sequenceId}/#{uuid}|]
+                      H.! A.href [i|/experiments/#{sequenceId}/#{uuid}|]
                       $ H.toHtml shortDescription
                   )
 
