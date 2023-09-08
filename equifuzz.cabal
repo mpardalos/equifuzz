@@ -56,6 +56,7 @@ executable equifuzz
                     , filepath
                     , scotty == 0.12.*
                     , wai == 3.2.*
+                    , wai-extra == 3.1.13.0
                     , blaze-html == 0.9.*
                     , blaze-htmx == 0.1.*
                     , http-types == 0.12.*

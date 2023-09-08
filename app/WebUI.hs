@@ -54,7 +54,8 @@ import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Util (diffTimeHMSFormat, foreverThread, modifyMVarPure_, mwhen, whenJust, whenM)
-import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, params, raw, scotty, setHeader, status, stream)
+import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, next, param, params, raw, scotty, setHeader, status, stream, middleware)
+import Network.Wai.Middleware.Gzip (gzip, def)
 
 data ExperimentSequenceInfo = ExperimentSequenceInfo
   { sequenceId :: ExperimentSequenceId,
@@ -127,7 +128,10 @@ handleProgress stateVar progress = do
 
 scottyServer :: MVar WebUIState -> IO ()
 scottyServer stateVar = scotty 8888 $ do
-  get "/resources/style.css" $
+  middleware (gzip def)
+
+  get "/resources/style.css" $ do
+    addHeader "Content-Type" "text/css"
     raw $
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/style.css")
 
