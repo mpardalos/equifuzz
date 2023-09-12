@@ -25,8 +25,9 @@ executable equifuzz
                  , Experiments.Types
                  , Experiments.Generators
                  , Runners
-                 , Runners.VCF
                  , Runners.Types
+                 , Runners.Util
+                 , Runners.VCF
                  , SystemC
                  , GenSystemC
                  , GenSystemC.GenTransformations

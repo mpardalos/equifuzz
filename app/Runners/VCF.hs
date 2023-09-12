@@ -16,46 +16,27 @@ import Data.Text qualified as T
 import Experiments.Types
 import Optics ((^.))
 import Runners.Types (SSHConnectionTarget (..))
-import Shelly ((</>))
+import Runners.Util (createRemoteExperimentDir, runSSHCommand)
 import Shelly qualified as Sh
 import SystemC qualified as SC
-import Util (bashExec, bashExec_)
 
 -- | Run an experiment using VC Formal on a remote host
 runVCFormal :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentResult
 runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = Sh.shelly . Sh.silently $ do
-  let sshString = sshOpts.username <> "@" <> sshOpts.host
-  let ssh :: Text = case sshOpts.password of
-        Nothing -> "ssh -o PasswordAuthentication=no -o StrictHostKeychecking=no"
-        Just pass -> [i|sshpass -p #{pass} ssh -o StrictHostKeychecking=no|]
-  let scp :: Text = case sshOpts.password of
-        Nothing -> "scp -o PasswordAuthentication=no -o StrictHostKeychecking=no"
-        Just pass -> [i|sshpass -p #{pass} scp -o StrictHostKeychecking=no|]
+  createRemoteExperimentDir
+    sshOpts
+    remoteExperimentDir
+    [ (filename, wrappedProgram),
+      ("compare.tcl", compareScript)
+    ]
 
-  localExperimentDir <- T.strip <$> Sh.run "mktemp" ["-d"]
-
-  Sh.writefile
-    (localExperimentDir </> filename)
-    wrappedProgram
-  Sh.writefile
-    (localExperimentDir </> ("compare.tcl" :: Text))
-    compareScript
-  bashExec_
-    [i|#{ssh} #{sshString} mkdir -p #{remoteExperimentDir}/ |]
-  bashExec_
-    [i|#{scp} -r #{localExperimentDir}/* #{sshString}:#{remoteExperimentDir}/|]
-
-  fullOutput <- bashExec [i|#{ssh} #{sshString} '#{sshCommand}'|]
-
-  void . Sh.errExit False $
-    bashExec [i|#{scp} #{sshString}:#{remoteExperimentDir}/counter_example.txt #{localExperimentDir}/counter_example.txt|]
-
-  bashExec_ [i|#{ssh} #{sshString} 'cd ~ && rm -rf ./#{remoteExperimentDir}'|]
+  fullOutput <- runSSHCommand sshOpts sshCommand
 
   counterExample <-
-    Sh.test_f (T.unpack localExperimentDir <> "/counter_example.txt") >>= \case
-      False -> pure Nothing
-      True -> Just <$> Sh.readfile (T.unpack localExperimentDir <> "/counter_example.txt")
+    Sh.errExit False $
+      runSSHCommand sshOpts [i|cat #{remoteExperimentDir}/counter_example.txt|]
+
+  void $ runSSHCommand sshOpts [i|cd ~ && rm -rf ./#{remoteExperimentDir}|]
 
   let proofSuccessful =
         fullOutput
@@ -72,7 +53,7 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
         (False, True) -> Just False
         _ -> Nothing
 
-  return $ ExperimentResult {proofFound, counterExample, fullOutput, experimentId}
+  return $ ExperimentResult {proofFound, counterExample = Just counterExample, fullOutput, experimentId}
   where
     remoteDir :: Text
     remoteDir = "equifuzz_vcf_experiment"
