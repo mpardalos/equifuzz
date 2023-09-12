@@ -58,7 +58,7 @@ class Source a where
   genSource :: a -> Text
 
 data BinOp = Plus | Minus | Multiply | Divide | BitwiseOr
-  deriving (Eq, Show, Generic, Data)
+  deriving (Eq, Show, Generic, Data, Ord)
 
 data Expr ann
   = Constant (AnnExpr ann) Int
@@ -71,6 +71,8 @@ data Expr ann
   deriving (Generic)
 
 deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (Expr ann)
+
+deriving instance (Annotation ann, AnnConstraint Ord ann) => Ord (Expr ann)
 
 deriving instance (Annotation ann, AnnConstraint Show ann) => Show (Expr ann)
 
@@ -98,6 +100,8 @@ data Statement ann
   deriving (Generic)
 
 deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (Statement ann)
+
+deriving instance (Annotation ann, AnnConstraint Ord ann) => Ord (Statement ann)
 
 deriving instance (Annotation ann, AnnConstraint Show ann) => Show (Statement ann)
 
@@ -284,6 +288,8 @@ data FunctionDeclaration ann = FunctionDeclaration
   deriving (Generic)
 
 deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (FunctionDeclaration ann)
+
+deriving instance (Annotation ann, AnnConstraint Ord ann) => Ord (FunctionDeclaration ann)
 
 deriving instance (Annotation ann, AnnConstraint Show ann) => Show (FunctionDeclaration ann)
 

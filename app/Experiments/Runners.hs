@@ -26,6 +26,7 @@ import Experiments.Types
 import Optics (makeFieldLabelsNoPrefix, (^.))
 import Shelly (Sh, (</>))
 import Shelly qualified as Sh
+import SystemC qualified as SC
 import Util (whenJust)
 
 newtype ExperimentRunner = ExperimentRunner
@@ -61,10 +62,10 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
 
   Sh.writefile
     (localExperimentDir </> filename)
-    design.source
+    hectorWrappedProgram
   Sh.writefile
     (localExperimentDir </> ("compare.tcl" :: Text))
-    (hectorCompareScript filename experiment)
+    hectorCompareScript
   bashExec_
     [i|#{ssh} #{sshString} mkdir -p #{remoteExperimentDir}/ |]
   bashExec_
@@ -105,44 +106,55 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
     remoteExperimentDir :: Text
     remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
 
-    filename = "impl.cpp"
+    filename :: Text = "impl.cpp"
+
+    topName :: Text = "impl"
 
     sshCommand :: Text
     sshCommand = case mSourcePath of
       Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
       Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && vcf -fmode DPV -f compare.tcl|]
 
-hectorCompareScript :: FilePath -> Experiment -> Text
-hectorCompareScript filename experiment =
-  [__i|
-            set_custom_solve_script "orch_multipliers"
-            set_user_assumes_lemmas_procedure "miter"
+    hectorWrappedProgram :: Text
+    hectorWrappedProgram =
+      [__i|
+          #{SC.includeHeader}
 
-            create_design -name impl -top #{experiment ^. #design ^. #topName}
-            scdtan -DSC_INCLUDE_FX #{filename}
-            compile_design impl
+          #{SC.genSource design}
 
-            proc miter {} {
-                    lemma out_equiv = out(1) == #{experiment ^. #comparisonValue}
-            }
+          #{systemCHectorWrapper topName design}
+          |]
 
-            compose -nospec
-            solveNB proof
-            proofwait
-            listproof
-            simcex -txt counter_example.txt out_equiv
-            exit
-            exit
-  |]
+    hectorCompareScript :: Text
+    hectorCompareScript =
+      [__i|
+                set_custom_solve_script "orch_multipliers"
+                set_user_assumes_lemmas_procedure "miter"
+
+                create_design -name impl -top #{topName}
+                scdtan -DSC_INCLUDE_FX #{filename}
+                compile_design impl
+
+                proc miter {} {
+                        lemma out_equiv = out(1) == #{experiment ^. #comparisonValue}
+                }
+
+                compose -nospec
+                solveNB proof
+                proofwait
+                listproof
+                simcex -txt counter_example.txt out_equiv
+                exit
+                exit
+      |]
 
 -- | Save information about the experiment to the experiments/ directory
 saveExperiment :: Experiment -> ExperimentResult -> IO ()
 saveExperiment experiment result = Sh.shelly . Sh.silently $ do
   let localExperimentDir = "experiments/" <> UUID.toString experiment.experimentId.uuid
-  let filename = "impl.cpp"
 
   Sh.mkdir_p localExperimentDir
-  Sh.writefile (localExperimentDir </> filename) experiment.design.source
+  Sh.writefile (localExperimentDir </> ("dut.cpp" :: Text)) (SC.genSource experiment.design)
   Sh.writefile (localExperimentDir </> ("description.txt" :: Text)) experiment.longDescription
 
   Sh.writefile
@@ -160,4 +172,45 @@ saveExperiment experiment result = Sh.shelly . Sh.silently $ do
         Counter Example : #{isJust (result ^. #counterExample)}
         |]
 
-  Sh.writefile (localExperimentDir </> ("compare.tcl" :: Text)) (hectorCompareScript filename experiment)
+-- | When doing equivalence checking with Hector (VC Formal) the code under test
+-- needs to be presented to hector using a wrapper
+systemCHectorWrapper :: SC.Annotation ann => Text -> SC.FunctionDeclaration ann -> Text
+systemCHectorWrapper wrapperName SC.FunctionDeclaration {returnType, args, name} =
+  [__i|
+      \#include<Hector.h>
+
+      void #{wrapperName}() {
+          #{inputDeclarations}
+          #{outType} out;
+
+          #{inputsHectorRegister}
+          Hector::registerOutput("out", out);
+
+          Hector::beginCapture();
+          out = #{name}(#{argList});
+          Hector::endCapture();
+      }
+
+      |]
+  where
+    inputDeclarations :: Text
+    inputDeclarations =
+      T.intercalate
+        "\n    "
+        [ SC.genSource argType <> " " <> argName <> ";"
+          | (argType, argName) <- args
+        ]
+
+    outType :: Text
+    outType = SC.genSource returnType
+
+    inputsHectorRegister :: Text
+    inputsHectorRegister =
+      T.intercalate
+        "\n    "
+        [ "Hector::registerInput(\"" <> argName <> "\", " <> argName <> ");"
+          | (_, argName) <- args
+        ]
+
+    argList :: Text
+    argList = T.intercalate ", " [argName | (_, argName) <- args]

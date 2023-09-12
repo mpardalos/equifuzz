@@ -36,20 +36,9 @@ mkSystemCConstantExperiment config =
 
 generateProcessToExperiment :: GenerateProcess -> IO Experiment
 generateProcessToExperiment process@GenerateProcess {seed, transformations} = do
-  let systemcModule = generateFromProcess "dut" process
-  let wrapperName = "impl"
-  let design =
-        DesignSource
-          { topName = wrapperName,
-            source =
-              SC.includeHeader
-                <> "\n\n"
-                <> SC.genSource systemcModule
-                <> "\n\n"
-                <> systemCHectorWrapper wrapperName systemcModule
-          }
+  let design = generateFromProcess "dut" process
 
-  comparisonValue <- simulateSystemCConstant systemcModule
+  comparisonValue <- simulateSystemCConstant design
 
   experimentId <- newExperimentId
   return
@@ -67,49 +56,6 @@ generateProcessToExperiment process@GenerateProcess {seed, transformations} = do
             ),
         comparisonValue
       }
-
--- | When doing equivalence checking with Hector (VC Formal) the code under test
--- needs to be presented to hector using a wrapper
-systemCHectorWrapper :: SC.Annotation ann => Text -> SC.FunctionDeclaration ann -> Text
-systemCHectorWrapper wrapperName SC.FunctionDeclaration {returnType, args, name} =
-  [__i|
-      \#include<Hector.h>
-
-      void #{wrapperName}() {
-          #{inputDeclarations}
-          #{outType} out;
-
-          #{inputsHectorRegister}
-          Hector::registerOutput("out", out);
-
-          Hector::beginCapture();
-          out = #{name}(#{argList});
-          Hector::endCapture();
-      }
-
-      |]
-  where
-    inputDeclarations :: Text
-    inputDeclarations =
-      T.intercalate
-        "\n    "
-        [ SC.genSource argType <> " " <> argName <> ";"
-          | (argType, argName) <- args
-        ]
-
-    outType :: Text
-    outType = SC.genSource returnType
-
-    inputsHectorRegister :: Text
-    inputsHectorRegister =
-      T.intercalate
-        "\n    "
-        [ "Hector::registerInput(\"" <> argName <> "\", " <> argName <> ");"
-          | (_, argName) <- args
-        ]
-
-    argList :: Text
-    argList = T.intercalate ", " [argName | (_, argName) <- args]
 
 -- | Run the SystemC function and return its output represented as text of a
 -- Verilog-style constant. We use this output format because the normal

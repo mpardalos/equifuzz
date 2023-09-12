@@ -22,6 +22,7 @@ import Control.Monad.Random (getStdRandom)
 import System.Random (uniformR)
 import Data.Functor ((<&>))
 import Control.Concurrent (threadDelay)
+import qualified SystemC as SC
 
 main :: IO ()
 main = do
@@ -35,7 +36,7 @@ main = do
       runWebUI progressChan
     Generate genConfig -> do
       Experiment {design, longDescription, comparisonValue} <- mkSystemCConstantExperiment genConfig >>= view #value
-      T.putStrLn design.source
+      T.putStrLn (SC.genSource design)
       putStrLn "---------"
       T.putStrLn longDescription
       putStrLn "---------"

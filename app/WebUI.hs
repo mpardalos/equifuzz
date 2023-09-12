@@ -34,8 +34,7 @@ import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime)
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Experiments
-  ( DesignSource (..),
-    Experiment (..),
+  ( Experiment (..),
     ExperimentId (..),
     ExperimentProgress (..),
     ExperimentResult (..),
@@ -57,6 +56,7 @@ import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Util (diffTimeHMSFormat, foreverThread, modifyMVarPure_, mwhen, whenJust, whenM)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, middleware, next, param, params, raw, scotty, setHeader, status, stream)
+import qualified SystemC as SC
 
 data ExperimentSequenceInfo = ExperimentSequenceInfo
   { sequenceId :: ExperimentSequenceId,
@@ -266,7 +266,7 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
 
   infoBox "Description" (H.pre $ H.text ("\n" <> info.experiment.longDescription))
 
-  infoBox "Design" (H.pre $ H.text ("\n" <> info.experiment.design.source))
+  infoBox "Design" (H.pre $ H.text ("\n" <> SC.genSource info.experiment.design))
 
   whenJust (info ^? #result %? #counterExample % _Just) $ \counterExample ->
     infoBox
