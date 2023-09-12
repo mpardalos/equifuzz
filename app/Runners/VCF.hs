@@ -36,10 +36,10 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
 
   Sh.writefile
     (localExperimentDir </> filename)
-    hectorWrappedProgram
+    wrappedProgram
   Sh.writefile
     (localExperimentDir </> ("compare.tcl" :: Text))
-    hectorCompareScript
+    compareScript
   bashExec_
     [i|#{ssh} #{sshString} mkdir -p #{remoteExperimentDir}/ |]
   bashExec_
@@ -89,8 +89,8 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
       Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
       Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && vcf -fmode DPV -f compare.tcl|]
 
-    hectorWrappedProgram :: Text
-    hectorWrappedProgram =
+    wrappedProgram :: Text
+    wrappedProgram =
       [__i|
           #{SC.includeHeader}
 
@@ -99,8 +99,8 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
           #{systemCHectorWrapper topName design}
           |]
 
-    hectorCompareScript :: Text
-    hectorCompareScript =
+    compareScript :: Text
+    compareScript =
       [__i|
                 set_custom_solve_script "orch_multipliers"
                 set_user_assumes_lemmas_procedure "miter"
@@ -133,7 +133,7 @@ systemCHectorWrapper wrapperName SC.FunctionDeclaration {returnType, args, name}
           #{inputDeclarations}
           #{outType} out;
 
-          #{inputsHectorRegister}
+          #{hectorRegisterInputs}
           Hector::registerOutput("out", out);
 
           Hector::beginCapture();
@@ -154,8 +154,8 @@ systemCHectorWrapper wrapperName SC.FunctionDeclaration {returnType, args, name}
     outType :: Text
     outType = SC.genSource returnType
 
-    inputsHectorRegister :: Text
-    inputsHectorRegister =
+    hectorRegisterInputs :: Text
+    hectorRegisterInputs =
       T.intercalate
         "\n    "
         [ "Hector::registerInput(\"" <> argName <> "\", " <> argName <> ");"
