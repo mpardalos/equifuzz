@@ -148,6 +148,7 @@ commandParser =
             Opt.metavar "PASSWORD",
             Opt.help "Password to connect to remote host"
           ]
+
       activatePath <-
         optional . Opt.strOption . mconcat $
           [ Opt.long "activate-script",
@@ -155,12 +156,24 @@ commandParser =
             Opt.help "Script to be sourced on the remote host before running vcf"
           ]
 
+      fecRunner <- Opt.option readFecType . mconcat $
+        [ Opt.long "fec-type"
+        , Opt.metavar "TYPE"
+        , Opt.help "What FEC type we are running against (vcf|catapult|jasper)"
+        ]
+
       return
         ( ExperimentRunner $
-            runVCFormal
+            fecRunner
               SSHConnectionTarget {username, host, password}
               activatePath
         )
+
+    readFecType = Opt.eitherReader $ \case
+      "vcf" -> Right runVCFormal
+      "catapult" -> Left "Siemens catapult is not *yet* supported"
+      "jasper" -> Left "Cadence jasper is not *yet* supported"
+      other -> Left ("FEC '" ++ other ++ "' is unknown")
 
 parseArgs :: IO Command
 parseArgs =
