@@ -9,6 +9,7 @@ module Main where
 import Control.Applicative (Alternative ((<|>)), optional, (<**>))
 import Data.Text.IO qualified as T
 import Experiments
+import Runners
 import GenSystemC (GenConfig (..))
 import Options.Applicative qualified as Opt
 import Orchestration

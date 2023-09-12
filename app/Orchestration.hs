@@ -1,7 +1,5 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE NumDecimals #-}
 
 module Orchestration (ProgressChan, OrchestrationConfig (..), startRunners) where
 
@@ -19,12 +17,12 @@ import Experiments
     ExperimentId (uuid),
     ExperimentProgress (..),
     ExperimentResult (..),
-    ExperimentRunner (..),
     ExperimentSequenceId (uuid),
     mkSystemCConstantExperiment,
     newExperimentSequenceId,
     saveExperiment,
   )
+import Runners (ExperimentRunner (run))
 import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))

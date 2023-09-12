@@ -1,16 +1,18 @@
 module Util where
 
-import Control.Concurrent (forkFinally, modifyMVar_, MVar)
-import Control.Monad (when)
+import Control.Concurrent (MVar, forkFinally, modifyMVar_)
+import Control.Monad (void, when)
 import Control.Monad.Random (foldM_, forever)
-import Data.Time (getZonedTime, zonedTimeToLocalTime, NominalDiffTime)
+import Data.Text (Text)
+import Data.Time (NominalDiffTime, defaultTimeLocale, getZonedTime, zonedTimeToLocalTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Time.Format (formatTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import GHC.Conc (labelThread)
+import Shelly (Sh)
+import Shelly qualified as Sh
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
-import Data.Time.Format (formatTime)
-import Data.Time (defaultTimeLocale)
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 
 iterateM :: Monad m => Int -> (a -> m a) -> a -> m a
 iterateM 0 _ x = pure x
@@ -77,3 +79,9 @@ modifyMVarPure_ var f = modifyMVar_ var (pure . f)
 
 diffTimeHMSFormat :: NominalDiffTime -> String
 diffTimeHMSFormat = formatTime defaultTimeLocale "%H:%M:%S" . posixSecondsToUTCTime
+
+bashExec :: Text -> Sh Text
+bashExec commands = Sh.run "bash" ["-c", commands]
+
+bashExec_ :: Text -> Sh ()
+bashExec_ = void . bashExec

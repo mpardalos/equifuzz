@@ -3,49 +3,23 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Experiments.Runners
-  ( ExperimentRunner (..),
-    SSHConnectionTarget (..),
-    runVCFormal,
-    saveExperiment,
-  )
-where
+module Runners.VCF (runVCFormal) where
 
 import Control.Monad (void)
 import Data.Function ((&))
-import Data.Maybe (isJust)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.UUID qualified as UUID
 import Experiments.Types
-import Optics (makeFieldLabelsNoPrefix, (^.))
-import Shelly (Sh, (</>))
+import Optics ((^.))
+import Runners.Types (SSHConnectionTarget (..))
+import Shelly ((</>))
 import Shelly qualified as Sh
 import SystemC qualified as SC
-import Util (whenJust)
-
-newtype ExperimentRunner = ExperimentRunner
-  { run :: Experiment -> IO ExperimentResult
-  }
-
-data SSHConnectionTarget = SSHConnectionTarget
-  { host :: Text,
-    username :: Text,
-    password :: Maybe Text
-  }
-
-makeFieldLabelsNoPrefix ''SSHConnectionTarget
-
-bashExec :: Text -> Sh Text
-bashExec commands = Sh.run "bash" ["-c", commands]
-
-bashExec_ :: Text -> Sh ()
-bashExec_ = void . bashExec
+import Util (bashExec, bashExec_)
 
 -- | Run an experiment using VC Formal on a remote host
 runVCFormal :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentResult
@@ -147,30 +121,6 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
                 exit
                 exit
       |]
-
--- | Save information about the experiment to the experiments/ directory
-saveExperiment :: Experiment -> ExperimentResult -> IO ()
-saveExperiment experiment result = Sh.shelly . Sh.silently $ do
-  let localExperimentDir = "experiments/" <> UUID.toString experiment.experimentId.uuid
-
-  Sh.mkdir_p localExperimentDir
-  Sh.writefile (localExperimentDir </> ("dut.cpp" :: Text)) (SC.genSource experiment.design)
-  Sh.writefile (localExperimentDir </> ("description.txt" :: Text)) experiment.longDescription
-
-  Sh.writefile
-    (localExperimentDir </> ("full_output.txt" :: Text))
-    result.fullOutput
-
-  whenJust result.counterExample $
-    Sh.writefile
-      (localExperimentDir </> ("counter_example.txt" :: Text))
-
-  Sh.writefile
-    (localExperimentDir </> ("info.txt" :: Text))
-    [__i|
-        Proof Found     : #{result ^. #proofFound}
-        Counter Example : #{isJust (result ^. #counterExample)}
-        |]
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper

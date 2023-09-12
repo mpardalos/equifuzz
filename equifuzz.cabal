@@ -24,7 +24,9 @@ executable equifuzz
     other-modules: Experiments
                  , Experiments.Types
                  , Experiments.Generators
-                 , Experiments.Runners
+                 , Runners
+                 , Runners.VCF
+                 , Runners.Types
                  , SystemC
                  , GenSystemC
                  , GenSystemC.GenTransformations
