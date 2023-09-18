@@ -20,6 +20,7 @@ data Transformation
   | Arithmetic SC.BinOp (SC.Expr BuildOut)
   | UseAsCondition (SC.Expr BuildOut) (SC.Expr BuildOut)
   | BitSelect Int
+  | ApplyReduction SC.ReductionOperation
   deriving stock (Show, Generic)
 
 applyTransformation :: MonadBuildOut m => Transformation -> m ()
@@ -48,6 +49,9 @@ applyTransformation (BitSelect idx) = do
       #headExpr .= SC.Bitref bitrefType e idx
     Nothing ->
       pure ()
+applyTransformation (ApplyReduction op) =
+  #headExpr %= \e ->
+    SC.Reduce SC.CBool e op
 
 data BuildOut
 

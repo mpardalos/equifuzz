@@ -27,6 +27,7 @@ randomTransformationFor e =
     , arithmetic
     , useAsCondition
     , bitSelect
+    , applyReduction
 #endif
     ]
   where
@@ -74,6 +75,16 @@ randomTransformationFor e =
       guard (e.annotation `SC.supports` SC.BitSelect)
       width <- SC.knownWidth e.annotation
       return (BitSelect <$> getRandomR (0, width - 1))
+
+    applyReduction :: Maybe (m Transformation)
+    applyReduction = do
+      let options =
+            [ ApplyReduction op
+              | SC.ReductionOperation op <-
+                  Set.elems $ SC.supportedOperations e.annotation
+            ]
+      guard (not . null $ options)
+      return (uniform options)
 
     someConstant :: SC.SCType -> m (SC.Expr BuildOut)
     someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)

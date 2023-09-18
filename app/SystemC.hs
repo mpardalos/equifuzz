@@ -68,6 +68,7 @@ data Expr ann
   | Cast (AnnExpr ann) SCType (Expr ann)
   | Range (AnnExpr ann) (Expr ann) Int Int
   | Bitref (AnnExpr ann) (Expr ann) Int
+  | Reduce (AnnExpr ann) (Expr ann) ReductionOperation
   deriving (Generic)
 
 deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (Expr ann)
@@ -86,6 +87,7 @@ instance (Annotation ann, AnnExpr ann ~ annType) => HasField "annotation" (Expr 
   getField (Cast ann _ _) = ann
   getField (Range ann _ _ _) = ann
   getField (Bitref ann _ _) = ann
+  getField (Reduce ann _ _) = ann
 
 instance
   (Annotation ann, AnnExpr ann ~ annType) =>
@@ -140,60 +142,64 @@ data SCType
 data SCOperation
   = BitSelect
   | PartSelect
-  | AndReduce
-  | NandReduce
-  | OrReduce
-  | NorReduce
-  | XorReduce
-  | XNorReduce
+  | ReductionOperation ReductionOperation
   deriving (Eq, Show, Ord, Generic, Data)
+
+data ReductionOperation
+  = ReduceAnd
+  | ReduceNand
+  | ReduceOr
+  | ReduceNor
+  | ReduceXor
+  | ReduceXNor
+  deriving (Eq, Show, Ord, Generic, Data, Enum, Bounded)
 
 supportedOperations :: SCType -> Set SCOperation
 supportedOperations SCInt {} =
   [ BitSelect,
     PartSelect,
-    AndReduce,
-    NandReduce,
-    OrReduce,
-    NorReduce,
-    XorReduce,
-    XNorReduce
+    ReductionOperation ReduceAnd,
+    ReductionOperation ReduceNand,
+    ReductionOperation ReduceOr,
+    ReductionOperation ReduceNor,
+    ReductionOperation ReduceXor,
+    ReductionOperation ReduceXNor
   ]
 supportedOperations SCUInt {} =
   [ BitSelect,
     PartSelect,
-    AndReduce,
-    NandReduce,
-    OrReduce,
-    NorReduce,
-    XorReduce,
-    XNorReduce
+    ReductionOperation ReduceAnd,
+    ReductionOperation ReduceNand,
+    ReductionOperation ReduceOr,
+    ReductionOperation ReduceNor,
+    ReductionOperation ReduceXor,
+    ReductionOperation ReduceXNor
   ]
 supportedOperations SCIntSubref {} =
-  [ AndReduce,
-    NandReduce,
-    OrReduce,
-    NorReduce,
-    XorReduce,
-    XNorReduce
+  [ ReductionOperation ReduceAnd,
+    ReductionOperation ReduceNand,
+    ReductionOperation ReduceOr,
+    ReductionOperation ReduceNor,
+    ReductionOperation ReduceXor,
+    ReductionOperation ReduceXNor
   ]
 supportedOperations SCUIntSubref {} =
-  [ AndReduce,
-    NandReduce,
-    OrReduce,
-    NorReduce,
-    XorReduce,
-    XNorReduce
+  [ ReductionOperation ReduceAnd,
+    ReductionOperation ReduceNand,
+    ReductionOperation ReduceOr,
+    ReductionOperation ReduceNor,
+    ReductionOperation ReduceXor,
+    ReductionOperation ReduceXNor
   ]
 supportedOperations SCFixed {} = []
 supportedOperations SCUFixed {} = []
 supportedOperations SCFxnumSubref {} =
-  [ AndReduce,
-    NandReduce,
-    OrReduce,
-    NorReduce,
-    XorReduce,
-    XNorReduce
+  [ ReductionOperation ReduceAnd,
+    ReductionOperation ReduceNand,
+    ReductionOperation ReduceOr,
+    ReductionOperation ReduceNor,
+    ReductionOperation ReduceXor,
+    ReductionOperation ReduceXNor
   ]
 supportedOperations SCIntBitref = []
 supportedOperations SCUIntBitref = []
@@ -321,6 +327,14 @@ instance Source BinOp where
       . layoutPretty defaultLayoutOptions
       . pretty
 
+instance Pretty ReductionOperation where
+  pretty ReduceAnd = "and_reduce"
+  pretty ReduceNand = "nand_reduce"
+  pretty ReduceOr = "or_reduce"
+  pretty ReduceNor = "nor_reduce"
+  pretty ReduceXor = "xor_reduce"
+  pretty ReduceXNor = "xnor_reduce"
+
 annComment :: Doc a -> Doc a
 annComment ann = "/* " <> ann <> " */"
 
@@ -345,6 +359,7 @@ instance Annotation ann => Pretty (Expr ann) where
     pretty castType <> parens (pretty expr)
   pretty (Range _ e hi lo) = pretty e <> ".range(" <> pretty hi <> ", " <> pretty lo <> ")"
   pretty (Bitref _ e bit) = pretty e <> "[" <> pretty bit <> "]"
+  pretty (Reduce _ e op) = pretty e <> "." <> pretty op <> "()"
 
 instance Annotation ann => Source (Expr ann) where
   genSource =
