@@ -80,7 +80,7 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
             printf "==============================\n\n"
       )
   where
-    runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO Bool
+    runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO (Maybe Bool)
     runReduceLoop sequenceId experimentReducible = do
       experiment <- experimentReducible.value
       progress (ExperimentStarted sequenceId experiment)
@@ -89,15 +89,15 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
           `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
       progress (ExperimentCompleted sequenceId result)
 
-      let isInteresting = result.proofFound == Just (not experiment.expectedResult)
+      let isInteresting = result.proofFound /= Just experiment.expectedResult
 
       when (isInteresting && experimentReducible.size > 1) $
         void $
           forUntilM_
-            (runReduceLoop sequenceId)
+            (fmap (== result.proofFound) . runReduceLoop sequenceId)
             (experimentReducible.reductions (experimentReducible.size - 1))
 
-      return isInteresting
+      return result.proofFound
 
     endExperimentSequence :: ExperimentSequenceId -> IO ()
     endExperimentSequence sequenceId = do
