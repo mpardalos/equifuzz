@@ -78,7 +78,7 @@ modifyMVarPure_ :: MVar a -> (a -> a) -> IO ()
 modifyMVarPure_ var f = modifyMVar_ var (pure . f)
 
 diffTimeHMSFormat :: NominalDiffTime -> String
-diffTimeHMSFormat = formatTime defaultTimeLocale "%h:%M:%S" . posixSecondsToUTCTime
+diffTimeHMSFormat = formatTime defaultTimeLocale "%h:%M:%S"
 
 bashExec :: Text -> Sh Text
 bashExec commands = Sh.run "bash" ["-c", commands]
