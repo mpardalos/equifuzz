@@ -1,44 +1,41 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE NumDecimals #-}
 
-module Orchestration (ProgressChan, OrchestrationConfig (..), RunnerConfig(..), startRunners) where
+module Orchestration (ProgressChan, OrchestrationConfig (..), startRunners) where
 
-import Control.Concurrent (MVar, forkFinally, forkIO, modifyMVar_, newMVar, threadDelay)
-import Control.Concurrent.STM (TBQueue, TChan, atomically, cloneTChan, newTBQueueIO, newTChanIO, readTBQueue, readTChan, writeTBQueue, writeTChan)
-import Control.Concurrent.STM.TSem (newTSem, signalTSem, waitTSem)
-import Control.Exception (SomeException, try)
-import Control.Monad (forever, replicateM_, void, when)
+import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar)
+import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
+import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
+import Control.Exception (SomeException, catch)
+import Control.Monad (void, when)
 import Control.Monad.State (execStateT, liftIO)
-import Data.Functor ((<&>))
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text qualified as T
-import Data.UUID (UUID)
-import Data.UUID.V4 qualified as UUID
-import Experiments (DesignSource (..), Experiment (..), ExperimentProgress (..), ExperimentResult (..), ExperimentRunner (..), RunnerError (..), mkSystemCConstantExperiment, saveExperiment)
-import GenSystemC (GenConfig)
+import Experiments
+  ( Experiment (..),
+    ExperimentId (uuid),
+    ExperimentProgress (..),
+    ExperimentResult (..),
+    ExperimentSequenceId (uuid),
+    mkSystemCConstantExperiment,
+    newExperimentSequenceId,
+    saveExperiment,
+  )
+import Runners (ExperimentRunner (run))
+import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
-import System.Random (getStdRandom, uniformR)
 import Text.Printf (printf)
-import Util (forkRestarting, whenJust)
-
-type ExperimentQueue = TBQueue Experiment
+import Util (forUntilM_, foreverThread, whenJust)
 
 type ProgressChan = TChan ExperimentProgress
 
-data RunnerConfig
-  = TestRunner
-  | RunnerConfig ExperimentRunner
-
 data OrchestrationConfig = OrchestrationConfig
-  { runnerConfig :: RunnerConfig,
+  { runner :: ExperimentRunner,
     verbose :: Bool,
-    generatorThreads :: Int,
+    saveResults :: Bool,
     maxExperiments :: Int,
-    experimentQueueDepth :: Int,
     genConfig :: GenConfig
   }
 
@@ -46,142 +43,98 @@ startRunners :: OrchestrationConfig -> IO ProgressChan
 startRunners config = do
   progressChan <- newTChanIO
 
-  case config.runnerConfig of
-    TestRunner ->
-      replicateM_ config.maxExperiments $ startTestThread progressChan
-    RunnerConfig runner -> do
-      experimentQueue <- newTBQueueIO (fromIntegral config.experimentQueueDepth)
-      startGeneratorThread config experimentQueue
-      startOrchestratorThread runner config.maxExperiments experimentQueue progressChan
-      -- We need to clone the progressChan because, otherwise, this thread would
-      -- "eat up" all the messages on it. This way it just gets a copy
-      startSaverThread =<< atomically (cloneTChan progressChan)
+  startOrchestratorThread config config.runner progressChan
+
+  when config.saveResults $
+    startSaverThread =<< atomically (cloneTChan progressChan)
 
   when config.verbose $
     startLoggerThread =<< atomically (cloneTChan progressChan)
 
   return progressChan
 
-startGeneratorThread :: OrchestrationConfig -> ExperimentQueue -> IO ()
-startGeneratorThread OrchestrationConfig {generatorThreads, genConfig} queue =
-  replicateM_ generatorThreads
-    . forkRestarting "Generator thread crashed"
-    . forever
-    $ do
-      experiment <- mkSystemCConstantExperiment genConfig
-      atomically (writeTBQueue queue experiment)
+startOrchestratorThread :: OrchestrationConfig -> ExperimentRunner -> ProgressChan -> IO ()
+startOrchestratorThread config runner progressChan = do
+  experimentSem <- atomically (newTSem . toInteger $ config.maxExperiments)
 
-startOrchestratorThread :: ExperimentRunner -> Int -> ExperimentQueue -> ProgressChan -> IO ()
-startOrchestratorThread runner maxExperiments experimentQueue progressChan = do
-  experimentSem <- atomically (newTSem . toInteger $ maxExperiments)
-
-  forkRestarting "Orchestrator thread crashed" $ forever $ do
+  foreverThread "Orchestrator" $ do
     atomically (waitTSem experimentSem)
-    experiment <- atomically (readTBQueue experimentQueue)
-    forkFinally
-      ( do
-          progress (ExperimentStarted experiment)
-          result <- try @SomeException (runner.run experiment)
+    experimentReducible <- mkSystemCConstantExperiment config.genConfig
+    startRunReduceThread experimentSem progressChan runner experimentReducible
 
-          case result of
-            Left e -> progress (ExperimentFailed experiment.uuid (RunnerCrashed e))
-            Right (Left OutOfLicenses) -> do
-              -- We have one less license than we thought, so reduce the max
-              -- number of experiments allowed
-              atomically (waitTSem experimentSem)
-              progress (ExperimentFailed experiment.uuid OutOfLicenses)
-            Right (Left e) -> progress (ExperimentFailed experiment.uuid e)
-            Right (Right r) -> progress (ExperimentCompleted r)
-      )
-      ( \result -> do
-          atomically (signalTSem experimentSem)
-          case result of
-            Left e -> progress (ExperimentFailed experiment.uuid (RunnerCrashed e))
-            Right () -> pure ()
+startRunReduceThread :: TSem -> ProgressChan -> ExperimentRunner -> Reducible (IO Experiment) -> IO ()
+startRunReduceThread experimentSem progressChan runner initialExperimentReducible = do
+  sequenceId <- newExperimentSequenceId
+
+  void $
+    forkFinally
+      (runReduceLoop sequenceId initialExperimentReducible)
+      ( \case
+          Right _ -> endExperimentSequence sequenceId
+          Left err -> do
+            printf "Experiment sequence aborted %s\n" (show sequenceId)
+            printf "==============================\n"
+            printf "%s\n" (show err)
+            printf "==============================\n\n"
       )
   where
+    runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO (Maybe Bool)
+    runReduceLoop sequenceId experimentReducible = do
+      experiment <- experimentReducible.value
+      progress (ExperimentStarted sequenceId experiment)
+      result <-
+        runner.run experiment
+          `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
+      progress (ExperimentCompleted sequenceId result)
+
+      let isInteresting = result.proofFound /= Just experiment.expectedResult
+
+      when (isInteresting && experimentReducible.size > 1) $
+        void $
+          forUntilM_
+            (fmap (== result.proofFound) . runReduceLoop sequenceId)
+            (experimentReducible.reductions (experimentReducible.size - 1))
+
+      return result.proofFound
+
+    endExperimentSequence :: ExperimentSequenceId -> IO ()
+    endExperimentSequence sequenceId = do
+      atomically (signalTSem experimentSem)
+      progress (ExperimentSequenceCompleted sequenceId)
+
     progress = atomically . writeTChan progressChan
+
+    errorResult experimentId err =
+      ExperimentResult
+        { experimentId = experimentId,
+          proofFound = Nothing,
+          counterExample = Nothing,
+          fullOutput = "Runner crashed with exception:\n" <> T.pack (show err)
+        }
 
 startLoggerThread :: ProgressChan -> IO ()
 startLoggerThread progressChan =
-  forkRestarting "Logger thread crashed" . forever $
+  foreverThread "Logger" $
     atomically (readTChan progressChan) >>= \case
-      ExperimentStarted experiment -> printf "Experiment started | %s\n" (show experiment.uuid)
-      ExperimentFailed uuid _ -> printf "Experiment failed | %s\n" (show uuid)
-      ExperimentCompleted result -> printf "Experiment Completed | %s\n" (show result.uuid)
+      ExperimentStarted sequenceId experiment ->
+        printf "Experiment started | %s (in sequence %s)\n" (show experiment.experimentId.uuid) (show sequenceId.uuid)
+      ExperimentCompleted sequenceId result ->
+        printf "Experiment Completed | %s (in sequence %s)\n" (show result.experimentId.uuid) (show sequenceId.uuid)
+      ExperimentSequenceCompleted sequenceId ->
+        printf "Experiment Sequence Completed | %s\n" (show sequenceId.uuid)
 
 startSaverThread :: ProgressChan -> IO ()
 startSaverThread progressChan = do
-  experimentResults :: MVar (Map UUID Experiment) <- newMVar Map.empty
+  experimentResults :: MVar (Map ExperimentId Experiment) <- newMVar Map.empty
 
-  forkRestarting "Saver thread crashed" . forever $ do
+  foreverThread "Saver" $ do
     progress <- atomically (readTChan progressChan)
     modifyMVar_ experimentResults . execStateT $ case progress of
-      ExperimentStarted experiment -> do
-        at experiment.uuid .= Just experiment
-      ExperimentFailed uuid err -> do
-        mExperiment <- use (at uuid)
-        whenJust mExperiment $ \experiment ->
-          liftIO
-            ( saveExperiment
-                experiment
-                ( ExperimentResult
-                    { proofFound = Nothing,
-                      counterExample = Nothing,
-                      fullOutput = T.pack (show err),
-                      uuid
-                    }
-                )
-            )
-      ExperimentCompleted result -> do
-        mExperiment <- use (at result.uuid)
+      ExperimentStarted _ experiment -> do
+        at experiment.experimentId .= Just experiment
+      ExperimentCompleted _ result -> do
+        mExperiment <- use (at result.experimentId)
         whenJust mExperiment $ \experiment -> do
-          let isInteresting = result.proofFound /= Just experiment.expectedResult
-          when isInteresting $
+          when (result.proofFound /= Just experiment.expectedResult) $
             liftIO (saveExperiment experiment result)
-
---------------------------- Testing --------------------------------------------
-
-startTestThread :: ProgressChan -> IO ()
-startTestThread progressChan = void . forkIO . forever . try @SomeException $ do
-  experiment <- mkTestExperiment
-
-  threadDelay =<< getStdRandom (uniformR (1e6, 2e6))
-
-  proofFound <-
-    getStdRandom (uniformR (1 :: Int, 100)) <&> \x ->
-      if
-          | x < 10 -> Nothing
-          | x < 20 -> Just True
-          | otherwise -> Just False
-
-  reportProgress (ExperimentStarted experiment)
-
-  threadDelay =<< getStdRandom (uniformR (5e6, 20e6))
-  reportProgress
-    ( ExperimentCompleted
-        ExperimentResult
-          { proofFound,
-            counterExample = Just "counter example goes here",
-            fullOutput = "blah\nblah\nblah",
-            uuid = experiment.uuid
-          }
-    )
-  where
-    mkTestExperiment :: IO Experiment
-    mkTestExperiment = do
-      uuid <- UUID.nextRandom
-      return
-        Experiment
-          { uuid,
-            design =
-              DesignSource
-                { topName = "main",
-                  source = "int main() { return 0; }"
-                },
-            comparisonValue = "32'hdeadbeef",
-            expectedResult = False,
-            designDescription = "Mock experiments"
-          }
-
-    reportProgress p = atomically (writeTChan progressChan p)
+      ExperimentSequenceCompleted _ -> pure ()

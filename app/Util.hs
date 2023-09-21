@@ -1,9 +1,16 @@
 module Util where
 
-import Control.Concurrent (forkFinally)
-import Control.Monad (void)
-import Data.Time (getZonedTime, zonedTimeToLocalTime)
+import Control.Concurrent (MVar, forkFinally, modifyMVar_)
+import Control.Monad (void, when)
+import Control.Monad.Random (foldM_, forever)
+import Data.Text (Text)
+import Data.Time (NominalDiffTime, defaultTimeLocale, getZonedTime, zonedTimeToLocalTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Time.Format (formatTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
+import GHC.Conc (labelThread)
+import Shelly (Sh)
+import Shelly qualified as Sh
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
 
@@ -27,14 +34,54 @@ reportError title err = do
   hPutStrLn stderr "========================="
   hPutStrLn stderr ""
 
-forkRestarting :: String -> IO () -> IO ()
-forkRestarting title action =
-  void $
+foreverThread :: String -> IO a -> IO ()
+foreverThread title action = do
+  tid <-
     forkFinally
-      action
+      (forever action)
       ( \result -> do
           case result of
-            Right () -> reportError title "Thread ended"
-            Left e -> reportError title (show e)
-          forkRestarting title action
+            Right () ->
+              reportError
+                (printf "Thread ended: '%s'" title)
+                "Ended successfully, but unexpectedly"
+            Left e ->
+              reportError
+                (printf "Error in thread: '%s'" title)
+                (show e)
+          foreverThread title action
       )
+  labelThread tid title
+
+-- | Like `forM_`, but if the operation returns True, break (i.e. do not process
+-- the remaining elements).
+forUntilM_ :: (Foldable t, Monad m) => (a -> m Bool) -> t a -> m ()
+forUntilM_ action =
+  foldM_
+    ( \done acc ->
+        if done
+          then pure done
+          else action acc
+    )
+    False
+
+mwhen :: Monoid a => Bool -> a -> a
+mwhen True a = a
+mwhen False _ = mempty
+
+whenM :: Monad m => m Bool -> m () -> m ()
+whenM cond action = do
+  v <- cond
+  when v action
+
+modifyMVarPure_ :: MVar a -> (a -> a) -> IO ()
+modifyMVarPure_ var f = modifyMVar_ var (pure . f)
+
+diffTimeHMSFormat :: NominalDiffTime -> String
+diffTimeHMSFormat = formatTime defaultTimeLocale "%h:%M:%S"
+
+bashExec :: Text -> Sh Text
+bashExec commands = Sh.run "bash" ["-c", commands]
+
+bashExec_ :: Text -> Sh ()
+bashExec_ = void . bashExec

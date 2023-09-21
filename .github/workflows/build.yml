@@ -7,20 +7,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Build image
-        run: |
-          podman build -t ghcr.io/mpardalos/equifuzz:v0.1.0.0 -t ghcr.io/mpardalos/equifuzz:latest -f Containerfile .
-
-      - name: Push image to registry
-        run: |
-          podman push ghcr.io/mpardalos/equifuzz:latest
-
-      - name: Save image to archive
-        run: |
-          podman save equifuzz | gzip > equifuzz.tar.gz
-
-      - name: Upload container image as an artifact
-        uses: actions/upload-artifact@v2
+      - name: Auth to GH registry
+        uses: docker/login-action@v1
         with:
-          name: container-artifact
-          path: equifuzz.tar.gz
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: firehed/multistage-docker-build-action@v1
+        id: build
+        with:
+          dockerfile: Containerfile
+          repository: ghcr.io/mpardalos/equifuzz
+          stages: equifuzz-builder, equifuzz
+          server-stage: equifuzz

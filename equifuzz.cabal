@@ -1,6 +1,6 @@
 cabal-version:      3.4
 name:               equifuzz
-version:            0.1.1
+version:            0.2.0
 -- synopsis:
 -- description:
 license:            GPL-3.0-only
@@ -9,7 +9,7 @@ author:             Michalis Pardalos
 maintainer:         me@mpardalos.com
 category:           Testing
 build-type:         Simple
-extra-source-files: resources/style.css, resources/htmx.js
+extra-source-files: resources/style.css, resources/htmx.min.js.gz, resources/sse.js.gz
 
 Flag evaluation_version
      description: Compile an evaluation version (some features removed)
@@ -24,9 +24,15 @@ executable equifuzz
     other-modules: Experiments
                  , Experiments.Types
                  , Experiments.Generators
-                 , Experiments.Runners
+                 , Runners
+                 , Runners.Types
+                 , Runners.Util
+                 , Runners.VCF
                  , SystemC
                  , GenSystemC
+                 , GenSystemC.GenTransformations
+                 , GenSystemC.Transformations
+                 , GenSystemC.Reduce
                  , Util
                  , WebUI
                  , Orchestration
@@ -53,6 +59,7 @@ executable equifuzz
                     , filepath
                     , scotty == 0.12.*
                     , wai == 3.2.*
+                    , wai-extra == 3.1.13.0
                     , blaze-html == 0.9.*
                     , blaze-htmx == 0.1.*
                     , http-types == 0.12.*
