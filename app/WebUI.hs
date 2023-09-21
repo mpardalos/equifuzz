@@ -301,9 +301,11 @@ experimentList state = H.div
     pruneUninterestingButton
   where
     amortisedExperimentTime :: Float
-    amortisedExperimentTime =
-      realToFrac
-        (fromIntegral state.totalRunCount / nominalDiffTimeToSeconds state.runTime)
+    amortisedExperimentTime
+      | state.totalRunCount == 0 = 0
+      | otherwise =
+          realToFrac
+            (nominalDiffTimeToSeconds state.runTime / fromIntegral state.totalRunCount)
 
     toggleUpdatesButton =
       H.button
