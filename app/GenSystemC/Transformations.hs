@@ -29,26 +29,20 @@ applyTransformation (CastWithDeclaration varType) = do
   varName <- newVar
   #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
   #headExpr .= SC.Variable varType varName
-applyTransformation (Range hi lo) = do
-  e <- use #headExpr
-  case SC.rangeType e.annotation hi lo of
-    Just subrefType ->
-      #headExpr .= SC.Range subrefType e hi lo
-    Nothing ->
-      pure ()
-applyTransformation (Arithmetic op e') = do
-  e <- use #headExpr
-  #headExpr .= SC.BinOp e'.annotation e op e'
+applyTransformation (Range hi lo) =
+  #headExpr %= \e -> case SC.rangeType e.annotation hi lo of
+    Just subrefType -> SC.Range subrefType e hi lo
+    Nothing -> e
+applyTransformation (Arithmetic op e') =
+  #headExpr %= \e ->
+    SC.BinOp e'.annotation e op e'
 applyTransformation (UseAsCondition tExpr fExpr) = do
-  e <- use #headExpr
-  #headExpr .= SC.Conditional tExpr.annotation e tExpr fExpr
+  #headExpr %= \e ->
+    SC.Conditional tExpr.annotation e tExpr fExpr
 applyTransformation (BitSelect idx) = do
-  e <- use #headExpr
-  case SC.bitrefType e.annotation of
-    Just bitrefType ->
-      #headExpr .= SC.Bitref bitrefType e idx
-    Nothing ->
-      pure ()
+  #headExpr %= \e -> case SC.bitrefType e.annotation of
+    Just bitrefType -> SC.Bitref bitrefType e idx
+    Nothing -> e
 applyTransformation (ApplyReduction op) = do
   #headExpr %= \e ->
     if e.annotation `SC.supports` SC.ReductionOperation op
