@@ -24,6 +24,7 @@ import System.Random (uniformR)
 import Data.Functor ((<&>))
 import Control.Concurrent (threadDelay)
 import qualified SystemC as SC
+import Data.Text (Text)
 
 main :: IO ()
 main = do
@@ -32,8 +33,9 @@ main = do
   setStdGen (mkStdGen 120)
 #endif
   parseArgs >>= \case
-    Web orchestrationConfig -> do
-      progressChan <- startRunners orchestrationConfig
+    Web webOpts -> do
+      let config = webOptionsToOrchestrationConfig webOpts
+      progressChan <- startRunners config
       runWebUI progressChan
     Generate genConfig -> do
       Experiment {design, longDescription, comparisonValue} <- mkSystemCConstantExperiment genConfig >>= view #value
@@ -47,16 +49,70 @@ main = do
 --------------------------- CLI Parser -----------------------------------------
 
 data Command
-  = Web OrchestrationConfig
+  = Web WebOptions
   | Generate GenConfig
   | PrintVersion
+
+data WebOptions = WebOptions
+  { verbose :: Bool,
+    saveResults :: Bool,
+    maxExperiments :: Int,
+    runnerOptions :: RunnerOptions,
+    genConfig :: GenConfig
+  }
+
+data FECType = VCF
+
+data RunnerOptions
+  = TestRunner
+      { includeInconclusive :: Bool
+      }
+  | Runner
+      { host :: Text,
+        username :: Text,
+        password :: Maybe Text,
+        activatePath :: Maybe Text,
+        fecType :: FECType
+      }
+
+webOptionsToOrchestrationConfig
+  WebOptions
+    { verbose,
+      saveResults,
+      maxExperiments,
+      genConfig,
+      runnerOptions
+    } =
+    OrchestrationConfig
+      { verbose,
+        saveResults,
+        maxExperiments,
+        genConfig,
+        runner = runnerOptionsToRunner runnerOptions
+      }
+
+runnerOptionsToRunner :: RunnerOptions -> ExperimentRunner
+runnerOptionsToRunner
+  TestRunner
+    { includeInconclusive
+    } = testRunner includeInconclusive
+runnerOptionsToRunner
+  Runner
+    { host,
+      username,
+      password,
+      activatePath,
+      fecType
+    } = ExperimentRunner $
+    case fecType of
+      VCF -> runVCFormal SSHConnectionTarget {username, host, password} activatePath
 
 commandParser :: Opt.Parser Command
 commandParser =
   Opt.hsubparser . mconcat $
     [ Opt.command "web" $
         Opt.info
-          (Web <$> orchestrationConfigOpts)
+          (Web <$> webOpts)
           (Opt.progDesc "Run the equifuzz Web UI, connected to a remote host"),
       Opt.command "generate" $
         Opt.info
@@ -68,7 +124,7 @@ commandParser =
           (Opt.progDesc "Print the software version")
     ]
   where
-    orchestrationConfigOpts = do
+    webOpts = do
       maxExperiments <-
         Opt.option Opt.auto . mconcat $
           [ Opt.long "max-experiments",
@@ -86,34 +142,31 @@ commandParser =
           [ Opt.long "no-save",
             Opt.help "Do not save successful experiment results"
           ])
-      runner <- runnerConfigOpts <|> testFlag
       genConfig <- generateConfigOpts
+      runnerOptions <- runnerConfigOpts <|> testFlag
       return
-        OrchestrationConfig
-          { runner,
-            verbose,
+        WebOptions
+          { verbose,
             saveResults,
-            generatorThreads = 10,
             maxExperiments,
-            -- Double the max concurrent experiments to make sure that we are never
-            experimentQueueDepth = 20,
+            runnerOptions,
             genConfig
           }
 
-    testFlag :: Opt.Parser ExperimentRunner
+    testFlag :: Opt.Parser RunnerOptions
     testFlag = do
       Opt.flag' () . mconcat $
         [ Opt.long "test",
           Opt.help "Use a 'test' runner, that just gives random results (for testing)"
         ]
 
-      inconclusiveResults <-
+      includeInconclusive <-
         Opt.switch . mconcat $
           [ Opt.long "inconclusive",
             Opt.help "Include inconclusive results in the test results"
           ]
 
-      return (testRunner inconclusiveResults)
+      return TestRunner {includeInconclusive}
 
     generateConfigOpts :: Opt.Parser GenConfig
     generateConfigOpts =
@@ -150,7 +203,6 @@ commandParser =
             Opt.metavar "PASSWORD",
             Opt.help "Password to connect to remote host"
           ]
-
       activatePath <-
         optional . Opt.strOption . mconcat $
           [ Opt.long "activate-script",
@@ -158,21 +210,16 @@ commandParser =
             Opt.help "Script to be sourced on the remote host before running vcf"
           ]
 
-      fecRunner <- Opt.option readFecType . mconcat $
+      fecType <- Opt.option readFecType . mconcat $
         [ Opt.long "fec-type"
         , Opt.metavar "TYPE"
         , Opt.help "What FEC type we are running against (vcf|catapult|jasper)"
         ]
 
-      return
-        ( ExperimentRunner $
-            fecRunner
-              SSHConnectionTarget {username, host, password}
-              activatePath
-        )
+      return Runner {host, username, password, activatePath, fecType}
 
     readFecType = Opt.eitherReader $ \case
-      "vcf" -> Right runVCFormal
+      "vcf" -> Right VCF
       "catapult" -> Left "Siemens catapult is not *yet* supported"
       "jasper" -> Left "Cadence jasper is not *yet* supported"
       other -> Left ("FEC '" ++ other ++ "' is unknown")

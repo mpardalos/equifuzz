@@ -35,9 +35,7 @@ data OrchestrationConfig = OrchestrationConfig
   { runner :: ExperimentRunner,
     verbose :: Bool,
     saveResults :: Bool,
-    generatorThreads :: Int,
     maxExperiments :: Int,
-    experimentQueueDepth :: Int,
     genConfig :: GenConfig
   }
 
