@@ -49,9 +49,11 @@ applyTransformation (BitSelect idx) = do
       #headExpr .= SC.Bitref bitrefType e idx
     Nothing ->
       pure ()
-applyTransformation (ApplyReduction op) =
+applyTransformation (ApplyReduction op) = do
   #headExpr %= \e ->
-    SC.Reduce SC.CBool e op
+    if e.annotation `SC.supports` SC.ReductionOperation op
+      then SC.Reduce SC.CBool e op
+      else e
 
 data BuildOut
 
