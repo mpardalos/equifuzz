@@ -30,7 +30,7 @@ import Data.Map qualified as Map
 import Data.Maybe (isJust)
 import Data.String.Interpolate (i)
 import Data.Text.Lazy qualified as LT
-import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime)
+import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Experiments
@@ -48,15 +48,16 @@ import Network.Wai.Middleware.Gzip (def, gzip)
 import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (.~), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Safe (headMay, tailSafe)
+import SystemC qualified as SC
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
+import Text.Printf (printf)
 import Util (diffTimeHMSFormat, foreverThread, modifyMVarPure_, mwhen, whenJust, whenM)
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, middleware, next, param, params, raw, scotty, setHeader, status, stream)
-import qualified SystemC as SC
 
 data ExperimentSequenceInfo = ExperimentSequenceInfo
   { sequenceId :: ExperimentSequenceId,
@@ -292,10 +293,18 @@ experimentList state = H.div
     table
       [ ["Total runs", H.toHtml (show state.totalRunCount)],
         ["Running time", H.toHtml (diffTimeHMSFormat state.runTime)],
+        [ "Amortised experiment time",
+          H.toHtml @String (printf "%.1fs" amortisedExperimentTime)
+        ],
         ["Live Updates", toggleUpdatesButton]
       ]
     pruneUninterestingButton
   where
+    amortisedExperimentTime :: Float
+    amortisedExperimentTime =
+      realToFrac
+        (fromIntegral state.totalRunCount / nominalDiffTimeToSeconds state.runTime)
+
     toggleUpdatesButton =
       H.button
         H.! hxGet "/experiments?toggle-updates=1"
