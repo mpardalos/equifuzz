@@ -25,6 +25,8 @@ import Data.Functor ((<&>))
 import Control.Concurrent (threadDelay)
 import qualified SystemC as SC
 import Data.Text (Text)
+import System.IO (stdin, hSetEcho, hFlush, stdout)
+import Text.Printf (printf)
 
 main :: IO ()
 main = do
@@ -34,7 +36,7 @@ main = do
 #endif
   parseArgs >>= \case
     Web webOpts -> do
-      let config = webOptionsToOrchestrationConfig webOpts
+      config <- webOptionsToOrchestrationConfig webOpts
       progressChan <- startRunners config
       runWebUI progressChan
     Generate genConfig -> do
@@ -61,6 +63,8 @@ data WebOptions = WebOptions
     genConfig :: GenConfig
   }
 
+data PasswordSource = NoPassword | AskPassword | PasswordGiven Text
+
 data FECType = VCF
 
 data RunnerOptions
@@ -70,11 +74,12 @@ data RunnerOptions
   | Runner
       { host :: Text,
         username :: Text,
-        password :: Maybe Text,
+        passwordSource :: PasswordSource,
         activatePath :: Maybe Text,
         fecType :: FECType
       }
 
+webOptionsToOrchestrationConfig :: WebOptions -> IO OrchestrationConfig
 webOptionsToOrchestrationConfig
   WebOptions
     { verbose,
@@ -82,30 +87,43 @@ webOptionsToOrchestrationConfig
       maxExperiments,
       genConfig,
       runnerOptions
-    } =
-    OrchestrationConfig
-      { verbose,
-        saveResults,
-        maxExperiments,
-        genConfig,
-        runner = runnerOptionsToRunner runnerOptions
-      }
+    } = do
+    runner <- runnerOptionsToRunner runnerOptions
+    return
+      OrchestrationConfig
+        { verbose,
+          saveResults,
+          maxExperiments,
+          genConfig,
+          runner
+        }
 
-runnerOptionsToRunner :: RunnerOptions -> ExperimentRunner
-runnerOptionsToRunner
-  TestRunner
-    { includeInconclusive
-    } = testRunner includeInconclusive
+runnerOptionsToRunner :: RunnerOptions -> IO ExperimentRunner
+runnerOptionsToRunner TestRunner { includeInconclusive} =
+  return (testRunner includeInconclusive)
 runnerOptionsToRunner
   Runner
     { host,
       username,
-      password,
+      passwordSource,
       activatePath,
       fecType
-    } = ExperimentRunner $
-    case fecType of
-      VCF -> runVCFormal SSHConnectionTarget {username, host, password} activatePath
+    } = do
+        password <- case passwordSource of
+          NoPassword -> pure Nothing
+          PasswordGiven pass -> pure (Just pass)
+          AskPassword -> Just <$> askPassword
+        return $ ExperimentRunner $ case fecType of
+          VCF -> runVCFormal SSHConnectionTarget {username, host, password} activatePath
+
+askPassword :: IO Text
+askPassword = do
+    printf "Your password: "
+    hFlush stdout
+    hSetEcho stdin False
+    password <- T.getLine
+    hSetEcho stdin True
+    return password
 
 commandParser :: Opt.Parser Command
 commandParser =
@@ -197,12 +215,7 @@ commandParser =
             Opt.metavar "USERNAME",
             Opt.help "Username to connect to remote host"
           ]
-      password <-
-        optional . Opt.strOption . mconcat $
-          [ Opt.long "password",
-            Opt.metavar "PASSWORD",
-            Opt.help "Password to connect to remote host"
-          ]
+      passwordSource <- askPasswordFlag <|> passwordOption <|> pure NoPassword
       activatePath <-
         optional . Opt.strOption . mconcat $
           [ Opt.long "activate-script",
@@ -216,7 +229,23 @@ commandParser =
         , Opt.help "What FEC type we are running against (vcf|catapult|jasper)"
         ]
 
-      return Runner {host, username, password, activatePath, fecType}
+      return Runner {host, username, passwordSource, activatePath, fecType}
+
+    askPasswordFlag :: Opt.Parser PasswordSource
+    askPasswordFlag =
+      Opt.flag' AskPassword . mconcat $
+        [ Opt.long "ask-password",
+          Opt.help "Ask for SSH password to the remote host"
+        ]
+
+    passwordOption =
+      PasswordGiven
+        <$> ( Opt.strOption . mconcat $
+                [ Opt.long "password",
+                  Opt.metavar "PASSWORD",
+                  Opt.help "Password to connect to remote host"
+                ]
+            )
 
     readFecType = Opt.eitherReader $ \case
       "vcf" -> Right VCF
