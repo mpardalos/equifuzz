@@ -6,7 +6,7 @@
 
 module Main where
 
-import Control.Applicative (Alternative ((<|>)), optional, (<**>))
+import Control.Applicative (Alternative ((<|>), empty), optional, (<**>))
 import Data.Text.IO qualified as T
 import Experiments
 import Runners
@@ -27,6 +27,8 @@ import qualified SystemC as SC
 import Data.Text (Text)
 import System.IO (stdin, hSetEcho, hFlush, stdout)
 import Text.Printf (printf)
+import Control.Monad (replicateM_, when)
+import Options.Applicative (ReadM)
 
 main :: IO ()
 main = do
@@ -39,20 +41,22 @@ main = do
       config <- webOptionsToOrchestrationConfig webOpts
       progressChan <- startRunners config
       runWebUI progressChan
-    Generate genConfig -> do
-      Experiment {design, longDescription, comparisonValue} <- mkSystemCConstantExperiment genConfig >>= view #value
-      T.putStrLn (SC.genSource design)
-      putStrLn "---------"
-      T.putStrLn longDescription
-      putStrLn "---------"
-      T.putStrLn comparisonValue
+    Generate genOpts -> do
+      replicateM_ genOpts.count $ do
+        Experiment {design, longDescription, comparisonValue} <-
+          mkSystemCConstantExperiment genOpts.genConfig >>= view #value
+        T.putStrLn (SC.genSource design)
+        putStrLn "---------"
+        T.putStrLn longDescription
+        putStrLn "---------"
+        T.putStrLn comparisonValue
     PrintVersion -> putStrLn versionName
 
 --------------------------- CLI Parser -----------------------------------------
 
 data Command
   = Web WebOptions
-  | Generate GenConfig
+  | Generate GenOptions
   | PrintVersion
 
 data WebOptions = WebOptions
@@ -61,6 +65,11 @@ data WebOptions = WebOptions
     maxExperiments :: Int,
     runnerOptions :: RunnerOptions,
     genConfig :: GenConfig
+  }
+
+data GenOptions = GenOptions
+  { count :: Int
+  , genConfig :: GenConfig
   }
 
 data PasswordSource = NoPassword | AskPassword | PasswordGiven Text
@@ -134,7 +143,7 @@ commandParser =
           (Opt.progDesc "Run the equifuzz Web UI, connected to a remote host"),
       Opt.command "generate" $
         Opt.info
-          (Generate <$> generateConfigOpts)
+          (Generate <$> generateOpts)
           (Opt.progDesc "Generate a sample of a generator"),
       Opt.command "version" $
         Opt.info
@@ -185,6 +194,29 @@ commandParser =
           ]
 
       return TestRunner {includeInconclusive}
+
+    generateOpts :: Opt.Parser GenOptions
+    generateOpts = do
+      count <-
+        Opt.option (Opt.auto >>= validateCount) . mconcat $
+          [ Opt.long "count",
+            Opt.metavar "COUNT",
+            Opt.help "How many examples to generate",
+            Opt.value 1,
+            Opt.showDefault
+          ]
+
+      genConfig <- generateConfigOpts
+      return GenOptions {count, genConfig}
+
+    validateCount :: Int -> ReadM Int
+#ifdef EVALUATION_VERSION
+    validateCount n
+      | n > 100 = Opt.readerError "Cannot generate more than 100 examples in evaluation version"
+      | otherwise = pure n
+#else
+    validateCount = pure
+#endif
 
     generateConfigOpts :: Opt.Parser GenConfig
     generateConfigOpts =
