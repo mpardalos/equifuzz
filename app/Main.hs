@@ -3,10 +3,11 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# HLINT ignore "Use unless" #-}
 
 module Main where
 
-import Control.Applicative (Alternative ((<|>), empty), optional, (<**>))
+import Control.Applicative (Alternative ((<|>)), optional, (<**>))
 import Data.Text.IO qualified as T
 import Experiments
 import Runners
@@ -18,7 +19,7 @@ import WebUI (runWebUI)
 import Control.Monad.Random (setStdGen, mkStdGen)
 #endif
 import Meta (versionName)
-import Optics (view)
+import Optics (view, isn't, _Right, (%), only)
 import Control.Monad.Random (getStdRandom)
 import System.Random (uniformR)
 import Data.Functor ((<&>))
@@ -29,6 +30,9 @@ import System.IO (stdin, hSetEcho, hFlush, stdout)
 import Text.Printf (printf)
 import Control.Monad (replicateM_, when)
 import Options.Applicative (ReadM)
+import Runners.Util (validateSSH)
+import qualified Shelly as Sh
+import Control.Exception (throwIO, try, SomeException)
 
 main :: IO ()
 main = do
@@ -122,8 +126,14 @@ runnerOptionsToRunner
           NoPassword -> pure Nothing
           PasswordGiven pass -> pure (Just pass)
           AskPassword -> Just <$> askPassword
+        let sshOpts = SSHConnectionTarget {username, host, password}
+        putStrLn "Validating SSH connection..."
+        sshValid <- try @SomeException $ Sh.shelly $ validateSSH sshOpts
+        when (isn't (_Right % only True) sshValid) $
+          throwIO (userError "Could not connect to ssh host. Please check the options you provided")
+        putStrLn "SSH connection OK"
         return $ ExperimentRunner $ case fecType of
-          VCF -> runVCFormal SSHConnectionTarget {username, host, password} activatePath
+          VCF -> runVCFormal sshOpts activatePath
 
 askPassword :: IO Text
 askPassword = do
@@ -132,6 +142,7 @@ askPassword = do
     hSetEcho stdin False
     password <- T.getLine
     hSetEcho stdin True
+    putStr "\n"
     return password
 
 commandParser :: Opt.Parser Command

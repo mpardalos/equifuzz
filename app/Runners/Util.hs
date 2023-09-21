@@ -13,7 +13,7 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Runners.Types (SSHConnectionTarget (..))
-import Shelly (Sh, (</>))
+import Shelly (Sh, (</>), liftIO)
 import Shelly qualified as Sh
 import Util (bashExec)
 
@@ -64,3 +64,8 @@ scpUpload sshOpts local remote =
     scp :: Text = case sshOpts.password of
       Nothing -> "scp -o PasswordAuthentication=no -o StrictHostKeychecking=no"
       Just pass -> [i|sshpass -p #{pass} scp -o StrictHostKeychecking=no|]
+
+validateSSH :: SSHConnectionTarget -> Sh Bool
+validateSSH sshOpts = Sh.silently $ do
+  textOut <- runSSHCommand sshOpts "echo 'hello'"
+  return (textOut == "hello\n")
