@@ -11,6 +11,7 @@ import Control.Monad (void, when)
 import Control.Monad.State (execStateT, liftIO)
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Experiments
   ( Experiment (..),
@@ -93,12 +94,7 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
         void $
           foldMUntil_
             (fmap (== result.proofFound) . runReduceLoop sequenceId)
-            ( concatMap
-                experimentReducible.reductions
-                [ experimentReducible.size `div` 2
-                  .. experimentReducible.size - 1
-                ]
-            )
+            (selectReductions experimentReducible)
 
       return result.proofFound
 
@@ -116,6 +112,18 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
           counterExample = Nothing,
           fullOutput = "Runner crashed with exception:\n" <> T.pack (show err)
         }
+
+selectReductions :: Reducible a -> [Reducible a]
+selectReductions Reducible {reductions, size} =
+  mapMaybe (reductions Map.!?) $
+    [ (start, end)
+      | chunks <- [2 .. size],
+        let chunkSize = size `div` chunks,
+        chunkSize > 1,
+        start <- [0, chunkSize .. size - chunkSize],
+        let end = start + chunkSize - 1
+    ]
+      <> [(n, n) | n <- [0 .. size - 1]]
 
 startLoggerThread :: ProgressChan -> IO ()
 startLoggerThread progressChan =

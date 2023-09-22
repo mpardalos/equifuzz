@@ -1,5 +1,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedLists #-}
 
 module GenSystemC
   ( GenConfig (..),
@@ -15,6 +16,8 @@ import Control.Monad (replicateM_)
 import Control.Monad.Random.Strict (Rand, StdGen)
 import Control.Monad.State.Strict (evalStateT, execState)
 import Control.Monad.Writer.Strict (MonadWriter (tell), runWriterT)
+import Data.Map qualified as Map
+import Data.Set qualified as Set
 import Data.Text (Text)
 import GenSystemC.GenTransformations
   ( randomTransformationFor,
@@ -90,14 +93,21 @@ data GenerateProcess = GenerateProcess
   }
 
 instance HasReductions GenerateProcess where
-  mkReductions (GenerateProcess seed transformations) window =
-    [ Reducible (GenerateProcess seed ts') window (mkReductions (GenerateProcess seed ts'))
-      | ts' <- windowsOf window transformations
-    ]
+  mkReductions (GenerateProcess seed transformations) =
+    Map.fromSet
+      ( \(start, end) ->
+          let reducedGenerateProcess = GenerateProcess seed (take start transformations <> drop (end+1) transformations)
+           in Reducible
+                { value = reducedGenerateProcess,
+                  size = length reducedGenerateProcess.transformations,
+                  reductions = mkReductions reducedGenerateProcess
+                }
+      )
+      ( Set.fromList
+          [ (a, b)
+            | a <- [0 .. length transformations - 1],
+              b <- [a .. length transformations - 1]
+          ]
+      )
 
   getSize GenerateProcess {transformations} = length transformations
-
-windowsOf :: Int -> [a] -> [[a]]
-windowsOf size initLst = take (length initLst) (go initLst)
-  where
-    go xs = take size (cycle xs) : go (tail (cycle xs))
