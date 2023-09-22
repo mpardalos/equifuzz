@@ -49,9 +49,9 @@ generateProcessToExperiment process@GenerateProcess {seed, transformations} = do
         size = length transformations,
         longDescription =
           T.unlines
-            ( T.pack ("0) " ++ show seed)
+            ( T.pack ("Seed: " ++ show seed)
                 : [ T.pack (show n) <> ") " <> T.pack (show t)
-                    | (n, t) <- zip [1 :: Int ..] transformations
+                    | (n, t) <- zip [0 :: Int ..] transformations
                   ]
             ),
         comparisonValue
