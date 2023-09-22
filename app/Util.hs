@@ -53,10 +53,10 @@ foreverThread title action = do
       )
   labelThread tid title
 
--- | Like `forM_`, but if the operation returns True, break (i.e. do not process
+-- | Like `foldM_`, but if the operation returns True, break (i.e. do not process
 -- the remaining elements).
-forUntilM_ :: (Foldable t, Monad m) => (a -> m Bool) -> t a -> m ()
-forUntilM_ action =
+foldMUntil_ :: (Foldable t, Monad m) => (a -> m Bool) -> t a -> m ()
+foldMUntil_ action =
   foldM_
     ( \done acc ->
         if done

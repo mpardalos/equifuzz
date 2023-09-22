@@ -27,7 +27,7 @@ import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
 import Text.Printf (printf)
-import Util (forUntilM_, foreverThread, whenJust)
+import Util (foldMUntil_, foreverThread, whenJust)
 
 type ProgressChan = TChan ExperimentProgress
 
@@ -91,7 +91,7 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
 
       when (isInteresting && experimentReducible.size > 1) $
         void $
-          forUntilM_
+          foldMUntil_
             (fmap (== result.proofFound) . runReduceLoop sequenceId)
             (experimentReducible.reductions (experimentReducible.size - 1))
 
