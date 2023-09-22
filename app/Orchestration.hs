@@ -22,10 +22,10 @@ import Experiments
     newExperimentSequenceId,
     saveExperiment,
   )
-import Runners (ExperimentRunner (run))
 import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
+import Runners (ExperimentRunner (run))
 import Text.Printf (printf)
 import Util (foldMUntil_, foreverThread, whenJust)
 
@@ -93,7 +93,12 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
         void $
           foldMUntil_
             (fmap (== result.proofFound) . runReduceLoop sequenceId)
-            (experimentReducible.reductions (experimentReducible.size - 1))
+            ( concatMap
+                experimentReducible.reductions
+                [ experimentReducible.size `div` 2
+                  .. experimentReducible.size - 1
+                ]
+            )
 
       return result.proofFound
 
