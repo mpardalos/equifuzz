@@ -11,7 +11,7 @@ import Control.Applicative (Alternative ((<|>)), optional, (<**>))
 import Data.Text.IO qualified as T
 import Experiments
 import Runners
-import GenSystemC (GenConfig (..))
+import GenSystemC (GenConfig (..), allTransformationsEnabled)
 import Options.Applicative qualified as Opt
 import Orchestration
 import WebUI (runWebUI)
@@ -48,7 +48,7 @@ main = do
     Generate genOpts -> do
       replicateM_ genOpts.count $ do
         Experiment {design, longDescription, comparisonValue} <-
-          mkSystemCConstantExperiment genOpts.genConfig >>= view #value
+          mkSystemCConstantExperiment (generateOptionsToGenConfig genOpts) >>= view #value
         T.putStrLn (SC.genSource design)
         putStrLn "---------"
         T.putStrLn longDescription
@@ -60,7 +60,7 @@ main = do
 
 data Command
   = Web WebOptions
-  | Generate GenOptions
+  | Generate GenerateOptions
   | PrintVersion
 
 data WebOptions = WebOptions
@@ -68,12 +68,12 @@ data WebOptions = WebOptions
     saveResults :: Bool,
     maxExperiments :: Int,
     runnerOptions :: RunnerOptions,
-    genConfig :: GenConfig
+    growSteps :: Int
   }
 
-data GenOptions = GenOptions
+data GenerateOptions = GenerateOptions
   { count :: Int
-  , genConfig :: GenConfig
+  , growSteps :: Int
   }
 
 data PasswordSource = NoPassword | AskPassword | PasswordGiven Text
@@ -92,13 +92,20 @@ data RunnerOptions
         fecType :: FECType
       }
 
+generateOptionsToGenConfig :: GenerateOptions -> GenConfig
+generateOptionsToGenConfig GenerateOptions {growSteps} =
+  GenConfig
+    { growSteps,
+      transformationsConfig = allTransformationsEnabled
+    }
+
 webOptionsToOrchestrationConfig :: WebOptions -> IO OrchestrationConfig
 webOptionsToOrchestrationConfig
   WebOptions
     { verbose,
       saveResults,
       maxExperiments,
-      genConfig,
+      growSteps,
       runnerOptions
     } = do
     runner <- runnerOptionsToRunner runnerOptions
@@ -107,7 +114,11 @@ webOptionsToOrchestrationConfig
         { verbose,
           saveResults,
           maxExperiments,
-          genConfig,
+          genConfig =
+            GenConfig
+              { growSteps,
+                transformationsConfig = allTransformationsEnabled
+              },
           runner
         }
 
@@ -180,7 +191,7 @@ commandParser =
           [ Opt.long "no-save",
             Opt.help "Do not save successful experiment results"
           ])
-      genConfig <- generateConfigOpts
+      growSteps <- growStepsOpt
       runnerOptions <- runnerConfigOpts <|> testFlag
       return
         WebOptions
@@ -188,7 +199,7 @@ commandParser =
             saveResults,
             maxExperiments,
             runnerOptions,
-            genConfig
+            growSteps
           }
 
     testFlag :: Opt.Parser RunnerOptions
@@ -206,7 +217,7 @@ commandParser =
 
       return TestRunner {includeInconclusive}
 
-    generateOpts :: Opt.Parser GenOptions
+    generateOpts :: Opt.Parser GenerateOptions
     generateOpts = do
       count <-
         Opt.option (Opt.auto >>= validateCount) . mconcat $
@@ -217,8 +228,9 @@ commandParser =
             Opt.showDefault
           ]
 
-      genConfig <- generateConfigOpts
-      return GenOptions {count, genConfig}
+      growSteps <- growStepsOpt
+
+      return GenerateOptions {count, growSteps}
 
     validateCount :: Int -> ReadM Int
 #ifdef EVALUATION_VERSION
@@ -229,20 +241,17 @@ commandParser =
     validateCount = pure
 #endif
 
-    generateConfigOpts :: Opt.Parser GenConfig
-    generateConfigOpts =
+    growStepsOpt :: Opt.Parser Int
 #ifdef EVALUATION_VERSION
-      pure (GenConfig 20)
+    growStepsOpt = Opt.option Opt.auto . mconcat $
+      [ Opt.long "gen-steps",
+        Opt.metavar "COUNT",
+        Opt.help "Number of generation steps to use for each experiment",
+        Opt.value 30,
+        Opt.showDefault
+      ]
 #else
-      GenConfig
-        <$> ( Opt.option Opt.auto . mconcat $
-                [ Opt.long "gen-steps",
-                  Opt.metavar "COUNT",
-                  Opt.help "Number of generation steps to use for each experiment",
-                  Opt.value 30,
-                  Opt.showDefault
-                ]
-            )
+    growStepsOpt = pure 20
 #endif
 
     runnerConfigOpts = do

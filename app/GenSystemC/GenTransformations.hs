@@ -1,48 +1,84 @@
+{-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module GenSystemC.GenTransformations (seedExpr, randomTransformationFor, randomFinalTransformation) where
 
 import Control.Monad (guard, join)
 import Control.Monad.Random.Strict (MonadRandom, getRandomR, uniform, weighted)
+import Data.Foldable (toList)
 import Data.Maybe (catMaybes)
 import Data.Set qualified as Set
+import GenSystemC.Config (GenConfig (..), TransformationsF (..))
 import GenSystemC.Transformations
   ( BuildOut,
     Transformation (..),
   )
 import SystemC qualified as SC
 
-randomTransformationFor :: forall m. MonadRandom m => SC.Expr BuildOut -> m Transformation
-randomTransformationFor e =
-  join . weighted . map (,1) . catMaybes $
-    [ castWithDeclaration
-    , range
-#ifndef EVALUATION_VERSION
-    , arithmetic
-    , useAsCondition
-    , bitSelect
-    , applyReduction
+randomTransformationFor :: forall m. MonadRandom m => GenConfig -> SC.Expr BuildOut -> m Transformation
+randomTransformationFor cfg e =
+  let guardedGenerators :: TransformationsF (Maybe (m Transformation)) = do
+        condition <- cfg.transformationsConfig
+        genTransformation <- transformationGens e
+        pure $
+          if condition e
+            then genTransformation
+            else Nothing
+      generatorList :: [m Transformation] = catMaybes . toList $ guardedGenerators
+      weightedGenerators = map (,1) generatorList
+   in join (weighted weightedGenerators)
+
+transformationGens :: MonadRandom m => SC.Expr BuildOut -> TransformationsF (Maybe (m Transformation))
+transformationGens e =
+  TransformationsF
+    { castWithDeclaration = Just (CastWithDeclaration <$> castTargetType e.annotation),
+      range = do
+        guard (e.annotation `SC.supports` SC.PartSelect)
+        exprWidth <- SC.knownWidth e.annotation
+        return $ do
+          hi <- getRandomR (0, exprWidth - 1)
+          lo <- getRandomR (0, hi)
+          return (Range hi lo),
+#ifdef EVALUATION_VERSION
+      arithmetic = Nothing,
+      useAsCondition = Nothing,
+      bitSelect = Nothing,
+      applyReduction = Nothing
+#else
+      arithmetic = do
+        resultType <- arithmeticResultType
+        return $ do
+          op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
+          constant <- someConstant resultType
+          return (Arithmetic op constant),
+      useAsCondition = do
+        guard (SC.CBool `elem` SC.implicitCastTargetsOf e.annotation)
+        return
+          ( UseAsCondition
+              <$> someConstant SC.CInt
+              <*> someConstant SC.CInt
+          ),
+      bitSelect = do
+        guard (e.annotation `SC.supports` SC.BitSelect)
+        width <- SC.knownWidth e.annotation
+        return (BitSelect <$> getRandomR (0, width - 1)),
+      applyReduction = do
+        let options =
+              [ ApplyReduction op
+                | SC.ReductionOperation op <-
+                    Set.elems $ SC.supportedOperations e.annotation
+              ]
+        guard (not . null $ options)
+        return (uniform options)
 #endif
-    ]
+    }
   where
-    castWithDeclaration :: Maybe (m Transformation)
-    castWithDeclaration = Just (CastWithDeclaration <$> castTargetType e.annotation)
-
-    range :: Maybe (m Transformation)
-    range = do
-      guard (e.annotation `SC.supports` SC.PartSelect)
-      exprWidth <- SC.knownWidth e.annotation
-      return $ do
-        hi <- getRandomR (0, exprWidth - 1)
-        lo <- getRandomR (0, hi)
-        return (Range hi lo)
-
     arithmeticResultType :: Maybe SC.SCType
     arithmeticResultType
       | [t] <-
@@ -53,40 +89,7 @@ randomTransformationFor e =
           Just t
       | otherwise = Nothing
 
-    arithmetic :: Maybe (m Transformation)
-    arithmetic = do
-      resultType <- arithmeticResultType
-      return $ do
-        op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
-        constant <- someConstant resultType
-        return (Arithmetic op constant)
-
-    useAsCondition :: Maybe (m Transformation)
-    useAsCondition = do
-      guard (SC.CBool `elem` SC.implicitCastTargetsOf e.annotation)
-      return
-        ( UseAsCondition
-            <$> someConstant SC.CInt
-            <*> someConstant SC.CInt
-        )
-
-    bitSelect :: Maybe (m Transformation)
-    bitSelect = do
-      guard (e.annotation `SC.supports` SC.BitSelect)
-      width <- SC.knownWidth e.annotation
-      return (BitSelect <$> getRandomR (0, width - 1))
-
-    applyReduction :: Maybe (m Transformation)
-    applyReduction = do
-      let options =
-            [ ApplyReduction op
-              | SC.ReductionOperation op <-
-                  Set.elems $ SC.supportedOperations e.annotation
-            ]
-      guard (not . null $ options)
-      return (uniform options)
-
-    someConstant :: SC.SCType -> m (SC.Expr BuildOut)
+    someConstant :: MonadRandom m => SC.SCType -> m (SC.Expr BuildOut)
     someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)
 
 seedExpr :: MonadRandom m => m (SC.Expr BuildOut)
