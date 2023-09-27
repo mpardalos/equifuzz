@@ -66,9 +66,8 @@ data Expr ann
   | Conditional (AnnExpr ann) (Expr ann) (Expr ann) (Expr ann)
   | Variable (AnnExpr ann) Text
   | Cast (AnnExpr ann) SCType (Expr ann)
-  | Range (AnnExpr ann) (Expr ann) Int Int
   | Bitref (AnnExpr ann) (Expr ann) Int
-  | Reduce (AnnExpr ann) (Expr ann) ReductionOperation
+  | MethodCall (AnnExpr ann) (Expr ann) Text [Expr ann]
   deriving (Generic)
 
 deriving instance (Annotation ann, AnnConstraint Eq ann) => Eq (Expr ann)
@@ -85,9 +84,8 @@ instance (Annotation ann, AnnExpr ann ~ annType) => HasField "annotation" (Expr 
   getField (Conditional ann _ _ _) = ann
   getField (Variable ann _) = ann
   getField (Cast ann _ _) = ann
-  getField (Range ann _ _ _) = ann
   getField (Bitref ann _ _) = ann
-  getField (Reduce ann _ _) = ann
+  getField (MethodCall ann _ _ _) = ann
 
 instance
   (Annotation ann, AnnExpr ann ~ annType) =>
@@ -153,6 +151,14 @@ data ReductionOperation
   | ReduceXor
   | ReduceXNor
   deriving (Eq, Show, Ord, Generic, Data, Enum, Bounded)
+
+reductionMethod :: ReductionOperation -> Text
+reductionMethod ReduceAnd = "and_reduce"
+reductionMethod ReduceNand = "nand_reduce"
+reductionMethod ReduceOr = "or_reduce"
+reductionMethod ReduceNor = "nor_reduce"
+reductionMethod ReduceXor = "xor_reduce"
+reductionMethod ReduceXNor = "xnor_reduce"
 
 supportedOperations :: SCType -> Set SCOperation
 supportedOperations SCInt {} =
@@ -357,9 +363,14 @@ instance Annotation ann => Pretty (Expr ann) where
     pretty name
   pretty (Cast _ castType expr) =
     pretty castType <> parens (pretty expr)
-  pretty (Range _ e hi lo) = pretty e <> ".range(" <> pretty hi <> ", " <> pretty lo <> ")"
+  pretty (MethodCall _ e method args) =
+    pretty e
+      <> "."
+      <> pretty method
+      <> "("
+      <> hsep (punctuate ", " (map pretty args))
+      <> ")"
   pretty (Bitref _ e bit) = pretty e <> "[" <> pretty bit <> "]"
-  pretty (Reduce _ e op) = pretty e <> "." <> pretty op <> "()"
 
 instance Annotation ann => Source (Expr ann) where
   genSource =

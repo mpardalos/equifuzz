@@ -82,7 +82,12 @@ applyTransformation (CastWithDeclaration varType) = do
   #headExpr .= SC.Variable varType varName
 applyTransformation (Range hi lo) =
   #headExpr %= \e -> case SC.rangeType e.annotation hi lo of
-    Just subrefType -> SC.Range subrefType e hi lo
+    Just subrefType ->
+      SC.MethodCall
+        subrefType
+        e
+        "range"
+        [SC.Constant SC.CInt hi, SC.Constant SC.CInt lo]
     Nothing -> e
 applyTransformation (Arithmetic op e') =
   #headExpr %= \e ->
@@ -97,7 +102,7 @@ applyTransformation (BitSelect idx) = do
 applyTransformation (ApplyReduction op) = do
   #headExpr %= \e ->
     if e.annotation `SC.supports` SC.ReductionOperation op
-      then SC.Reduce SC.CBool e op
+      then SC.MethodCall SC.CBool e (SC.reductionMethod op) []
       else e
 
 randomTransformationFor :: forall m. MonadRandom m => SC.Expr BuildOut -> m Transformation
