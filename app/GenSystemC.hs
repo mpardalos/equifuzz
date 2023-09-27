@@ -77,9 +77,10 @@ generateFromProcess name GenerateProcess {seed, transformations} =
         SC.SCFixed {} -> pure ()
         SC.SCUInt {} -> pure ()
         SC.SCUFixed {} -> pure ()
-        SC.CInt -> pure ()
-        SC.CUInt -> pure ()
-        SC.CDouble -> pure ()
+        -- Explicitly cast native types
+        SC.CInt -> applyTransformation (CastWithDeclaration SC.CInt)
+        SC.CUInt -> applyTransformation (CastWithDeclaration SC.CUInt)
+        SC.CDouble -> applyTransformation (CastWithDeclaration SC.CDouble)
         SC.CBool -> pure ()
         SC.SCFxnumSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))
         SC.SCIntSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))
