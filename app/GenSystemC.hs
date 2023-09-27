@@ -57,7 +57,7 @@ generateFromProcess :: Text -> GenerateProcess -> SC.FunctionDeclaration BuildOu
 generateFromProcess name GenerateProcess {seed, transformations} =
   let finalState = (`execState` initBuildOutState seed) $ do
         mapM_ applyTransformation transformations
-        -- This is only used here, in generateFromProcess. We don't want this to
+        -- This is only used here, in generateFromProcess. We want this to
         -- \*not* be in the GenerateProcess, so that it is dynamically added in
         -- the reduced experiments, depending on what the reduction has left as the final expression.
         finalizeIfNeeded
