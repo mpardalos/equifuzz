@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -32,7 +31,25 @@ randomTransformationFor e =
     ]
   where
     castWithDeclaration :: Maybe (m Transformation)
-    castWithDeclaration = Just (CastWithDeclaration <$> castTargetType e.annotation)
+    castWithDeclaration = Just (CastWithDeclaration <$> castTargetType)
+      where
+        castTargetType = case e.annotation of
+          SC.SCFxnumSubref {} -> join $ uniform [someInt, someUInt]
+          _ -> join $ uniform [someInt, someUInt, someFixed, someUFixed]
+
+        someInt = SC.SCInt <$> someWidth
+        someUInt = SC.SCUInt <$> someWidth
+        someFixed = do
+          w <- someWidth
+          i <- getRandomR (0, w)
+          return (SC.SCFixed w i)
+        someUFixed = do
+          w <- someWidth
+          i <- getRandomR (0, w)
+          return (SC.SCUFixed w i)
+
+        someWidth :: MonadRandom m => m Int
+        someWidth = getRandomR (1, 64)
 
     range :: Maybe (m Transformation)
     range = do
@@ -94,22 +111,3 @@ seedExpr = do
   value <- getRandomR (-128, 128)
   return (SC.Constant SC.CInt value)
 
--- Generate a type that the input type can be cast to
-castTargetType :: MonadRandom m => SC.SCType -> m SC.SCType
-castTargetType = \case
-  SC.SCFxnumSubref {} -> join $ uniform [someInt, someUInt]
-  _ -> join $ uniform [someInt, someUInt, someFixed, someUFixed]
-  where
-    someInt = SC.SCInt <$> someWidth
-    someUInt = SC.SCUInt <$> someWidth
-    someFixed = do
-      w <- someWidth
-      i <- getRandomR (0, w)
-      return (SC.SCFixed w i)
-    someUFixed = do
-      w <- someWidth
-      i <- getRandomR (0, w)
-      return (SC.SCUFixed w i)
-
-    someWidth :: MonadRandom m => m Int
-    someWidth = getRandomR (1, 64)
