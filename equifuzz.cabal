@@ -30,7 +30,6 @@ executable equifuzz
                  , Runners.VCF
                  , SystemC
                  , GenSystemC
-                 , GenSystemC.GenTransformations
                  , GenSystemC.Transformations
                  , GenSystemC.Reduce
                  , Util

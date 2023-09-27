@@ -19,10 +19,6 @@ import Control.Monad.Writer.Strict (MonadWriter (tell), runWriterT)
 import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
-import GenSystemC.GenTransformations
-  ( randomTransformationFor,
-    seedExpr,
-  )
 import GenSystemC.Reduce
   ( HasReductions (..),
     Reducible (..),
@@ -35,6 +31,8 @@ import GenSystemC.Transformations
     Transformation (..),
     applyTransformation,
     initBuildOutState,
+    randomTransformationFor,
+    seedExpr,
   )
 import Optics (use, (%))
 import SystemC qualified as SC
@@ -97,7 +95,7 @@ instance HasReductions GenerateProcess where
   mkReductions (GenerateProcess seed transformations) =
     Map.fromSet
       ( \(start, end) ->
-          let reducedGenerateProcess = GenerateProcess seed (take start transformations <> drop (end+1) transformations)
+          let reducedGenerateProcess = GenerateProcess seed (take start transformations <> drop (end + 1) transformations)
            in Reducible
                 { value = reducedGenerateProcess,
                   size = length reducedGenerateProcess.transformations,
