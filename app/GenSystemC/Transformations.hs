@@ -23,7 +23,7 @@ data Transformation
   | ApplyReduction SC.ReductionOperation
   deriving stock (Show, Generic)
 
-applyTransformation :: MonadBuildOut m => Transformation -> m ()
+applyTransformation :: MonadBuild m => Transformation -> m ()
 applyTransformation (CastWithDeclaration varType) = do
   e <- use #headExpr
   varName <- newVar
@@ -55,7 +55,7 @@ instance SC.Annotation BuildOut where
   type AnnExpr BuildOut = SC.SCType
   type AnnStatement BuildOut = ()
 
-type MonadBuildOut m = MonadState BuildOutState m
+type MonadBuild m = MonadState BuildOutState m
 
 data BuildOutState = BuildOutState
   { statements :: [SC.Statement BuildOut],
@@ -72,7 +72,7 @@ initBuildOutState headExpr =
       nextVarIdx = 0
     }
 
-newVar :: MonadBuildOut m => m Text
+newVar :: MonadBuild m => m Text
 newVar = do
   varIdx <- use #nextVarIdx
   #nextVarIdx %= (+ 1)

@@ -31,7 +31,7 @@ import GenSystemC.Reduce
 import GenSystemC.Transformations
   ( BuildOut,
     BuildOutState (headExpr, statements),
-    MonadBuildOut,
+    MonadBuild,
     Transformation (..),
     applyTransformation,
     initBuildOutState,
@@ -70,7 +70,7 @@ generateFromProcess name GenerateProcess {seed, transformations} =
           body = finalState.statements ++ [SC.Return () finalState.headExpr]
         }
   where
-    finalizeIfNeeded :: MonadBuildOut m => m ()
+    finalizeIfNeeded :: MonadBuild m => m ()
     finalizeIfNeeded =
       use (#headExpr % #annotation) >>= \case
         SC.SCInt {} -> pure ()
