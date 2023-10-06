@@ -37,7 +37,8 @@ import SystemC qualified as SC
 import Data.List (intersect)
 
 data Transformation
-  = CastWithDeclaration SC.SCType
+  = CastWithAssignment SC.SCType
+  | FunctionalCast SC.SCType
   | Range Int Int
   | Arithmetic SC.BinOp (SC.Expr BuildOut)
   | UseAsCondition (SC.Expr BuildOut) (SC.Expr BuildOut)
@@ -75,11 +76,13 @@ newVar = do
   return ("x" <> T.pack (show varIdx))
 
 applyTransformation :: MonadBuild m => Transformation -> m ()
-applyTransformation (CastWithDeclaration varType) = do
+applyTransformation (CastWithAssignment varType) = do
   e <- use #headExpr
   varName <- newVar
-  #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
+  #statements %= (++ [SC.Declaration () varType varName e])
   #headExpr .= SC.Variable varType varName
+applyTransformation (FunctionalCast castType) =
+  #headExpr %= \e -> SC.Cast castType castType e
 applyTransformation (Range hi lo) =
   #headExpr %= \e -> case (SC.operations e.annotation).partSelect of
     Just subrefType | hi >= lo ->
@@ -108,7 +111,8 @@ applyTransformation (ApplyReduction op) = do
 randomTransformationFor :: forall m. MonadRandom m => SC.Expr BuildOut -> m Transformation
 randomTransformationFor e =
   join . weighted . map (,1) . catMaybes $
-    [ castWithDeclaration
+    [ castWithAssignment
+    , functionalCast
     , range
 #ifndef EVALUATION_VERSION
     , arithmetic
@@ -118,13 +122,16 @@ randomTransformationFor e =
 #endif
     ]
   where
-    castWithDeclaration :: Maybe (m Transformation)
-    castWithDeclaration = Just (CastWithDeclaration <$> castTargetType)
-      where
-        castTargetType = case e.annotation of
-          SC.SCFxnumSubref {} -> join $ uniform [someInt, someUInt]
-          _ -> join $ uniform [someInt, someUInt, someBigInt, someBigUInt, someFixed, someUFixed]
+    castWithAssignment :: Maybe (m Transformation)
+    castWithAssignment = Just (CastWithAssignment <$> castTargetType)
 
+    functionalCast :: Maybe (m Transformation)
+    functionalCast = Just (FunctionalCast <$> castTargetType)
+
+    castTargetType = case e.annotation of
+      SC.SCFxnumSubref {} -> join $ uniform [someInt, someUInt]
+      _ -> join $ uniform [someInt, someUInt, someBigInt, someBigUInt, someFixed, someUFixed]
+      where
         someInt = SC.SCInt <$> someWidth
         someUInt = SC.SCUInt <$> someWidth
         someBigInt = SC.SCBigInt <$> someBigWidth
