@@ -124,6 +124,8 @@ instance (annType ~ AnnStatement ann) => HasField "annotation" (Statement ann) a
 data SCType
   = SCInt Int
   | SCUInt Int
+  | SCBigInt Int
+  | SCBigUInt Int
   | SCFixed {w :: Int, i :: Int}
   | SCUFixed {w :: Int, i :: Int}
   | SCFxnumSubref {width :: Int}
@@ -161,6 +163,16 @@ reductionMethod ReduceXor = "xor_reduce"
 reductionMethod ReduceXNor = "xnor_reduce"
 
 supportedOperations :: SCType -> Set SCOperation
+supportedOperations SCBigInt {} =
+  [ BitSelect,
+    PartSelect,
+    ReductionOperation ReduceAnd,
+    ReductionOperation ReduceNand,
+    ReductionOperation ReduceOr,
+    ReductionOperation ReduceNor,
+    ReductionOperation ReduceXor,
+    ReductionOperation ReduceXNor
+  ]
 supportedOperations SCInt {} =
   [ BitSelect,
     PartSelect,
