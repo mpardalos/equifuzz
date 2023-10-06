@@ -27,14 +27,14 @@ where
 import Control.Monad (guard, join)
 import Control.Monad.Random.Strict (MonadRandom, getRandomR, uniform, weighted)
 import Control.Monad.State.Strict (MonadState)
-import Data.Maybe (catMaybes)
-import Data.Set qualified as Set
+import Data.Maybe (catMaybes, isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics (use)
 import Optics.State.Operators ((%=), (.=))
 import SystemC qualified as SC
+import Data.List (intersect)
 
 data Transformation
   = CastWithDeclaration SC.SCType
@@ -81,14 +81,14 @@ applyTransformation (CastWithDeclaration varType) = do
   #statements %= (++ [SC.Declaration () varType varName (SC.Cast varType varType e)])
   #headExpr .= SC.Variable varType varName
 applyTransformation (Range hi lo) =
-  #headExpr %= \e -> case SC.rangeType e.annotation hi lo of
-    Just subrefType ->
+  #headExpr %= \e -> case (SC.operations e.annotation).partSelect of
+    Just subrefType | hi >= lo ->
       SC.MethodCall
-        subrefType
+        (subrefType (hi - lo + 1))
         e
         "range"
         [SC.Constant SC.CInt hi, SC.Constant SC.CInt lo]
-    Nothing -> e
+    _ -> e
 applyTransformation (Arithmetic op e') =
   #headExpr %= \e ->
     SC.BinOp e'.annotation e op e'
@@ -96,12 +96,12 @@ applyTransformation (UseAsCondition tExpr fExpr) = do
   #headExpr %= \e ->
     SC.Conditional tExpr.annotation e tExpr fExpr
 applyTransformation (BitSelect idx) = do
-  #headExpr %= \e -> case SC.bitrefType e.annotation of
+  #headExpr %= \e -> case (SC.operations e.annotation).bitSelect of
     Just bitrefType -> SC.Bitref bitrefType e idx
     Nothing -> e
 applyTransformation (ApplyReduction op) = do
   #headExpr %= \e ->
-    if e.annotation `SC.supports` SC.ReductionOperation op
+    if op `elem` (SC.operations e.annotation).reductions
       then SC.MethodCall SC.CBool e (SC.reductionMethod op) []
       else e
 
@@ -146,7 +146,7 @@ randomTransformationFor e =
 
     range :: Maybe (m Transformation)
     range = do
-      guard (e.annotation `SC.supports` SC.PartSelect)
+      guard (isJust (SC.operations e.annotation).partSelect)
       exprWidth <- SC.knownWidth e.annotation
       return $ do
         hi <- getRandomR (0, exprWidth - 1)
@@ -156,10 +156,8 @@ randomTransformationFor e =
     arithmeticResultType :: Maybe SC.SCType
     arithmeticResultType
       | [t] <-
-          Set.toList $
-            Set.intersection
-              (Set.fromList [SC.CInt, SC.CUInt, SC.CDouble])
-              (SC.implicitCastTargetsOf e.annotation) =
+          [SC.CInt, SC.CUInt, SC.CDouble]
+            `intersect` (SC.operations e.annotation).implicitCasts =
           Just t
       | otherwise = Nothing
 
@@ -173,7 +171,7 @@ randomTransformationFor e =
 
     useAsCondition :: Maybe (m Transformation)
     useAsCondition = do
-      guard (SC.CBool `elem` SC.implicitCastTargetsOf e.annotation)
+      guard (SC.CBool `elem` (SC.operations e.annotation).implicitCasts)
       return
         ( UseAsCondition
             <$> someConstant SC.CInt
@@ -182,17 +180,13 @@ randomTransformationFor e =
 
     bitSelect :: Maybe (m Transformation)
     bitSelect = do
-      guard (e.annotation `SC.supports` SC.BitSelect)
+      guard (isJust (SC.operations e.annotation).bitSelect)
       width <- SC.knownWidth e.annotation
       return (BitSelect <$> getRandomR (0, width - 1))
 
     applyReduction :: Maybe (m Transformation)
     applyReduction = do
-      let options =
-            [ ApplyReduction op
-              | SC.ReductionOperation op <-
-                  Set.elems $ SC.supportedOperations e.annotation
-            ]
+      let options = ApplyReduction <$> (SC.operations e.annotation).reductions
       guard (not . null $ options)
       return (uniform options)
 

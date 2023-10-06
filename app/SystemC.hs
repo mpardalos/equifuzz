@@ -8,8 +8,6 @@ module SystemC where
 
 import Data.Data (Data, Typeable)
 import Data.Kind (Constraint, Type)
-import Data.Set (Set)
-import Data.Set qualified as Set
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import GHC.Records (HasField (getField))
@@ -143,12 +141,6 @@ data SCType
   | CBool
   deriving (Eq, Show, Ord, Generic, Data)
 
-data SCOperation
-  = BitSelect
-  | PartSelect
-  | ReductionOperation ReductionOperation
-  deriving (Eq, Show, Ord, Generic, Data)
-
 data ReductionOperation
   = ReduceAnd
   | ReduceNand
@@ -158,6 +150,16 @@ data ReductionOperation
   | ReduceXNor
   deriving (Eq, Show, Ord, Generic, Data, Enum, Bounded)
 
+allReductions :: [ReductionOperation]
+allReductions = [minBound .. maxBound]
+
+data Operations = Operations
+  { bitSelect :: Maybe SCType,
+    partSelect :: Maybe (Int -> SCType),
+    reductions :: [ReductionOperation],
+    implicitCasts :: [SCType]
+  }
+
 reductionMethod :: ReductionOperation -> Text
 reductionMethod ReduceAnd = "and_reduce"
 reductionMethod ReduceNand = "nand_reduce"
@@ -166,177 +168,140 @@ reductionMethod ReduceNor = "nor_reduce"
 reductionMethod ReduceXor = "xor_reduce"
 reductionMethod ReduceXNor = "xnor_reduce"
 
--- TODO: We can probably bring all the other functions into this
--- e.g. add an SCOperation for "implicit cast to uint"
-supportedOperations :: SCType -> Set SCOperation
-supportedOperations SCBigInt {} =
-  [ BitSelect,
-    PartSelect,
-    ReductionOperation ReduceAnd,
-    ReductionOperation ReduceNand,
-    ReductionOperation ReduceOr,
-    ReductionOperation ReduceNor,
-    ReductionOperation ReduceXor,
-    ReductionOperation ReduceXNor
-  ]
-supportedOperations SCBigUInt {} =
-  [ BitSelect,
-    PartSelect,
-    ReductionOperation ReduceAnd,
-    ReductionOperation ReduceNand,
-    ReductionOperation ReduceOr,
-    ReductionOperation ReduceNor,
-    ReductionOperation ReduceXor,
-    ReductionOperation ReduceXNor
-  ]
-supportedOperations SCInt {} =
-  [ BitSelect,
-    PartSelect,
-    ReductionOperation ReduceAnd,
-    ReductionOperation ReduceNand,
-    ReductionOperation ReduceOr,
-    ReductionOperation ReduceNor,
-    ReductionOperation ReduceXor,
-    ReductionOperation ReduceXNor
-  ]
-supportedOperations SCUInt {} =
-  [ BitSelect,
-    PartSelect,
-    ReductionOperation ReduceAnd,
-    ReductionOperation ReduceNand,
-    ReductionOperation ReduceOr,
-    ReductionOperation ReduceNor,
-    ReductionOperation ReduceXor,
-    ReductionOperation ReduceXNor
-  ]
-supportedOperations SCIntSubref {} =
-  [ ReductionOperation ReduceAnd,
-    ReductionOperation ReduceNand,
-    ReductionOperation ReduceOr,
-    ReductionOperation ReduceNor,
-    ReductionOperation ReduceXor,
-    ReductionOperation ReduceXNor
-  ]
-supportedOperations SCUIntSubref {} =
-  [ ReductionOperation ReduceAnd,
-    ReductionOperation ReduceNand,
-    ReductionOperation ReduceOr,
-    ReductionOperation ReduceNor,
-    ReductionOperation ReduceXor,
-    ReductionOperation ReduceXNor
-  ]
-supportedOperations SCSignedSubref {} =
-  [ ReductionOperation ReduceAnd,
-    ReductionOperation ReduceNand,
-    ReductionOperation ReduceOr,
-    ReductionOperation ReduceNor,
-    ReductionOperation ReduceXor,
-    ReductionOperation ReduceXNor
-  ]
-supportedOperations SCUnsignedSubref {} =
-  [ ReductionOperation ReduceAnd,
-    ReductionOperation ReduceNand,
-    ReductionOperation ReduceOr,
-    ReductionOperation ReduceNor,
-    ReductionOperation ReduceXor,
-    ReductionOperation ReduceXNor
-  ]
-supportedOperations SCFixed {} = []
-supportedOperations SCUFixed {} = []
-supportedOperations SCFxnumSubref {} =
-  [ ReductionOperation ReduceAnd,
-    ReductionOperation ReduceNand,
-    ReductionOperation ReduceOr,
-    ReductionOperation ReduceNor,
-    ReductionOperation ReduceXor,
-    ReductionOperation ReduceXNor
-  ]
-supportedOperations SCIntBitref = []
-supportedOperations SCUIntBitref = []
-supportedOperations SCSignedBitref = []
-supportedOperations SCUnsignedBitref = []
-supportedOperations CUInt = []
-supportedOperations CInt = []
-supportedOperations CDouble = []
-supportedOperations CBool = []
-
-supports :: SCType -> SCOperation -> Bool
-t `supports` op = op `Set.member` supportedOperations t
-
--- | The list of types that this type can be *implicitly* cast to, including itself
-implicitCastTargetsOf :: SCType -> Set SCType
-implicitCastTargetsOf t@SCInt {} = [t, CInt]
-implicitCastTargetsOf t@SCUInt {} = [t, CUInt]
-implicitCastTargetsOf t@SCBigInt {} = [t]
-implicitCastTargetsOf t@SCBigUInt {} = [t]
-implicitCastTargetsOf t@SCIntSubref {} = [t, CInt]
-implicitCastTargetsOf t@SCUIntSubref {} = [t, CUInt]
-implicitCastTargetsOf t@SCSignedSubref {} = [t]
-implicitCastTargetsOf t@SCUnsignedSubref {} = [t]
--- FIXME: sc_fixed -> int and sc_ufixed -> uint only exist as implicit casts in hector
-implicitCastTargetsOf t@SCFixed {} = [t, CInt, CDouble]
-implicitCastTargetsOf t@SCUFixed {} = [t, CUInt, CDouble]
--- FIXME: Subrefs can be implicitly cast to sc_bv_base (which has no explicit width)
-implicitCastTargetsOf t@SCFxnumSubref {} = [t] -- TODO: Add bv_base
--- FIXME: This is a lie, bitrefs actually implement `operator uint64()`
-implicitCastTargetsOf t@SCIntBitref = [t, CBool]
-implicitCastTargetsOf t@SCUIntBitref = [t, CBool]
-implicitCastTargetsOf t@SCSignedBitref = [t, CBool]
-implicitCastTargetsOf t@SCUnsignedBitref = [t, CBool]
--- TODO: Can we say that CUInt and CInt can be implicitly cast to each other?
-implicitCastTargetsOf t@CUInt = [t]
-implicitCastTargetsOf t@CInt = [t]
-implicitCastTargetsOf t@CDouble = [t]
-implicitCastTargetsOf t@CBool = [t]
-
--- | `Just <subref type>` if the type supports the range operator, or `Nothing`
--- if it does not. Range bounds are needed to keep track of the width on the
--- result type. (See `SCType`)
-rangeType :: SCType -> Int -> Int -> Maybe SCType
-rangeType _ hi lo | hi < lo = Nothing
-rangeType SCInt {} hi lo = Just (SCIntSubref (hi - lo + 1))
-rangeType SCUInt {} hi lo = Just (SCUIntSubref (hi - lo + 1))
-rangeType SCBigInt {} hi lo = Just (SCIntSubref (hi - lo + 1))
-rangeType SCBigUInt {} hi lo = Just (SCUIntSubref (hi - lo + 1))
-rangeType SCFixed {} hi lo = Just (SCFxnumSubref (hi - lo + 1))
-rangeType SCUFixed {} hi lo = Just (SCFxnumSubref (hi - lo + 1))
-rangeType SCFxnumSubref {} _ _ = Nothing
-rangeType SCIntSubref {} _ _ = Nothing
-rangeType SCUIntSubref {} _ _ = Nothing
-rangeType SCSignedSubref {} _ _ = Nothing
-rangeType SCUnsignedSubref {} _ _ = Nothing
-rangeType SCIntBitref _ _ = Nothing
-rangeType SCUIntBitref _ _ = Nothing
-rangeType SCSignedBitref _ _ = Nothing
-rangeType SCUnsignedBitref _ _ = Nothing
-rangeType CInt _ _ = Nothing
-rangeType CUInt _ _ = Nothing
-rangeType CDouble _ _ = Nothing
-rangeType CBool _ _ = Nothing
-
--- | `Just <subref type>` if the type supports the bitref operator, or `Nothing`
--- if it does not
-bitrefType :: SCType -> Maybe SCType
-bitrefType SCInt {} = Just SCIntBitref
-bitrefType SCUInt {} = Just SCUIntBitref
-bitrefType SCBigInt {} = Just SCSignedBitref
-bitrefType SCBigUInt {} = Just SCUnsignedBitref
--- TODO: Fxnum bitrefs
-bitrefType SCFixed {} = Nothing
-bitrefType SCUFixed {} = Nothing
-bitrefType SCFxnumSubref {} = Nothing
-bitrefType SCIntSubref {} = Nothing
-bitrefType SCUIntSubref {} = Nothing
-bitrefType SCSignedSubref {} = Nothing
-bitrefType SCUnsignedSubref {} = Nothing
-bitrefType SCIntBitref = Nothing
-bitrefType SCUIntBitref = Nothing
-bitrefType SCSignedBitref = Nothing
-bitrefType SCUnsignedBitref = Nothing
-bitrefType CInt = Nothing
-bitrefType CUInt = Nothing
-bitrefType CDouble = Nothing
-bitrefType CBool = Nothing
+operations :: SCType -> Operations
+operations SCBigInt {} =
+  Operations
+    { bitSelect = Just SCSignedBitref,
+      partSelect = Just SCSignedSubref,
+      implicitCasts = [],
+      reductions = allReductions
+    }
+operations SCBigUInt {} =
+  Operations
+    { bitSelect = Just SCUnsignedBitref,
+      partSelect = Just SCUnsignedSubref,
+      implicitCasts = [],
+      reductions = allReductions
+    }
+operations SCInt {} =
+  Operations
+    { bitSelect = Just SCIntBitref,
+      partSelect = Just SCIntSubref,
+      implicitCasts = [CInt],
+      reductions = allReductions
+    }
+operations SCUInt {} =
+  Operations
+    { bitSelect = Just SCUIntBitref,
+      partSelect = Just SCUIntSubref,
+      implicitCasts = [CUInt],
+      reductions = allReductions
+    }
+operations SCIntSubref {} =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [CInt],
+      reductions = allReductions
+    }
+operations SCUIntSubref {} =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [CUInt],
+      reductions = allReductions
+    }
+operations SCSignedSubref {} =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [],
+      reductions = allReductions
+    }
+operations SCUnsignedSubref {} =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [],
+      reductions = allReductions
+    }
+operations SCFixed {} =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [CInt, CDouble],
+      reductions = []
+    }
+operations SCUFixed {} =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [CUInt, CDouble],
+      reductions = []
+    }
+operations SCFxnumSubref {} =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [],
+      reductions = allReductions
+    }
+operations SCIntBitref =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [CBool],
+      reductions = []
+    }
+operations SCUIntBitref =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [CBool],
+      reductions = []
+    }
+operations SCSignedBitref =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [CBool],
+      reductions = []
+    }
+operations SCUnsignedBitref =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [CBool],
+      reductions = []
+    }
+operations CUInt =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [],
+      reductions = []
+    }
+operations CInt =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [],
+      reductions = []
+    }
+operations CDouble =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [],
+      reductions = []
+    }
+operations CBool =
+  Operations
+    { bitSelect = Nothing,
+      partSelect = Nothing,
+      implicitCasts = [],
+      reductions = []
+    }
 
 -- | Give the bitwidth of the type where that exists (i.e. SystemC types with a
 -- width template parameters)
