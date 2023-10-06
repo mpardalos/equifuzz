@@ -141,6 +141,7 @@ data SCType
   | CBool
   deriving (Eq, Show, Ord, Generic, Data)
 
+-- | SystemC reduction operators (@.and_reduce()@, @.or_reduce()@, etc.)
 data ReductionOperation
   = ReduceAnd
   | ReduceNand
@@ -153,10 +154,15 @@ data ReductionOperation
 allReductions :: [ReductionOperation]
 allReductions = [minBound .. maxBound]
 
+-- | Possible operations on a SystemC type
 data Operations = Operations
-  { bitSelect :: Maybe SCType,
+  { -- | Result of the bit select operator (@x[10]@), if that is available
+    bitSelect :: Maybe SCType,
+    -- | Result of the bit select operator (@x.range(10, 2)@), if that is available
     partSelect :: Maybe (Int -> SCType),
+    -- | Available reduction operators. See `ReductionOperation` and `reductionMethod`.
     reductions :: [ReductionOperation],
+    -- | Implicit cast operators (e.g. @operator int() const@)
     implicitCasts :: [SCType]
   }
 
@@ -168,6 +174,7 @@ reductionMethod ReduceNor = "nor_reduce"
 reductionMethod ReduceXor = "xor_reduce"
 reductionMethod ReduceXNor = "xnor_reduce"
 
+-- | Get all possible operations for a SystemC type
 operations :: SCType -> Operations
 operations SCBigInt {} =
   Operations
