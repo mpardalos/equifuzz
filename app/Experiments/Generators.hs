@@ -68,13 +68,19 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
   let widthExprOrWidth :: Either Text Int = case returnType of
         SC.SCInt n -> Right n
         SC.SCUInt n -> Right n
+        SC.SCBigInt n -> Right n
+        SC.SCBigUInt n -> Right n
         SC.SCFixed w _ -> Right w
         SC.SCUFixed w _ -> Right w
         SC.SCFxnumSubref {} -> Left [i|#{name}().length()|]
         SC.SCIntSubref {} -> Left [i|#{name}().length()|]
         SC.SCUIntSubref {} -> Left [i|#{name}().length()|]
+        SC.SCSignedSubref {} -> Left [i|#{name}().length()|]
+        SC.SCUnsignedSubref {} -> Left [i|#{name}().length()|]
         SC.SCIntBitref -> Right 1
         SC.SCUIntBitref -> Right 1
+        SC.SCSignedBitref -> Right 1
+        SC.SCUnsignedBitref -> Right 1
         SC.CUInt -> Right 32
         SC.CInt -> Right 32
         SC.CDouble -> Right 32
@@ -91,13 +97,19 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
   let showValue :: Text = case returnType of
         SC.SCInt {} -> scToString
         SC.SCUInt {} -> scToString
+        SC.SCBigInt {} -> scToString
+        SC.SCBigUInt {} -> scToString
         SC.SCFixed {} -> scToString
         SC.SCUFixed {} -> scToString
         SC.SCFxnumSubref {} -> scToString
         SC.SCIntSubref {} -> scToString
         SC.SCUIntSubref {} -> scToString
+        SC.SCSignedSubref {} -> scToString
+        SC.SCUnsignedSubref {} -> scToString
         SC.SCIntBitref -> boolToString
         SC.SCUIntBitref -> boolToString
+        SC.SCSignedBitref -> boolToString
+        SC.SCUnsignedBitref -> boolToString
         SC.CUInt -> bitsetToString
         SC.CInt -> bitsetToString
         SC.CDouble -> bitsetToString

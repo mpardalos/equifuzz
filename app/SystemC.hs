@@ -131,8 +131,12 @@ data SCType
   | SCFxnumSubref {width :: Int}
   | SCIntSubref {width :: Int}
   | SCUIntSubref {width :: Int}
+  | SCSignedSubref {width :: Int}
+  | SCUnsignedSubref {width :: Int}
   | SCIntBitref
   | SCUIntBitref
+  | SCSignedBitref
+  | SCUnsignedBitref
   | CUInt
   | CInt
   | CDouble
@@ -162,8 +166,20 @@ reductionMethod ReduceNor = "nor_reduce"
 reductionMethod ReduceXor = "xor_reduce"
 reductionMethod ReduceXNor = "xnor_reduce"
 
+-- TODO: We can probably bring all the other functions into this
+-- e.g. add an SCOperation for "implicit cast to uint"
 supportedOperations :: SCType -> Set SCOperation
 supportedOperations SCBigInt {} =
+  [ BitSelect,
+    PartSelect,
+    ReductionOperation ReduceAnd,
+    ReductionOperation ReduceNand,
+    ReductionOperation ReduceOr,
+    ReductionOperation ReduceNor,
+    ReductionOperation ReduceXor,
+    ReductionOperation ReduceXNor
+  ]
+supportedOperations SCBigUInt {} =
   [ BitSelect,
     PartSelect,
     ReductionOperation ReduceAnd,
@@ -209,6 +225,22 @@ supportedOperations SCUIntSubref {} =
     ReductionOperation ReduceXor,
     ReductionOperation ReduceXNor
   ]
+supportedOperations SCSignedSubref {} =
+  [ ReductionOperation ReduceAnd,
+    ReductionOperation ReduceNand,
+    ReductionOperation ReduceOr,
+    ReductionOperation ReduceNor,
+    ReductionOperation ReduceXor,
+    ReductionOperation ReduceXNor
+  ]
+supportedOperations SCUnsignedSubref {} =
+  [ ReductionOperation ReduceAnd,
+    ReductionOperation ReduceNand,
+    ReductionOperation ReduceOr,
+    ReductionOperation ReduceNor,
+    ReductionOperation ReduceXor,
+    ReductionOperation ReduceXNor
+  ]
 supportedOperations SCFixed {} = []
 supportedOperations SCUFixed {} = []
 supportedOperations SCFxnumSubref {} =
@@ -221,6 +253,8 @@ supportedOperations SCFxnumSubref {} =
   ]
 supportedOperations SCIntBitref = []
 supportedOperations SCUIntBitref = []
+supportedOperations SCSignedBitref = []
+supportedOperations SCUnsignedBitref = []
 supportedOperations CUInt = []
 supportedOperations CInt = []
 supportedOperations CDouble = []
@@ -233,8 +267,12 @@ t `supports` op = op `Set.member` supportedOperations t
 implicitCastTargetsOf :: SCType -> Set SCType
 implicitCastTargetsOf t@SCInt {} = [t, CInt]
 implicitCastTargetsOf t@SCUInt {} = [t, CUInt]
+implicitCastTargetsOf t@SCBigInt {} = [t]
+implicitCastTargetsOf t@SCBigUInt {} = [t]
 implicitCastTargetsOf t@SCIntSubref {} = [t, CInt]
 implicitCastTargetsOf t@SCUIntSubref {} = [t, CUInt]
+implicitCastTargetsOf t@SCSignedSubref {} = [t]
+implicitCastTargetsOf t@SCUnsignedSubref {} = [t]
 -- FIXME: sc_fixed -> int and sc_ufixed -> uint only exist as implicit casts in hector
 implicitCastTargetsOf t@SCFixed {} = [t, CInt, CDouble]
 implicitCastTargetsOf t@SCUFixed {} = [t, CUInt, CDouble]
@@ -243,6 +281,8 @@ implicitCastTargetsOf t@SCFxnumSubref {} = [t] -- TODO: Add bv_base
 -- FIXME: This is a lie, bitrefs actually implement `operator uint64()`
 implicitCastTargetsOf t@SCIntBitref = [t, CBool]
 implicitCastTargetsOf t@SCUIntBitref = [t, CBool]
+implicitCastTargetsOf t@SCSignedBitref = [t, CBool]
+implicitCastTargetsOf t@SCUnsignedBitref = [t, CBool]
 -- TODO: Can we say that CUInt and CInt can be implicitly cast to each other?
 implicitCastTargetsOf t@CUInt = [t]
 implicitCastTargetsOf t@CInt = [t]
@@ -256,13 +296,19 @@ rangeType :: SCType -> Int -> Int -> Maybe SCType
 rangeType _ hi lo | hi < lo = Nothing
 rangeType SCInt {} hi lo = Just (SCIntSubref (hi - lo + 1))
 rangeType SCUInt {} hi lo = Just (SCUIntSubref (hi - lo + 1))
+rangeType SCBigInt {} hi lo = Just (SCIntSubref (hi - lo + 1))
+rangeType SCBigUInt {} hi lo = Just (SCUIntSubref (hi - lo + 1))
 rangeType SCFixed {} hi lo = Just (SCFxnumSubref (hi - lo + 1))
 rangeType SCUFixed {} hi lo = Just (SCFxnumSubref (hi - lo + 1))
 rangeType SCFxnumSubref {} _ _ = Nothing
 rangeType SCIntSubref {} _ _ = Nothing
 rangeType SCUIntSubref {} _ _ = Nothing
+rangeType SCSignedSubref {} _ _ = Nothing
+rangeType SCUnsignedSubref {} _ _ = Nothing
 rangeType SCIntBitref _ _ = Nothing
 rangeType SCUIntBitref _ _ = Nothing
+rangeType SCSignedBitref _ _ = Nothing
+rangeType SCUnsignedBitref _ _ = Nothing
 rangeType CInt _ _ = Nothing
 rangeType CUInt _ _ = Nothing
 rangeType CDouble _ _ = Nothing
@@ -273,14 +319,20 @@ rangeType CBool _ _ = Nothing
 bitrefType :: SCType -> Maybe SCType
 bitrefType SCInt {} = Just SCIntBitref
 bitrefType SCUInt {} = Just SCUIntBitref
+bitrefType SCBigInt {} = Just SCSignedBitref
+bitrefType SCBigUInt {} = Just SCUnsignedBitref
 -- TODO: Fxnum bitrefs
 bitrefType SCFixed {} = Nothing
 bitrefType SCUFixed {} = Nothing
 bitrefType SCFxnumSubref {} = Nothing
 bitrefType SCIntSubref {} = Nothing
 bitrefType SCUIntSubref {} = Nothing
+bitrefType SCSignedSubref {} = Nothing
+bitrefType SCUnsignedSubref {} = Nothing
 bitrefType SCIntBitref = Nothing
 bitrefType SCUIntBitref = Nothing
+bitrefType SCSignedBitref = Nothing
+bitrefType SCUnsignedBitref = Nothing
 bitrefType CInt = Nothing
 bitrefType CUInt = Nothing
 bitrefType CDouble = Nothing
@@ -290,14 +342,20 @@ bitrefType CBool = Nothing
 -- width template parameters)
 knownWidth :: SCType -> Maybe Int
 knownWidth (SCInt n) = Just n
+knownWidth (SCBigInt n) = Just n
 knownWidth SCFixed {w} = Just w
 knownWidth (SCUInt n) = Just n
+knownWidth (SCBigUInt n) = Just n
 knownWidth SCUFixed {w} = Just w
 knownWidth SCFxnumSubref {width} = Just width
 knownWidth SCIntSubref {width} = Just width
 knownWidth SCUIntSubref {width} = Just width
+knownWidth SCSignedSubref {width} = Just width
+knownWidth SCUnsignedSubref {width} = Just width
 knownWidth SCIntBitref = Nothing
 knownWidth SCUIntBitref = Nothing
+knownWidth SCSignedBitref = Nothing
+knownWidth SCUnsignedBitref = Nothing
 knownWidth CInt = Nothing
 knownWidth CUInt = Nothing
 knownWidth CDouble = Nothing
@@ -410,13 +468,19 @@ instance Annotation ann => Source (Statement ann) where
 instance Pretty SCType where
   pretty (SCInt size) = "sc_dt::sc_int<" <> pretty size <> ">"
   pretty (SCUInt size) = "sc_dt::sc_uint<" <> pretty size <> ">"
+  pretty (SCBigInt size) = "sc_dt::sc_bigint<" <> pretty size <> ">"
+  pretty (SCBigUInt size) = "sc_dt::sc_biguint<" <> pretty size <> ">"
   pretty (SCFixed w i) = "sc_dt::sc_fixed<" <> pretty w <> "," <> pretty i <> ">"
   pretty (SCUFixed w i) = "sc_dt::sc_ufixed<" <> pretty w <> "," <> pretty i <> ">"
   pretty SCFxnumSubref {} = "sc_dt::sc_fxnum_subref"
   pretty SCIntSubref {} = "sc_dt::sc_int_subref"
   pretty SCUIntSubref {} = "sc_dt::sc_uint_subref"
+  pretty SCSignedSubref {} = "sc_dt::sc_signed_subref"
+  pretty SCUnsignedSubref {} = "sc_dt::sc_unsigned_subref"
   pretty SCIntBitref = "sc_dt::sc_int_bitref"
   pretty SCUIntBitref = "sc_dt::sc_uint_bitref"
+  pretty SCSignedBitref = "sc_dt::sc_signed_bitref"
+  pretty SCUnsignedBitref = "sc_dt::sc_unsigned_bitref"
   pretty CInt = "int"
   pretty CUInt = "unsigned"
   pretty CDouble = "double"
