@@ -91,9 +91,13 @@ instance
   where
   labelOptic = to (getField @"annotation")
 
+type VarName = Text
+
 data Statement ann
   = Return (AnnStatement ann) (Expr ann)
-  | Declaration (AnnStatement ann) SCType Text (Expr ann)
+  | AssignmentDeclaration (AnnStatement ann) SCType VarName (Expr ann)
+  | Declaration (AnnStatement ann) SCType VarName
+  | Assignment (AnnStatement ann) VarName (Expr ann)
   | Block (AnnStatement ann) [Statement ann]
   deriving (Generic)
 
@@ -113,7 +117,9 @@ instance
 
 instance (annType ~ AnnStatement ann) => HasField "annotation" (Statement ann) annType where
   getField (Return ann _) = ann
-  getField (Declaration ann _ _ _) = ann
+  getField (AssignmentDeclaration ann _ _ _) = ann
+  getField (Declaration ann _ _) = ann
+  getField (Assignment ann _ _) = ann
   getField (Block ann _) = ann
 
 -- | SystemC types. Parameters include template parameters as well as extra
@@ -426,8 +432,12 @@ prettyBlock statements = vsep ["{", indent 4 . vsep $ pretty <$> statements, "}"
 instance Annotation ann => Pretty (Statement ann) where
   pretty (Return ann e) =
     "return" <+> pretty e <> "; //" <+> pretty ann
-  pretty (Declaration ann t name expr) =
+  pretty (AssignmentDeclaration ann t name expr) =
     pretty t <+> pretty name <+> "=" <+> pretty expr <> "; //" <+> pretty ann
+  pretty (Assignment ann name expr) =
+    pretty name <+> "=" <+> pretty expr <> "; //" <+> pretty ann
+  pretty (Declaration ann t name) =
+    pretty t <+> pretty name <> "; //" <+> pretty ann
   pretty (Block ann statements) =
     prettyBlock statements <+> "//" <+> pretty ann
 

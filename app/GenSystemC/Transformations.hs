@@ -79,7 +79,12 @@ applyTransformation :: MonadBuild m => Transformation -> m ()
 applyTransformation (CastWithAssignment varType) = do
   e <- use #headExpr
   varName <- newVar
-  #statements %= (++ [SC.Declaration () varType varName e])
+  #statements
+    %= ( ++
+           [ SC.Declaration () varType varName,
+             SC.Assignment () varName e
+           ]
+       )
   #headExpr .= SC.Variable varType varName
 applyTransformation (FunctionalCast castType) =
   #headExpr %= \e -> SC.Cast castType castType e
