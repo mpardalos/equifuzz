@@ -123,10 +123,12 @@ randomTransformationFor e =
       where
         castTargetType = case e.annotation of
           SC.SCFxnumSubref {} -> join $ uniform [someInt, someUInt]
-          _ -> join $ uniform [someInt, someUInt, someFixed, someUFixed]
+          _ -> join $ uniform [someInt, someUInt, someBigInt, someBigUInt, someFixed, someUFixed]
 
         someInt = SC.SCInt <$> someWidth
         someUInt = SC.SCUInt <$> someWidth
+        someBigInt = SC.SCBigInt <$> someBigWidth
+        someBigUInt = SC.SCBigUInt <$> someBigWidth
         someFixed = do
           w <- someWidth
           i <- getRandomR (0, w)
@@ -138,6 +140,9 @@ randomTransformationFor e =
 
         someWidth :: MonadRandom m => m Int
         someWidth = getRandomR (1, 64)
+
+        someBigWidth :: MonadRandom m => m Int
+        someBigWidth = getRandomR (1, 512)
 
     range :: Maybe (m Transformation)
     range = do

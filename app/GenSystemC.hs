@@ -75,6 +75,8 @@ generateFromProcess name GenerateProcess {seed, transformations} =
         SC.SCFixed {} -> pure ()
         SC.SCUInt {} -> pure ()
         SC.SCUFixed {} -> pure ()
+        SC.SCBigInt _ -> pure ()
+        SC.SCBigUInt _ -> pure ()
         -- Explicitly cast native types
         SC.CInt -> applyTransformation (CastWithDeclaration SC.CInt)
         SC.CUInt -> applyTransformation (CastWithDeclaration SC.CUInt)
@@ -83,8 +85,12 @@ generateFromProcess name GenerateProcess {seed, transformations} =
         SC.SCFxnumSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))
         SC.SCIntSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))
         SC.SCUIntSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCUInt width))
+        SC.SCSignedSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCBigInt width))
+        SC.SCUnsignedSubref {width} -> applyTransformation (CastWithDeclaration (SC.SCBigUInt width))
         SC.SCIntBitref -> applyTransformation (CastWithDeclaration SC.CBool)
         SC.SCUIntBitref -> applyTransformation (CastWithDeclaration SC.CBool)
+        SC.SCSignedBitref -> applyTransformation (CastWithDeclaration SC.CBool)
+        SC.SCUnsignedBitref -> applyTransformation (CastWithDeclaration SC.CBool)
 
 data GenerateProcess = GenerateProcess
   { seed :: SC.Expr BuildOut,
