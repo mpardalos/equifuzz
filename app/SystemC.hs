@@ -2,6 +2,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -12,7 +13,7 @@ import Data.Kind (Constraint, Type)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import GHC.Records (HasField (getField))
-import Optics (A_Getter, LabelOptic, to)
+import Optics (A_Getter, LabelOptic, to, makeFieldLabelsNoPrefix)
 import Optics.Label (LabelOptic (labelOptic))
 import Prettyprinter
   ( Doc,
@@ -182,6 +183,7 @@ data SCTypeFlags = SCTypeFlags
     cDouble :: Bool,
     cBool :: Bool
   }
+  deriving (Eq, Show, Ord, Generic)
 
 noTypes :: SCTypeFlags
 noTypes =
@@ -255,6 +257,7 @@ data Operations = Operations
     -- | Types to which values of this type can be assigned
     assignTo :: SCTypeFlags
   }
+  deriving Generic
 
 reductionMethod :: ReductionOperation -> Text
 reductionMethod ReduceAnd = "and_reduce"
@@ -624,3 +627,6 @@ instance Annotation ann => Source (TranslationUnit ann) where
     renderStrict
       . layoutPretty defaultLayoutOptions
       . pretty
+
+makeFieldLabelsNoPrefix ''SCTypeFlags
+makeFieldLabelsNoPrefix ''Operations

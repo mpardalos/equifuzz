@@ -39,7 +39,7 @@ import Optics.State.Operators ((%=), (.=))
 import SystemC qualified as SC hiding (operations)
 import SystemC qualified as SCUnconfigured (operations)
 import Data.List (intersect)
-import GenSystemC.Config (GenConfig(..))
+import GenSystemC.Config (GenConfig(..), GenMods(..), TransformationFlags(..))
 
 data Transformation
   = CastWithAssignment SC.SCType
@@ -121,14 +121,14 @@ applyTransformation cfg (ApplyReduction op) = do
 randomTransformationFor :: forall m. MonadRandom m => GenConfig -> SC.Expr BuildOut -> m Transformation
 randomTransformationFor cfg e =
   join . weighted . map (,1) . catMaybes $
-    [ castWithAssignment
-    , functionalCast
-    , range
+    [ guard cfg.mods.transformations.castWithAssignment >> castWithAssignment
+    , guard cfg.mods.transformations.functionalCast >> functionalCast
+    , guard cfg.mods.transformations.range >> range
 #ifndef EVALUATION_VERSION
-    , arithmetic
-    , useAsCondition
-    , bitSelect
-    , applyReduction
+    , guard cfg.mods.transformations.arithmetic >> arithmetic
+    , guard cfg.mods.transformations.useAsCondition >> useAsCondition
+    , guard cfg.mods.transformations.bitSelect >> bitSelect
+    , guard cfg.mods.transformations.applyReduction >> applyReduction
 #endif
     ]
   where
@@ -251,4 +251,4 @@ seedExpr = do
   return (SC.Constant SC.CInt value)
 
 modOperations :: GenConfig -> SC.SCType -> SC.Operations
-modOperations cfg t = cfg.operationsMod t (SCUnconfigured.operations t)
+modOperations cfg t = cfg.mods.operations t (SCUnconfigured.operations t)

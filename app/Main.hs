@@ -11,7 +11,7 @@ import Control.Applicative (Alternative ((<|>)), optional, (<**>))
 import Data.Text.IO qualified as T
 import Experiments
 import Runners
-import GenSystemC (GenConfig (..), TypeOperationsMod)
+import GenSystemC (GenConfig (..))
 import Options.Applicative qualified as Opt
 import Orchestration
 import WebUI (runWebUI)
@@ -34,6 +34,7 @@ import Runners.Util (validateSSH)
 import qualified Shelly as Sh
 import Control.Exception (throwIO, try, SomeException)
 import ToolRestrictions (vcfMods, noMods)
+import GenSystemC.Config (GenMods)
 
 main :: IO ()
 main = do
@@ -97,7 +98,7 @@ generateOptionsToGenConfig :: GenerateOptions -> GenConfig
 generateOptionsToGenConfig GenerateOptions {genSteps} =
   GenConfig
     { growSteps = genSteps,
-      operationsMod = noMods
+      mods = noMods
     }
 
 webOptionsToOrchestrationConfig :: WebOptions -> IO OrchestrationConfig
@@ -113,7 +114,7 @@ webOptionsToOrchestrationConfig
     let genConfig =
           GenConfig
             { growSteps = genSteps,
-              operationsMod = runnerOptionsToOperationsMod runnerOptions
+              mods = runnerOptionsToGenMods runnerOptions
             }
     return
       OrchestrationConfig
@@ -124,9 +125,9 @@ webOptionsToOrchestrationConfig
           runner
         }
 
-runnerOptionsToOperationsMod :: RunnerOptions -> TypeOperationsMod
-runnerOptionsToOperationsMod Runner { fecType = VCF } = vcfMods
-runnerOptionsToOperationsMod TestRunner {} = noMods
+runnerOptionsToGenMods :: RunnerOptions -> GenMods
+runnerOptionsToGenMods Runner { fecType = VCF } = vcfMods
+runnerOptionsToGenMods TestRunner {} = noMods
 
 runnerOptionsToRunner :: RunnerOptions -> IO ExperimentRunner
 runnerOptionsToRunner TestRunner { includeInconclusive} =
