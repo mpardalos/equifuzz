@@ -13,7 +13,7 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Runners.Types (SSHConnectionTarget (..))
-import Shelly (Sh, (</>), liftIO)
+import Shelly (Sh, (</>))
 import Shelly qualified as Sh
 import Util (bashExec)
 
