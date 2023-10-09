@@ -83,7 +83,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         SC.SCUnsignedBitref -> Right 1
         SC.CUInt -> Right 32
         SC.CInt -> Right 32
-        SC.CDouble -> Right 32
+        SC.CDouble -> Right 64
         SC.CBool -> Right 1
 
   let showWidth :: Text = case widthExprOrWidth of
@@ -93,6 +93,11 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
   let scToString :: Text = [i|std::cout << #{name}().to_string(sc_dt::SC_BIN, false) << std::endl;|]
   let boolToString :: Text = [i| std::cout << (#{name}() ? "1" : "0") << std::endl;|]
   let bitsetToString :: Text = [i| std::cout << std::bitset<32>(#{name}()) << std::endl;|]
+  let doubleToString :: Text =
+       [i|
+         auto value = #{name}();
+         std::cout << std::bitset<64>(*reinterpret_cast<unsigned long*>(&value)) << std::endl;
+         |]
 
   let showValue :: Text = case returnType of
         SC.SCInt {} -> scToString
@@ -112,7 +117,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         SC.SCUnsignedBitref -> boolToString
         SC.CUInt -> bitsetToString
         SC.CInt -> bitsetToString
-        SC.CDouble -> bitsetToString
+        SC.CDouble -> doubleToString
         SC.CBool -> boolToString
 
   let fullSource =
