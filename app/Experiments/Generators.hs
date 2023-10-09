@@ -30,13 +30,13 @@ import SystemC qualified as SC
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
 mkSystemCConstantExperiment :: GenConfig -> IO (Reducible (IO Experiment))
-mkSystemCConstantExperiment config =
-  fmap (fmap generateProcessToExperiment) $
-    evalRandIO (genSystemCConstant config)
+mkSystemCConstantExperiment cfg =
+  fmap (fmap (generateProcessToExperiment cfg)) $
+    evalRandIO (genSystemCConstant cfg)
 
-generateProcessToExperiment :: GenerateProcess -> IO Experiment
-generateProcessToExperiment process@GenerateProcess {seed, transformations} = do
-  let design = generateFromProcess "dut" process
+generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
+generateProcessToExperiment cfg process@GenerateProcess {seed, transformations} = do
+  let design = generateFromProcess cfg "dut" process
 
   comparisonValue <- simulateSystemCConstant design
 

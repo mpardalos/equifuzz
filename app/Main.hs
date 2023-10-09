@@ -11,7 +11,7 @@ import Control.Applicative (Alternative ((<|>)), optional, (<**>))
 import Data.Text.IO qualified as T
 import Experiments
 import Runners
-import GenSystemC (GenConfig (..))
+import GenSystemC (GenConfig (..), TypeOperationsMod)
 import Options.Applicative qualified as Opt
 import Orchestration
 import WebUI (runWebUI)
@@ -33,6 +33,7 @@ import Options.Applicative (ReadM)
 import Runners.Util (validateSSH)
 import qualified Shelly as Sh
 import Control.Exception (throwIO, try, SomeException)
+import ToolRestrictions (vcfMods, noMods)
 
 main :: IO ()
 main = do
@@ -48,7 +49,7 @@ main = do
     Generate genOpts -> do
       replicateM_ genOpts.count $ do
         Experiment {design, longDescription, comparisonValue} <-
-          mkSystemCConstantExperiment genOpts.genConfig >>= view #value
+          mkSystemCConstantExperiment (generateOptionsToGenConfig genOpts) >>= view #value
         T.putStrLn (SC.genSource design)
         putStrLn "---------"
         T.putStrLn longDescription
@@ -60,7 +61,7 @@ main = do
 
 data Command
   = Web WebOptions
-  | Generate GenOptions
+  | Generate GenerateOptions
   | PrintVersion
 
 data WebOptions = WebOptions
@@ -68,12 +69,12 @@ data WebOptions = WebOptions
     saveResults :: Bool,
     maxExperiments :: Int,
     runnerOptions :: RunnerOptions,
-    genConfig :: GenConfig
+    genSteps :: Int
   }
 
-data GenOptions = GenOptions
+data GenerateOptions = GenerateOptions
   { count :: Int
-  , genConfig :: GenConfig
+  , genSteps :: Int
   }
 
 data PasswordSource = NoPassword | AskPassword | PasswordGiven Text
@@ -92,16 +93,28 @@ data RunnerOptions
         fecType :: FECType
       }
 
+generateOptionsToGenConfig :: GenerateOptions -> GenConfig
+generateOptionsToGenConfig GenerateOptions {genSteps} =
+  GenConfig
+    { growSteps = genSteps,
+      operationsMod = noMods
+    }
+
 webOptionsToOrchestrationConfig :: WebOptions -> IO OrchestrationConfig
 webOptionsToOrchestrationConfig
   WebOptions
     { verbose,
       saveResults,
       maxExperiments,
-      genConfig,
+      genSteps,
       runnerOptions
     } = do
     runner <- runnerOptionsToRunner runnerOptions
+    let genConfig =
+          GenConfig
+            { growSteps = genSteps,
+              operationsMod = runnerOptionsToOperationsMod runnerOptions
+            }
     return
       OrchestrationConfig
         { verbose,
@@ -110,6 +123,10 @@ webOptionsToOrchestrationConfig
           genConfig,
           runner
         }
+
+runnerOptionsToOperationsMod :: RunnerOptions -> TypeOperationsMod
+runnerOptionsToOperationsMod Runner { fecType = VCF } = vcfMods
+runnerOptionsToOperationsMod TestRunner {} = noMods
 
 runnerOptionsToRunner :: RunnerOptions -> IO ExperimentRunner
 runnerOptionsToRunner TestRunner { includeInconclusive} =
@@ -180,7 +197,7 @@ commandParser =
           [ Opt.long "no-save",
             Opt.help "Do not save successful experiment results"
           ])
-      genConfig <- generateConfigOpts
+      genSteps <- genStepsFlag
       runnerOptions <- runnerConfigOpts <|> testFlag
       return
         WebOptions
@@ -188,7 +205,7 @@ commandParser =
             saveResults,
             maxExperiments,
             runnerOptions,
-            genConfig
+            genSteps
           }
 
     testFlag :: Opt.Parser RunnerOptions
@@ -206,7 +223,7 @@ commandParser =
 
       return TestRunner {includeInconclusive}
 
-    generateOpts :: Opt.Parser GenOptions
+    generateOpts :: Opt.Parser GenerateOptions
     generateOpts = do
       count <-
         Opt.option (Opt.auto >>= validateCount) . mconcat $
@@ -217,8 +234,8 @@ commandParser =
             Opt.showDefault
           ]
 
-      genConfig <- generateConfigOpts
-      return GenOptions {count, genConfig}
+      genSteps <- genStepsFlag
+      return GenerateOptions {count, genSteps}
 
     validateCount :: Int -> ReadM Int
 #ifdef EVALUATION_VERSION
@@ -229,20 +246,18 @@ commandParser =
     validateCount = pure
 #endif
 
-    generateConfigOpts :: Opt.Parser GenConfig
-    generateConfigOpts =
+    genStepsFlag :: Opt.Parser Int
+    genStepsFlag =
 #ifdef EVALUATION_VERSION
-      pure (GenConfig 20)
+      pure 20
 #else
-      GenConfig
-        <$> ( Opt.option Opt.auto . mconcat $
-                [ Opt.long "gen-steps",
-                  Opt.metavar "COUNT",
-                  Opt.help "Number of generation steps to use for each experiment",
-                  Opt.value 30,
-                  Opt.showDefault
-                ]
-            )
+      Opt.option Opt.auto . mconcat $
+        [ Opt.long "gen-steps",
+          Opt.metavar "COUNT",
+          Opt.help "Number of generation steps to use for each experiment",
+          Opt.value 30,
+          Opt.showDefault
+        ]
 #endif
 
     runnerConfigOpts = do

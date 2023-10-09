@@ -3,12 +3,16 @@
 {-# LANGUAGE OverloadedLists #-}
 
 module GenSystemC
-  ( GenConfig (..),
+  ( -- * Generation
     BuildOut,
     genSystemCConstant,
     generateFromProcess,
     GenerateProcess (..),
     Reducible (..),
+
+    -- ** Configuration
+    TypeOperationsMod,
+    GenConfig (..),
   )
 where
 
@@ -19,6 +23,7 @@ import Control.Monad.Writer.Strict (MonadWriter (tell), runWriterT)
 import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
+import GenSystemC.Config (GenConfig (..), TypeOperationsMod)
 import GenSystemC.Reduce
   ( HasReductions (..),
     Reducible (..),
@@ -37,26 +42,22 @@ import GenSystemC.Transformations
 import Optics (use, (%))
 import SystemC qualified as SC
 
-newtype GenConfig = GenConfig
-  { growSteps :: Int
-  }
-
 genSystemCConstant :: GenConfig -> Rand StdGen (Reducible GenerateProcess)
 genSystemCConstant cfg = do
   seed <- seedExpr
   ((), transformations) <- runWriterT . (`evalStateT` initBuildOutState seed) $
     replicateM_ cfg.growSteps $ do
       e <- use #headExpr
-      transformation <- randomTransformationFor e
+      transformation <- randomTransformationFor cfg e
       tell [transformation]
-      applyTransformation transformation
+      applyTransformation cfg transformation
 
   return $ asReducible $ GenerateProcess seed transformations
 
-generateFromProcess :: Text -> GenerateProcess -> SC.FunctionDeclaration BuildOut
-generateFromProcess name GenerateProcess {seed, transformations} =
+generateFromProcess :: GenConfig -> Text -> GenerateProcess -> SC.FunctionDeclaration BuildOut
+generateFromProcess cfg name GenerateProcess {seed, transformations} =
   let finalState = (`execState` initBuildOutState seed) $ do
-        mapM_ applyTransformation transformations
+        mapM_ (applyTransformation cfg) transformations
         -- This is only used here, in generateFromProcess. We want this to
         -- \*not* be in the GenerateProcess, so that it is dynamically added in
         -- the reduced experiments, depending on what the reduction has left as the final expression.
@@ -78,19 +79,19 @@ generateFromProcess name GenerateProcess {seed, transformations} =
         SC.SCBigInt _ -> pure ()
         SC.SCBigUInt _ -> pure ()
         -- Explicitly cast native types
-        SC.CInt -> applyTransformation (FunctionalCast SC.CInt)
-        SC.CUInt -> applyTransformation (FunctionalCast SC.CUInt)
-        SC.CDouble -> applyTransformation (FunctionalCast SC.CDouble)
+        SC.CInt -> applyTransformation cfg (FunctionalCast SC.CInt)
+        SC.CUInt -> applyTransformation cfg (FunctionalCast SC.CUInt)
+        SC.CDouble -> applyTransformation cfg (FunctionalCast SC.CDouble)
         SC.CBool -> pure ()
-        SC.SCFxnumSubref {width} -> applyTransformation (FunctionalCast (SC.SCUInt width))
-        SC.SCIntSubref {width} -> applyTransformation (FunctionalCast (SC.SCUInt width))
-        SC.SCUIntSubref {width} -> applyTransformation (FunctionalCast (SC.SCUInt width))
-        SC.SCSignedSubref {width} -> applyTransformation (FunctionalCast (SC.SCBigInt width))
-        SC.SCUnsignedSubref {width} -> applyTransformation (FunctionalCast (SC.SCBigUInt width))
-        SC.SCIntBitref -> applyTransformation (FunctionalCast SC.CBool)
-        SC.SCUIntBitref -> applyTransformation (FunctionalCast SC.CBool)
-        SC.SCSignedBitref -> applyTransformation (FunctionalCast SC.CBool)
-        SC.SCUnsignedBitref -> applyTransformation (FunctionalCast SC.CBool)
+        SC.SCFxnumSubref {width} -> applyTransformation cfg (FunctionalCast (SC.SCUInt width))
+        SC.SCIntSubref {width} -> applyTransformation cfg (FunctionalCast (SC.SCUInt width))
+        SC.SCUIntSubref {width} -> applyTransformation cfg (FunctionalCast (SC.SCUInt width))
+        SC.SCSignedSubref {width} -> applyTransformation cfg (FunctionalCast (SC.SCBigInt width))
+        SC.SCUnsignedSubref {width} -> applyTransformation cfg (FunctionalCast (SC.SCBigUInt width))
+        SC.SCIntBitref -> applyTransformation cfg (FunctionalCast SC.CBool)
+        SC.SCUIntBitref -> applyTransformation cfg (FunctionalCast SC.CBool)
+        SC.SCSignedBitref -> applyTransformation cfg (FunctionalCast SC.CBool)
+        SC.SCUnsignedBitref -> applyTransformation cfg (FunctionalCast SC.CBool)
 
 data GenerateProcess = GenerateProcess
   { seed :: SC.Expr BuildOut,

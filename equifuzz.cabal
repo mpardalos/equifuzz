@@ -29,7 +29,9 @@ executable equifuzz
                  , Runners.Util
                  , Runners.VCF
                  , SystemC
+                 , ToolRestrictions
                  , GenSystemC
+                 , GenSystemC.Config
                  , GenSystemC.Transformations
                  , GenSystemC.Reduce
                  , Util

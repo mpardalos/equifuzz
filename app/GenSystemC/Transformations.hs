@@ -33,8 +33,13 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics (use)
 import Optics.State.Operators ((%=), (.=))
-import SystemC qualified as SC
+-- Import modOperations cfg as SCUnconfigured.operations, because we need to make
+-- sure to run its result through GenConfig.modOperations, and never use it
+-- directly
+import SystemC qualified as SC hiding (operations)
+import SystemC qualified as SCUnconfigured (operations)
 import Data.List (intersect)
+import GenSystemC.Config (GenConfig(..))
 
 data Transformation
   = CastWithAssignment SC.SCType
@@ -75,8 +80,8 @@ newVar = do
   #nextVarIdx %= (+ 1)
   return ("x" <> T.pack (show varIdx))
 
-applyTransformation :: MonadBuild m => Transformation -> m ()
-applyTransformation (CastWithAssignment varType) = do
+applyTransformation :: MonadBuild m => GenConfig -> Transformation -> m ()
+applyTransformation _ (CastWithAssignment varType) = do
   e <- use #headExpr
   varName <- newVar
   #statements
@@ -86,10 +91,10 @@ applyTransformation (CastWithAssignment varType) = do
            ]
        )
   #headExpr .= SC.Variable varType varName
-applyTransformation (FunctionalCast castType) =
+applyTransformation _ (FunctionalCast castType) =
   #headExpr %= \e -> SC.Cast castType castType e
-applyTransformation (Range hi lo) =
-  #headExpr %= \e -> case (SC.operations e.annotation).partSelect of
+applyTransformation cfg (Range hi lo) =
+  #headExpr %= \e -> case (modOperations cfg e.annotation).partSelect of
     Just subrefType | hi >= lo ->
       SC.MethodCall
         (subrefType (hi - lo + 1))
@@ -97,24 +102,24 @@ applyTransformation (Range hi lo) =
         "range"
         [SC.Constant SC.CInt hi, SC.Constant SC.CInt lo]
     _ -> e
-applyTransformation (Arithmetic op e') =
+applyTransformation _ (Arithmetic op e') =
   #headExpr %= \e ->
     SC.BinOp e'.annotation e op e'
-applyTransformation (UseAsCondition tExpr fExpr) = do
+applyTransformation _ (UseAsCondition tExpr fExpr) = do
   #headExpr %= \e ->
     SC.Conditional tExpr.annotation e tExpr fExpr
-applyTransformation (BitSelect idx) = do
-  #headExpr %= \e -> case (SC.operations e.annotation).bitSelect of
+applyTransformation cfg (BitSelect idx) = do
+  #headExpr %= \e -> case (modOperations cfg e.annotation).bitSelect of
     Just bitrefType -> SC.Bitref bitrefType e idx
     Nothing -> e
-applyTransformation (ApplyReduction op) = do
+applyTransformation cfg (ApplyReduction op) = do
   #headExpr %= \e ->
-    if op `elem` (SC.operations e.annotation).reductions
+    if op `elem` (modOperations cfg e.annotation).reductions
       then SC.MethodCall SC.CBool e (SC.reductionMethod op) []
       else e
 
-randomTransformationFor :: forall m. MonadRandom m => SC.Expr BuildOut -> m Transformation
-randomTransformationFor e =
+randomTransformationFor :: forall m. MonadRandom m => GenConfig -> SC.Expr BuildOut -> m Transformation
+randomTransformationFor cfg e =
   join . weighted . map (,1) . catMaybes $
     [ castWithAssignment
     , functionalCast
@@ -147,7 +152,7 @@ randomTransformationFor e =
 
     assignmentCastTargetType :: Maybe (m SC.SCType)
     assignmentCastTargetType =
-      let ts = (SC.operations e.annotation).assignTo
+      let ts = (modOperations cfg e.annotation).assignTo
           gens :: [m SC.SCType]
           gens = catMaybes
             [ guard ts.scInt >> Just (SC.SCInt <$> someWidth)
@@ -170,7 +175,7 @@ randomTransformationFor e =
 
     functionalCastTargetType :: Maybe (m SC.SCType)
     functionalCastTargetType =
-      let cs = (SC.operations e.annotation).constructorInto
+      let cs = (modOperations cfg e.annotation).constructorInto
           gens :: [m SC.SCType]
           gens = catMaybes
             [ guard cs.scInt >> Just (SC.SCInt <$> someWidth)
@@ -193,7 +198,7 @@ randomTransformationFor e =
 
     range :: Maybe (m Transformation)
     range = do
-      guard (isJust (SC.operations e.annotation).partSelect)
+      guard (isJust (modOperations cfg e.annotation).partSelect)
       exprWidth <- SC.knownWidth e.annotation
       return $ do
         hi <- getRandomR (0, exprWidth - 1)
@@ -204,7 +209,7 @@ randomTransformationFor e =
     arithmeticResultType
       | [t] <-
           [SC.CInt, SC.CUInt, SC.CDouble]
-            `intersect` (SC.operations e.annotation).implicitCasts =
+            `intersect` (modOperations cfg e.annotation).implicitCasts =
           Just t
       | otherwise = Nothing
 
@@ -218,7 +223,7 @@ randomTransformationFor e =
 
     useAsCondition :: Maybe (m Transformation)
     useAsCondition = do
-      guard (SC.CBool `elem` (SC.operations e.annotation).implicitCasts)
+      guard (SC.CBool `elem` (modOperations cfg e.annotation).implicitCasts)
       return
         ( UseAsCondition
             <$> someConstant SC.CInt
@@ -227,13 +232,13 @@ randomTransformationFor e =
 
     bitSelect :: Maybe (m Transformation)
     bitSelect = do
-      guard (isJust (SC.operations e.annotation).bitSelect)
+      guard (isJust (modOperations cfg e.annotation).bitSelect)
       width <- SC.knownWidth e.annotation
       return (BitSelect <$> getRandomR (0, width - 1))
 
     applyReduction :: Maybe (m Transformation)
     applyReduction = do
-      let options = ApplyReduction <$> (SC.operations e.annotation).reductions
+      let options = ApplyReduction <$> (modOperations cfg e.annotation).reductions
       guard (not . null $ options)
       return (uniform options)
 
@@ -244,3 +249,6 @@ seedExpr :: MonadRandom m => m (SC.Expr BuildOut)
 seedExpr = do
   value <- getRandomR (-128, 128)
   return (SC.Constant SC.CInt value)
+
+modOperations :: GenConfig -> SC.SCType -> SC.Operations
+modOperations cfg t = cfg.operationsMod t (SCUnconfigured.operations t)
