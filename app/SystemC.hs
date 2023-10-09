@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -160,6 +161,85 @@ data ReductionOperation
 allReductions :: [ReductionOperation]
 allReductions = [minBound .. maxBound]
 
+data SCTypeFlags = SCTypeFlags
+  { scInt :: Bool,
+    scUInt :: Bool,
+    scBigInt :: Bool,
+    scBigUInt :: Bool,
+    scFixed :: Bool,
+    scUFixed :: Bool,
+    scFxnumSubref :: Bool,
+    scIntSubref :: Bool,
+    scUIntSubref :: Bool,
+    scSignedSubref :: Bool,
+    scUnsignedSubref :: Bool,
+    scIntBitref :: Bool,
+    scUIntBitref :: Bool,
+    scSignedBitref :: Bool,
+    scUnsignedBitref :: Bool,
+    cUInt :: Bool,
+    cInt :: Bool,
+    cDouble :: Bool,
+    cBool :: Bool
+  }
+
+noTypes :: SCTypeFlags
+noTypes =
+  SCTypeFlags
+    { scInt = False,
+      scUInt = False,
+      scBigInt = False,
+      scBigUInt = False,
+      scFixed = False,
+      scUFixed = False,
+      scFxnumSubref = False,
+      scIntSubref = False,
+      scUIntSubref = False,
+      scSignedSubref = False,
+      scUnsignedSubref = False,
+      scIntBitref = False,
+      scUIntBitref = False,
+      scSignedBitref = False,
+      scUnsignedBitref = False,
+      cUInt = False,
+      cInt = False,
+      cDouble = False,
+      cBool = False
+    }
+
+allTypes :: SCTypeFlags
+allTypes =
+  SCTypeFlags
+    { scInt = True,
+      scUInt = True,
+      scBigInt = True,
+      scBigUInt = True,
+      scFixed = True,
+      scUFixed = True,
+      scFxnumSubref = True,
+      scIntSubref = True,
+      scUIntSubref = True,
+      scSignedSubref = True,
+      scUnsignedSubref = True,
+      scIntBitref = True,
+      scUIntBitref = True,
+      scSignedBitref = True,
+      scUnsignedBitref = True,
+      cUInt = True,
+      cInt = True,
+      cDouble = True,
+      cBool = True
+    }
+
+allSCTypes :: SCTypeFlags
+allSCTypes =
+  allTypes
+    { cUInt = False,
+      cInt = False,
+      cDouble = False,
+      cBool = False
+    }
+
 -- | Possible operations on a SystemC type
 data Operations = Operations
   { -- | Result of the bit select operator (@x[10]@), if that is available
@@ -169,7 +249,11 @@ data Operations = Operations
     -- | Available reduction operators. See `ReductionOperation` and `reductionMethod`.
     reductions :: [ReductionOperation],
     -- | Implicit cast operators (e.g. @operator int() const@)
-    implicitCasts :: [SCType]
+    implicitCasts :: [SCType],
+    -- | Types that can be constructed from this
+    constructorInto :: SCTypeFlags,
+    -- | Types to which values of this type can be assigned
+    assignTo :: SCTypeFlags
   }
 
 reductionMethod :: ReductionOperation -> Text
@@ -187,133 +271,171 @@ operations SCBigInt {} =
     { bitSelect = Just SCSignedBitref,
       partSelect = Just SCSignedSubref,
       implicitCasts = [],
-      reductions = allReductions
+      reductions = allReductions,
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCBigUInt {} =
   Operations
     { bitSelect = Just SCUnsignedBitref,
       partSelect = Just SCUnsignedSubref,
       implicitCasts = [],
-      reductions = allReductions
+      reductions = allReductions,
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCInt {} =
   Operations
     { bitSelect = Just SCIntBitref,
       partSelect = Just SCIntSubref,
       implicitCasts = [CInt],
-      reductions = allReductions
+      reductions = allReductions,
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCUInt {} =
   Operations
     { bitSelect = Just SCUIntBitref,
       partSelect = Just SCUIntSubref,
       implicitCasts = [CUInt],
-      reductions = allReductions
+      reductions = allReductions,
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCIntSubref {} =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [CInt],
-      reductions = allReductions
+      reductions = allReductions,
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCUIntSubref {} =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [CUInt],
-      reductions = allReductions
+      reductions = allReductions,
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCSignedSubref {} =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [],
-      reductions = allReductions
+      reductions = allReductions,
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCUnsignedSubref {} =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [],
-      reductions = allReductions
+      reductions = allReductions,
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCFixed {} =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [CInt, CDouble],
-      reductions = []
+      reductions = [],
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCUFixed {} =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [CUInt, CDouble],
-      reductions = []
+      reductions = [],
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCFxnumSubref {} =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [],
-      reductions = allReductions
+      reductions = allReductions,
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCIntBitref =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [CBool],
-      reductions = []
+      reductions = [],
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCUIntBitref =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [CBool],
-      reductions = []
+      reductions = [],
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCSignedBitref =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [CBool],
-      reductions = []
+      reductions = [],
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations SCUnsignedBitref =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [CBool],
-      reductions = []
+      reductions = [],
+      constructorInto = allSCTypes,
+      assignTo = allSCTypes
     }
 operations CUInt =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [],
-      reductions = []
+      reductions = [],
+      constructorInto = allTypes,
+      assignTo = allTypes
     }
 operations CInt =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [],
-      reductions = []
+      reductions = [],
+      constructorInto = allTypes,
+      assignTo = allTypes
     }
 operations CDouble =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [],
-      reductions = []
+      reductions = [],
+      constructorInto = allTypes,
+      assignTo = allTypes
     }
 operations CBool =
   Operations
     { bitSelect = Nothing,
       partSelect = Nothing,
       implicitCasts = [],
-      reductions = []
+      reductions = [],
+      constructorInto = allTypes,
+      assignTo = allTypes
     }
 
 -- | Give the bitwidth of the type where that exists (i.e. SystemC types with a

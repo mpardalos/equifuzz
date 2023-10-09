@@ -128,33 +128,68 @@ randomTransformationFor e =
     ]
   where
     castWithAssignment :: Maybe (m Transformation)
-    castWithAssignment = Just (CastWithAssignment <$> castTargetType)
+    castWithAssignment = fmap CastWithAssignment <$> assignmentCastTargetType
 
     functionalCast :: Maybe (m Transformation)
-    functionalCast = Just (FunctionalCast <$> castTargetType)
+    functionalCast = fmap FunctionalCast <$> functionalCastTargetType
 
-    castTargetType = case e.annotation of
-      SC.SCFxnumSubref {} -> join $ uniform [someInt, someUInt]
-      _ -> join $ uniform [someInt, someUInt, someBigInt, someBigUInt, someFixed, someUFixed]
-      where
-        someInt = SC.SCInt <$> someWidth
-        someUInt = SC.SCUInt <$> someWidth
-        someBigInt = SC.SCBigInt <$> someBigWidth
-        someBigUInt = SC.SCBigUInt <$> someBigWidth
-        someFixed = do
-          w <- someWidth
-          i <- getRandomR (0, w)
-          return (SC.SCFixed w i)
-        someUFixed = do
-          w <- someWidth
-          i <- getRandomR (0, w)
-          return (SC.SCUFixed w i)
+    someWidth :: m Int
+    someWidth = getRandomR (1, 64)
 
-        someWidth :: MonadRandom m => m Int
-        someWidth = getRandomR (1, 64)
+    someBigWidth :: m Int
+    someBigWidth = getRandomR (1, 512)
 
-        someBigWidth :: MonadRandom m => m Int
-        someBigWidth = getRandomR (1, 512)
+    someWI :: m (Int, Int)
+    someWI = do
+      w <- someWidth
+      i <- getRandomR (0, w)
+      return (w, i)
+
+    assignmentCastTargetType :: Maybe (m SC.SCType)
+    assignmentCastTargetType =
+      let ts = (SC.operations e.annotation).assignTo
+          gens :: [m SC.SCType]
+          gens = catMaybes
+            [ guard ts.scInt >> Just (SC.SCInt <$> someWidth)
+            , guard ts.scInt >> Just (SC.SCInt <$> someWidth)
+            , guard ts.scUInt >> Just (SC.SCUInt <$> someWidth)
+            , guard ts.scBigInt >> Just (SC.SCBigInt <$> someBigWidth)
+            , guard ts.scBigUInt >> Just (SC.SCBigUInt <$> someBigWidth)
+            , guard ts.scFixed >> Just (uncurry SC.SCFixed <$> someWI )
+            , guard ts.scUFixed >> Just (uncurry SC.SCUFixed <$> someWI )
+            -- No subrefs or bitrefs because they cannot be constructed
+            , guard ts.cUInt >> Just (pure SC.CUInt)
+            , guard ts.cInt >> Just (pure SC.CInt)
+            , guard ts.cDouble >> Just (pure SC.CDouble)
+            , guard ts.cBool >> Just (pure SC.CBool)
+            ]
+
+       in if null gens
+             then Nothing
+             else Just $ join (uniform gens)
+
+    functionalCastTargetType :: Maybe (m SC.SCType)
+    functionalCastTargetType =
+      let cs = (SC.operations e.annotation).constructorInto
+          gens :: [m SC.SCType]
+          gens = catMaybes
+            [ guard cs.scInt >> Just (SC.SCInt <$> someWidth)
+            , guard cs.scInt >> Just (SC.SCInt <$> someWidth)
+            , guard cs.scUInt >> Just (SC.SCUInt <$> someWidth)
+            , guard cs.scBigInt >> Just (SC.SCBigInt <$> someBigWidth)
+            , guard cs.scBigUInt >> Just (SC.SCBigUInt <$> someBigWidth)
+            , guard cs.scFixed >> Just (uncurry SC.SCFixed <$> someWI )
+            , guard cs.scUFixed >> Just (uncurry SC.SCUFixed <$> someWI )
+            -- No subrefs or bitrefs because they cannot be constructed
+            , guard cs.cUInt >> Just (pure SC.CUInt)
+            , guard cs.cInt >> Just (pure SC.CInt)
+            , guard cs.cDouble >> Just (pure SC.CDouble)
+            , guard cs.cBool >> Just (pure SC.CBool)
+            ]
+
+       in if null gens
+             then Nothing
+             else Just $ join (uniform gens)
 
     range :: Maybe (m Transformation)
     range = do
