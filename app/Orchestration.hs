@@ -77,6 +77,7 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
             printf "==============================\n"
             printf "%s\n" (show err)
             printf "==============================\n\n"
+            endExperimentSequence sequenceId
       )
   where
     runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO (Maybe Bool)
