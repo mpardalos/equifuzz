@@ -22,6 +22,13 @@ vcfMods = GenMods {operations, transformations}
         [ #constructorInto % #scBigInt .~ False,
           #constructorInto % #scBigUInt .~ False
         ]
+    operations SC.CDouble {} =
+      composeAll
+        [ #constructorInto % #cInt .~ False,
+          #constructorInto % #cUInt .~ False,
+          #assignTo % #cInt .~ False,
+          #assignTo % #cUInt .~ False
+        ]
     operations _ = id
 
     transformations =
