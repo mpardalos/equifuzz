@@ -39,6 +39,7 @@ import Experiments
     ExperimentProgress (..),
     ExperimentResult (..),
     ExperimentSequenceId (..),
+    ComparisonValue(..)
   )
 import GHC.Generics (Generic)
 import Meta
@@ -253,7 +254,7 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
   infoBoxNoTitle . table $
     [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)],
       ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"],
-      ["Comparison Value", H.text info.experiment.comparisonValue],
+      ["Comparison Value", H.text info.experiment.comparisonValue.literal],
       case info.result of
         Just result ->
           [ "Actual Result",

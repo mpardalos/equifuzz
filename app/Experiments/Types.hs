@@ -34,6 +34,12 @@ newtype ExperimentId = ExperimentId {uuid :: UUID}
 newExperimentId :: IO ExperimentId
 newExperimentId = ExperimentId <$> UUID.nextRandom
 
+data ComparisonValue = ComparisonValue
+  { width :: Int
+  , literal :: Text
+  }
+  deriving (Generic, Show, Eq, Ord)
+
 data Experiment = Experiment
   { experimentId :: ExperimentId,
     -- | True if we expect the modules to be equivalent, False if we expect them not to be
@@ -46,7 +52,7 @@ data Experiment = Experiment
     -- E.g. The series of transformations that generated it
     longDescription :: Text,
     -- | Value that the design will be compared to
-    comparisonValue :: Text
+    comparisonValue :: ComparisonValue
   }
   deriving (Generic, Show, Eq, Ord)
 
@@ -70,6 +76,7 @@ data ExperimentProgress
   | ExperimentSequenceCompleted ExperimentSequenceId
   deriving (Show)
 
+makeFieldLabelsNoPrefix ''ComparisonValue
 makeFieldLabelsNoPrefix ''Experiment
 makeFieldLabelsNoPrefix ''DesignSource
 makeFieldLabelsNoPrefix ''ExperimentResult

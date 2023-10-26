@@ -55,7 +55,7 @@ main = do
         putStrLn "---------"
         T.putStrLn longDescription
         putStrLn "---------"
-        T.putStrLn comparisonValue
+        T.putStrLn comparisonValue.literal
     PrintVersion -> putStrLn versionName
 
 --------------------------- CLI Parser -----------------------------------------

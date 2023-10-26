@@ -14,7 +14,7 @@ import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments.Types
-import Optics ((^.))
+import Optics ((^.), (%))
 import Runners.Types (SSHConnectionTarget (..))
 import Runners.Util (createRemoteExperimentDir, runSSHCommand)
 import Shelly qualified as Sh
@@ -91,7 +91,7 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
                 compile_design impl
 
                 proc miter {} {
-                        lemma out_equiv = out(1) == #{experiment ^. #comparisonValue}
+                        lemma out_equiv = out(1) == #{experiment ^. #comparisonValue % #literal}
                 }
 
                 compose -nospec
