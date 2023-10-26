@@ -28,6 +28,7 @@ executable equifuzz
                  , Runners.Types
                  , Runners.Util
                  , Runners.VCF
+                 , Runners.Jasper
                  , SystemC
                  , ToolRestrictions
                  , GenSystemC

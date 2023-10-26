@@ -36,6 +36,9 @@ vcfMods = GenMods {operations, transformations}
         { arithmetic = False
         }
 
+jasperMods :: GenMods
+jasperMods = noMods
+
 noMods :: GenMods
 noMods =
   GenMods

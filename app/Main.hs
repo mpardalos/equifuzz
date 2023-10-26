@@ -33,7 +33,7 @@ import Options.Applicative (ReadM)
 import Runners.Util (validateSSH)
 import qualified Shelly as Sh
 import Control.Exception (throwIO, try, SomeException)
-import ToolRestrictions (vcfMods, noMods)
+import ToolRestrictions (vcfMods, noMods, jasperMods)
 import GenSystemC.Config (GenMods)
 
 main :: IO ()
@@ -80,7 +80,7 @@ data GenerateOptions = GenerateOptions
 
 data PasswordSource = NoPassword | AskPassword | PasswordGiven Text
 
-data FECType = VCF
+data FECType = VCF | Jasper
 
 data RunnerOptions
   = TestRunner
@@ -127,6 +127,7 @@ webOptionsToOrchestrationConfig
 
 runnerOptionsToGenMods :: RunnerOptions -> GenMods
 runnerOptionsToGenMods Runner { fecType = VCF } = vcfMods
+runnerOptionsToGenMods Runner { fecType = Jasper } = jasperMods
 runnerOptionsToGenMods TestRunner {} = noMods
 
 runnerOptionsToRunner :: RunnerOptions -> IO ExperimentRunner
@@ -152,6 +153,7 @@ runnerOptionsToRunner
         putStrLn "SSH connection OK"
         return $ ExperimentRunner $ case fecType of
           VCF -> runVCFormal sshOpts activatePath
+          Jasper -> runJasper sshOpts activatePath
 
 askPassword :: IO Text
 askPassword = do
@@ -308,8 +310,8 @@ commandParser =
 
     readFecType = Opt.eitherReader $ \case
       "vcf" -> Right VCF
+      "jasper" -> Right Jasper
       "catapult" -> Left "Siemens catapult is not *yet* supported"
-      "jasper" -> Left "Cadence jasper is not *yet* supported"
       other -> Left ("FEC '" ++ other ++ "' is unknown")
 
 parseArgs :: IO Command
