@@ -4,7 +4,7 @@ module ToolRestrictions where
 import GenSystemC.Config
   ( GenMods (..),
     TransformationFlags (..),
-    allTransformations,
+    allTransformations, 
   )
 import Optics
 import SystemC qualified as SC
@@ -37,7 +37,15 @@ vcfMods = GenMods {operations, transformations}
         }
 
 jasperMods :: GenMods
-jasperMods = noMods
+jasperMods = GenMods {operations, transformations}
+  where
+    operations _ = composeAll
+      [ #constructorInto % #scFixed .~ False,
+        #constructorInto % #scUFixed .~ False,
+        #assignTo % #scFixed .~ False,
+        #assignTo % #scUFixed .~ False
+      ]
+    transformations = allTransformations
 
 noMods :: GenMods
 noMods =
