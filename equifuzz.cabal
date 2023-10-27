@@ -16,66 +16,85 @@ Flag evaluation_version
      manual: True
      default: False
 
-executable equifuzz
-    ghc-options: -Wall -Wno-unrecognised-pragmas -fdefer-typed-holes -threaded -rtsopts "-with-rtsopts=-N"
-    main-is:          Main.hs
+common common
     if flag(evaluation_version)
-       cpp-options: -DEVALUATION_VERSION
-    other-modules: Experiments
-                 , Experiments.Types
-                 , Experiments.Generators
-                 , Runners
-                 , Runners.Types
-                 , Runners.Util
-                 , Runners.VCF
-                 , Runners.Jasper
-                 , SystemC
-                 , ToolRestrictions
-                 , GenSystemC
-                 , GenSystemC.Config
-                 , GenSystemC.Transformations
-                 , GenSystemC.Reduce
-                 , Util
-                 , WebUI
-                 , Orchestration
-                 , Meta
-                 , Paths_equifuzz
-    -- other-extensions:
-    build-depends:    base ==4.16.*
-                    , text
-                    , bytestring == 0.11.*
-                    , shelly
-                    , optics
-                    , string-interpolate
-                    , uniplate
-                    , recursion-schemes
-                    , uuid
-                    , vty == 5.38
-                    , containers
-                    , mtl == 2.3.*
-                    , transformers
-                    , prettyprinter
-                    , data-default-class
-                    , safe
-                    , optparse-applicative
-                    , filepath
-                    , scotty == 0.12.*
-                    , wai == 3.2.*
-                    , wai-extra == 3.1.13.0
-                    , blaze-html == 0.9.*
-                    , blaze-htmx == 0.1.*
-                    , http-types == 0.12.*
-                    , file-embed == 0.0.15.*
-                    , random == 1.2.*
-                    , MonadRandom == 0.6.*
-                    , binary == 0.8.*
-                    , stm == 2.5.*
-                    , time == 1.12.*
-                    , async == 2.2.*
-    hs-source-dirs:   app
-    default-language: GHC2021
+        cpp-options: -DEVALUATION_VERSION
+    default-language:
+        GHC2021
+    build-depends:
+        base ==4.16.*,
+        optics,
+        shelly,
+        text,
+        bytestring == 0.11.*,
+        random == 1.2.*,
+        MonadRandom == 0.6.*
     default-extensions:
         OverloadedStrings
         OverloadedRecordDot
         NoFieldSelectors
         OverloadedLabels
+        ImportQualifiedPost
+
+library
+    import:
+        common
+    hs-source-dirs:
+        src
+    exposed-modules:
+        Experiments,
+        Experiments.Types,
+        Experiments.Generators,
+        Runners,
+        Runners.Types,
+        Runners.Util,
+        Runners.VCF,
+        Runners.Jasper,
+        SystemC,
+        ToolRestrictions,
+        GenSystemC,
+        GenSystemC.Config,
+        GenSystemC.Transformations,
+        GenSystemC.Reduce,
+        Util,
+        WebUI,
+        Orchestration,
+        Meta,
+        Paths_equifuzz
+    build-depends:
+        string-interpolate,
+        uniplate,
+        recursion-schemes,
+        uuid,
+        vty == 5.38,
+        containers,
+        mtl == 2.3.*,
+        transformers,
+        prettyprinter,
+        data-default-class,
+        safe,
+        filepath,
+        scotty == 0.12.*,
+        wai == 3.2.*,
+        wai-extra == 3.1.13.0,
+        blaze-html == 0.9.*,
+        blaze-htmx == 0.1.*,
+        http-types == 0.12.*,
+        file-embed == 0.0.15.*,
+        binary == 0.8.*,
+        stm == 2.5.*,
+        time == 1.12.*,
+        async == 2.2.*
+
+executable equifuzz
+    import:
+        common
+    ghc-options:
+        -Wall -Wno-unrecognised-pragmas -fdefer-typed-holes -threaded -rtsopts "-with-rtsopts=-N"
+    main-is:
+        Main.hs
+    hs-source-dirs:
+        exe
+    build-depends:
+        equifuzz,
+        optparse-applicative
