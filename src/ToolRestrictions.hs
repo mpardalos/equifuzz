@@ -4,7 +4,7 @@ module ToolRestrictions where
 import GenSystemC.Config
   ( GenMods (..),
     TransformationFlags (..),
-    allTransformations, 
+    allTransformations,
   )
 import Optics
 import SystemC qualified as SC
@@ -39,7 +39,12 @@ vcfMods = GenMods {operations, transformations}
 jasperMods :: GenMods
 jasperMods = GenMods {operations, transformations}
   where
-    operations t = noFixed . failingBigIntReductions t
+    operations t =
+      composeAll
+        [ noFixed,
+          failingBigIntReductions t,
+          missingSubrefReductions t
+        ]
 
     failingBigIntReductions SC.SCBigInt {} =
       #reductions %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
@@ -47,12 +52,19 @@ jasperMods = GenMods {operations, transformations}
       #reductions %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
     failingBigIntReductions _ = id
 
-    noFixed = composeAll
-      [ #constructorInto % #scFixed .~ False,
-        #constructorInto % #scUFixed .~ False,
-        #assignTo % #scFixed .~ False,
-        #assignTo % #scUFixed .~ False
-      ]
+    missingSubrefReductions SC.SCIntSubref {} = #reductions .~ []
+    missingSubrefReductions SC.SCUIntSubref {} = #reductions .~ []
+    missingSubrefReductions SC.SCSignedSubref {} = #reductions .~ []
+    missingSubrefReductions SC.SCUnsignedSubref {} = #reductions .~ []
+    missingSubrefReductions _ = id
+
+    noFixed =
+      composeAll
+        [ #constructorInto % #scFixed .~ False,
+          #constructorInto % #scUFixed .~ False,
+          #assignTo % #scFixed .~ False,
+          #assignTo % #scUFixed .~ False
+        ]
     transformations = allTransformations
 
 noMods :: GenMods
