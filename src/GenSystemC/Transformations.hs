@@ -31,7 +31,7 @@ import Data.Maybe (catMaybes, isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
-import Optics (use)
+import Optics (use, (.~))
 import Optics.State.Operators ((%=), (.=))
 -- Import modOperations cfg as SCUnconfigured.operations, because we need to make
 -- sure to run its result through GenConfig.modOperations, and never use it
@@ -40,6 +40,7 @@ import SystemC qualified as SC hiding (operations)
 import SystemC qualified as SCUnconfigured (operations)
 import Data.List (intersect)
 import GenSystemC.Config (GenConfig(..), GenMods(..), TransformationFlags(..))
+import Control.Monad (when)
 
 data Transformation
   = CastWithAssignment SC.SCType
@@ -80,28 +81,86 @@ newVar = do
   #nextVarIdx %= (+ 1)
   return ("x" <> T.pack (show varIdx))
 
+assignAllowed :: GenConfig -> SC.SCType -> SC.SCType -> Bool
+assignAllowed cfg from to =
+  let flags = (modOperations cfg from).assignTo
+   in case to of
+    SC.SCInt{} -> flags.scInt
+    SC.SCUInt{} -> flags.scUInt
+    SC.SCBigInt{} -> flags.scBigInt
+    SC.SCBigUInt{} -> flags.scBigUInt
+    SC.SCFixed{} -> flags.scFixed
+    SC.SCUFixed{} -> flags.scUFixed
+    SC.SCFxnumSubref{} -> flags.scFxnumSubref
+    SC.SCIntSubref{} -> flags.scIntSubref
+    SC.SCUIntSubref{} -> flags.scUIntSubref
+    SC.SCSignedSubref{} -> flags.scSignedSubref
+    SC.SCUnsignedSubref{} -> flags.scUnsignedSubref
+    SC.SCIntBitref -> flags.scIntBitref
+    SC.SCUIntBitref -> flags.scUIntBitref
+    SC.SCSignedBitref -> flags.scSignedBitref
+    SC.SCUnsignedBitref -> flags.scUnsignedBitref
+    SC.CUInt -> flags.cUInt
+    SC.CInt -> flags.cInt
+    SC.CDouble -> flags.cDouble
+    SC.CBool -> flags.cBool
+
+castAllowed :: GenConfig -> SC.SCType -> SC.SCType -> Bool
+castAllowed cfg from to =
+  let flags = (modOperations cfg from).constructorInto
+   in case to of
+    SC.SCInt{} -> flags.scInt
+    SC.SCUInt{} -> flags.scUInt
+    SC.SCBigInt{} -> flags.scBigInt
+    SC.SCBigUInt{} -> flags.scBigUInt
+    SC.SCFixed{} -> flags.scFixed
+    SC.SCUFixed{} -> flags.scUFixed
+    SC.SCFxnumSubref{} -> flags.scFxnumSubref
+    SC.SCIntSubref{} -> flags.scIntSubref
+    SC.SCUIntSubref{} -> flags.scUIntSubref
+    SC.SCSignedSubref{} -> flags.scSignedSubref
+    SC.SCUnsignedSubref{} -> flags.scUnsignedSubref
+    SC.SCIntBitref -> flags.scIntBitref
+    SC.SCUIntBitref -> flags.scUIntBitref
+    SC.SCSignedBitref -> flags.scSignedBitref
+    SC.SCUnsignedBitref -> flags.scUnsignedBitref
+    SC.CUInt -> flags.cUInt
+    SC.CInt -> flags.cInt
+    SC.CDouble -> flags.cDouble
+    SC.CBool -> flags.cBool
+
 applyTransformation :: MonadBuild m => GenConfig -> Transformation -> m ()
-applyTransformation _ (CastWithAssignment varType) = do
+applyTransformation cfg (CastWithAssignment varType) = do
   e <- use #headExpr
   varName <- newVar
-  #statements
-    %= ( ++
-           [ SC.Declaration () varType varName,
-             SC.Assignment () varName e
-           ]
-       )
-  #headExpr .= SC.Variable varType varName
-applyTransformation _ (FunctionalCast castType) =
-  #headExpr %= \e -> SC.Cast castType castType e
-applyTransformation cfg (Range hi lo) =
-  #headExpr %= \e -> case (modOperations cfg e.annotation).partSelect of
-    Just subrefType | hi >= lo ->
-      SC.MethodCall
-        (subrefType (hi - lo + 1))
-        e
-        "range"
-        [SC.Constant SC.CInt hi, SC.Constant SC.CInt lo]
-    _ -> e
+  when (assignAllowed cfg e.annotation varType) $ do
+    #statements
+      %= ( ++
+            [ SC.Declaration () varType varName,
+              SC.Assignment () varName e
+            ]
+        )
+    #headExpr .= SC.Variable varType varName
+applyTransformation cfg (FunctionalCast castType) =
+  #headExpr %= \e ->
+    if castAllowed cfg e.annotation castType
+       then SC.Cast castType castType e
+       else e
+applyTransformation cfg (Range bound1 bound2) = do
+  #headExpr %= \e ->
+    let hi = max bound1 bound2
+        lo = min bound1 bound2
+        width = hi - lo + 1
+        rangeInBounds = lo >= 0 && maybe True (hi <) (SC.knownWidth e.annotation)
+     in case (modOperations cfg e.annotation).partSelect of
+          Just resultType
+            | rangeInBounds ->
+                SC.MethodCall
+                  (resultType width)
+                  e
+                  "range"
+                  [SC.Constant SC.CInt hi, SC.Constant SC.CInt lo]
+          _ -> e
 applyTransformation _ (Arithmetic op e') =
   #headExpr %= \e ->
     SC.BinOp e'.annotation e op e'
@@ -109,9 +168,11 @@ applyTransformation _ (UseAsCondition tExpr fExpr) = do
   #headExpr %= \e ->
     SC.Conditional tExpr.annotation e tExpr fExpr
 applyTransformation cfg (BitSelect idx) = do
-  #headExpr %= \e -> case (modOperations cfg e.annotation).bitSelect of
-    Just bitrefType -> SC.Bitref bitrefType e idx
-    Nothing -> e
+  #headExpr %= \e ->
+    let idxInBounds = maybe True (idx <) (SC.knownWidth e.annotation)
+     in case (modOperations cfg e.annotation).bitSelect of
+          Just bitrefType | idxInBounds -> SC.Bitref bitrefType e idx
+          Nothing -> e
 applyTransformation cfg (ApplyReduction op) = do
   #headExpr %= \e ->
     if op `elem` (modOperations cfg e.annotation).reductions
