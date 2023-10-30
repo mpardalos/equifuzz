@@ -39,7 +39,15 @@ vcfMods = GenMods {operations, transformations}
 jasperMods :: GenMods
 jasperMods = GenMods {operations, transformations}
   where
-    operations _ = composeAll
+    operations t = noFixed . failingBigIntReductions t
+
+    failingBigIntReductions SC.SCBigInt {} =
+      #reductions %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
+    failingBigIntReductions SC.SCBigUInt {} =
+      #reductions %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
+    failingBigIntReductions _ = id
+
+    noFixed = composeAll
       [ #constructorInto % #scFixed .~ False,
         #constructorInto % #scUFixed .~ False,
         #assignTo % #scFixed .~ False,
