@@ -374,8 +374,8 @@ operations SCIntBitref =
       partSelect = Nothing,
       implicitCasts = [CBool],
       reductions = [],
-      constructorInto = allSCTypes,
-      assignTo = allSCTypes
+      constructorInto = allTypes,
+      assignTo = allTypes
     }
 operations SCUIntBitref =
   Operations
@@ -383,8 +383,8 @@ operations SCUIntBitref =
       partSelect = Nothing,
       implicitCasts = [CBool],
       reductions = [],
-      constructorInto = allSCTypes,
-      assignTo = allSCTypes
+      constructorInto = allTypes,
+      assignTo = allTypes
     }
 operations SCSignedBitref =
   Operations
@@ -392,8 +392,8 @@ operations SCSignedBitref =
       partSelect = Nothing,
       implicitCasts = [CBool],
       reductions = [],
-      constructorInto = allSCTypes,
-      assignTo = allSCTypes
+      constructorInto = allTypes,
+      assignTo = allTypes
     }
 operations SCUnsignedBitref =
   Operations
@@ -401,8 +401,8 @@ operations SCUnsignedBitref =
       partSelect = Nothing,
       implicitCasts = [CBool],
       reductions = [],
-      constructorInto = allSCTypes,
-      assignTo = allSCTypes
+      constructorInto = allTypes,
+      assignTo = allTypes
     }
 operations CUInt =
   Operations
