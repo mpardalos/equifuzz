@@ -4,7 +4,7 @@ module ToolRestrictions where
 import GenSystemC.Config
   ( GenMods (..),
     TransformationFlags (..),
-    allTransformations,
+    allTransformations, TypeOperationsMod,
   )
 import Optics
 import SystemC qualified as SC
@@ -43,7 +43,8 @@ jasperMods = GenMods {operations, transformations}
       composeAll
         [ noFixed,
           failingBigIntReductions t,
-          missingSubrefReductions t
+          missingSubrefReductions t,
+          ambiguousAssignments t
         ]
 
     failingBigIntReductions SC.SCBigInt {} =
@@ -57,6 +58,29 @@ jasperMods = GenMods {operations, transformations}
     missingSubrefReductions SC.SCSignedSubref {} = #reductions .~ []
     missingSubrefReductions SC.SCUnsignedSubref {} = #reductions .~ []
     missingSubrefReductions _ = id
+
+    ambiguousAssignments :: TypeOperationsMod
+    ambiguousAssignments SC.SCIntSubref {} =
+      composeAll
+      [ #assignTo % #scUInt .~ False
+      , #assignTo % #scInt .~ False
+      ]
+    ambiguousAssignments SC.SCUIntSubref {} =
+      composeAll
+      [ #assignTo % #scUInt .~ False
+      , #assignTo % #scInt .~ False
+      ]
+    ambiguousAssignments SC.SCIntBitref {} =
+      composeAll
+      [ #assignTo % #scUInt .~ False
+      , #assignTo % #scInt .~ False
+      ]
+    ambiguousAssignments SC.SCUIntBitref {} =
+      composeAll
+      [ #assignTo % #scUInt .~ False
+      , #assignTo % #scInt .~ False
+      ]
+    ambiguousAssignments _ = id
 
     noFixed =
       composeAll
