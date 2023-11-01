@@ -23,14 +23,14 @@ module GenSystemC.Transformations
   )
 where
 
-import Control.Monad (guard, join)
+import Control.Monad (guard, join, when)
 import Control.Monad.Random.Strict (MonadRandom, getRandomR, uniform, weighted)
 import Control.Monad.State.Strict (MonadState)
 import Data.Maybe (catMaybes, isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
-import Optics (use, (.~))
+import Optics (use)
 import Optics.State.Operators ((%=), (.=))
 -- Import modOperations cfg as SCUnconfigured.operations, because we need to make
 -- sure to run its result through GenConfig.modOperations, and never use it
@@ -39,7 +39,6 @@ import SystemC qualified as SC hiding (operations)
 import SystemC qualified as SCUnconfigured (operations)
 import Data.List (intersect)
 import GenSystemC.Config (GenConfig(..), GenMods(..), TransformationFlags(..))
-import Control.Monad (when)
 import Util (is)
 
 data Transformation

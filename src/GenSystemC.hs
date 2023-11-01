@@ -10,7 +10,7 @@ module GenSystemC
     Reducible (..),
 
     -- ** Configuration
-    TypeOperationsMod,
+    OperationsMod,
     GenConfig (..),
   )
 where
@@ -22,7 +22,7 @@ import Control.Monad.Writer.Strict (MonadWriter (tell), runWriterT)
 import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
-import GenSystemC.Config (GenConfig (..), TypeOperationsMod)
+import GenSystemC.Config (GenConfig (..), OperationsMod)
 import GenSystemC.Reduce
   ( HasReductions (..),
     Reducible (..),

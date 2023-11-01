@@ -2,7 +2,7 @@ module GenSystemC.Config where
 
 import SystemC qualified as SC
 
-type TypeOperationsMod = SC.Expr -> SC.Operations -> SC.Operations
+type OperationsMod = SC.Expr -> SC.Operations -> SC.Operations
 
 data TransformationFlags = TransformationFlags
   { castWithAssignment :: Bool,
@@ -29,7 +29,7 @@ allTransformations =
     }
 
 data GenMods = GenMods
-  { operations :: TypeOperationsMod,
+  { operations :: OperationsMod,
     transformations :: TransformationFlags
   }
 

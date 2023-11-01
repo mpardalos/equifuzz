@@ -4,7 +4,7 @@ module ToolRestrictions where
 import GenSystemC.Config
   ( GenMods (..),
     TransformationFlags (..),
-    TypeOperationsMod,
+    OperationsMod,
     allTransformations,
   )
 import Optics
@@ -41,7 +41,7 @@ vcfMods = GenMods {operations, transformations}
 jasperMods :: GenMods
 jasperMods = GenMods {operations, transformations}
   where
-    operations :: TypeOperationsMod
+    operations :: OperationsMod
     operations e =
       composeAll
         [ noFixed,
@@ -62,7 +62,7 @@ jasperMods = GenMods {operations, transformations}
       SC.SCUnsignedSubref {} -> #reductions .~ []
       _ -> id
 
-    ambiguousAssignments :: TypeOperationsMod
+    ambiguousAssignments :: OperationsMod
     ambiguousAssignments e = case e.annotation of
       SC.SCIntSubref {} ->
         composeAll
