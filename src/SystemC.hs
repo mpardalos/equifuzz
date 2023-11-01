@@ -57,7 +57,23 @@ instance Annotation () where
 class Source a where
   genSource :: a -> Text
 
-data BinOp = Plus | Minus | Multiply | Divide | BitwiseOr
+data BinOp
+  = Plus
+  | Minus
+  | Multiply
+  | Divide
+  | BitwiseOr
+  | Assign
+  | PlusAssign
+  | MinusAssign
+  | TimesAssign
+  | DivideAssign
+  | ModAssign
+  | BitwiseAndAssign
+  | BitwiseOrAssign
+  | BitwiseXorAssign
+  | LeftShiftAssign
+  | RightShiftAssign
   deriving (Eq, Show, Generic, Data, Ord, Bounded, Enum)
 
 data UnaryOp
@@ -529,6 +545,17 @@ instance Pretty BinOp where
   pretty Multiply = "*"
   pretty Divide = "/"
   pretty BitwiseOr = "|"
+  pretty Assign = "="
+  pretty PlusAssign = "+="
+  pretty MinusAssign = "-="
+  pretty TimesAssign = "*="
+  pretty DivideAssign = "/="
+  pretty ModAssign = "%="
+  pretty BitwiseAndAssign = "&="
+  pretty BitwiseOrAssign = "|="
+  pretty BitwiseXorAssign = "^="
+  pretty LeftShiftAssign = "<<="
+  pretty RightShiftAssign = ">>="
 
 instance Source BinOp where
   genSource =
