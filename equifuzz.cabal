@@ -39,6 +39,8 @@ common common
 library
     import:
         common
+    ghc-options:
+        -Wall -fdefer-typed-holes -Wno-unrecognised-pragmas
     hs-source-dirs:
         src
     exposed-modules:
@@ -90,7 +92,7 @@ executable equifuzz
     import:
         common
     ghc-options:
-        -Wall -Wno-unrecognised-pragmas -fdefer-typed-holes -threaded -rtsopts "-with-rtsopts=-N"
+        -Wall -fdefer-typed-holes -Wno-unrecognised-pragmas -threaded -rtsopts "-with-rtsopts=-N"
     main-is:
         Main.hs
     hs-source-dirs:
