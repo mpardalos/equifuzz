@@ -430,7 +430,7 @@ operations CBool =
       partSelect = Nothing,
       implicitCasts = [],
       reductions = [],
-      incrementDecrement = True,
+      incrementDecrement = False,
       constructorInto = allTypes,
       assignTo = allTypes
     }
