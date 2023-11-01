@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -34,6 +35,11 @@ import Prettyprinter.Render.Text (renderStrict)
 
 class Source a where
   genSource :: a -> Text
+  default genSource :: Pretty a => a -> Text
+  genSource =
+    renderStrict
+      . layoutPretty defaultLayoutOptions
+      . pretty
 
 data BinOp
   = Plus
@@ -492,11 +498,7 @@ instance Pretty BinOp where
   pretty LeftShiftAssign = "<<="
   pretty RightShiftAssign = ">>="
 
-instance Source BinOp where
-  genSource =
-    renderStrict
-      . layoutPretty defaultLayoutOptions
-      . pretty
+instance Source BinOp
 
 instance Pretty ReductionOperation where
   pretty ReduceAnd = "and_reduce"
@@ -543,11 +545,7 @@ instance Pretty Expr where
       <> ")"
   pretty (Bitref _ e bit) = pretty e <> "[" <> pretty bit <> "]"
 
-instance Source Expr where
-  genSource =
-    renderStrict
-      . layoutPretty defaultLayoutOptions
-      . pretty
+instance Source Expr
 
 prettyBlock :: [Statement] -> Doc a
 prettyBlock statements = vsep ["{", indent 4 . vsep $ pretty <$> statements, "}"]
@@ -564,11 +562,7 @@ instance Pretty Statement where
   pretty (Block statements) =
     prettyBlock statements
 
-instance Source Statement where
-  genSource =
-    renderStrict
-      . layoutPretty defaultLayoutOptions
-      . pretty
+instance Source Statement
 
 instance Pretty SCType where
   pretty (SCInt size) = "sc_dt::sc_int<" <> pretty size <> ">"
@@ -591,11 +585,7 @@ instance Pretty SCType where
   pretty CDouble = "double"
   pretty CBool = "bool"
 
-instance Source SCType where
-  genSource =
-    renderStrict
-      . layoutPretty defaultLayoutOptions
-      . pretty
+instance Source SCType
 
 instance Pretty FunctionDeclaration where
   pretty FunctionDeclaration {..} =
@@ -610,21 +600,13 @@ instance Pretty FunctionDeclaration where
             | (argType, argName) <- args
           ]
 
-instance Source FunctionDeclaration where
-  genSource =
-    renderStrict
-      . layoutPretty defaultLayoutOptions
-      . pretty
+instance Source FunctionDeclaration
 
 instance Pretty TranslationUnit where
   pretty (TranslationUnit funcs) =
     vsep . punctuate line $ map pretty funcs
 
-instance Source TranslationUnit where
-  genSource =
-    renderStrict
-      . layoutPretty defaultLayoutOptions
-      . pretty
+instance Source TranslationUnit
 
 makeFieldLabelsNoPrefix ''SCTypeFlags
 makeFieldLabelsNoPrefix ''Operations
