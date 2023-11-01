@@ -4,7 +4,8 @@ module ToolRestrictions where
 import GenSystemC.Config
   ( GenMods (..),
     TransformationFlags (..),
-    allTransformations, TypeOperationsMod,
+    TypeOperationsMod,
+    allTransformations,
   )
 import Optics
 import SystemC qualified as SC
@@ -12,24 +13,25 @@ import SystemC qualified as SC
 vcfMods :: GenMods
 vcfMods = GenMods {operations, transformations}
   where
-    operations SC.SCInt {} =
-      composeAll
-        [ #constructorInto % #scBigInt .~ False,
-          #constructorInto % #scBigUInt .~ False
-        ]
-    operations SC.SCUInt {} =
-      composeAll
-        [ #constructorInto % #scBigInt .~ False,
-          #constructorInto % #scBigUInt .~ False
-        ]
-    operations SC.CDouble {} =
-      composeAll
-        [ #constructorInto % #cInt .~ False,
-          #constructorInto % #cUInt .~ False,
-          #assignTo % #cInt .~ False,
-          #assignTo % #cUInt .~ False
-        ]
-    operations _ = id
+    operations e = case e.annotation of
+      SC.SCInt {} ->
+        composeAll
+          [ #constructorInto % #scBigInt .~ False,
+            #constructorInto % #scBigUInt .~ False
+          ]
+      SC.SCUInt {} ->
+        composeAll
+          [ #constructorInto % #scBigInt .~ False,
+            #constructorInto % #scBigUInt .~ False
+          ]
+      SC.CDouble {} ->
+        composeAll
+          [ #constructorInto % #cInt .~ False,
+            #constructorInto % #cUInt .~ False,
+            #assignTo % #cInt .~ False,
+            #assignTo % #cUInt .~ False
+          ]
+      _ -> id
 
     transformations =
       allTransformations
@@ -39,48 +41,50 @@ vcfMods = GenMods {operations, transformations}
 jasperMods :: GenMods
 jasperMods = GenMods {operations, transformations}
   where
-    operations t =
+    operations :: TypeOperationsMod
+    operations e =
       composeAll
         [ noFixed,
-          failingBigIntReductions t,
-          missingSubrefReductions t,
-          ambiguousAssignments t
+          failingBigIntReductions e,
+          missingSubrefReductions e,
+          ambiguousAssignments e
         ]
 
-    failingBigIntReductions SC.SCBigInt {} =
-      #reductions %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
-    failingBigIntReductions SC.SCBigUInt {} =
-      #reductions %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
-    failingBigIntReductions _ = id
+    failingBigIntReductions e = case e.annotation of
+      SC.SCBigInt {} -> #reductions %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
+      SC.SCBigUInt {} -> #reductions %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
+      _ -> id
 
-    missingSubrefReductions SC.SCIntSubref {} = #reductions .~ []
-    missingSubrefReductions SC.SCUIntSubref {} = #reductions .~ []
-    missingSubrefReductions SC.SCSignedSubref {} = #reductions .~ []
-    missingSubrefReductions SC.SCUnsignedSubref {} = #reductions .~ []
-    missingSubrefReductions _ = id
+    missingSubrefReductions e = case e.annotation of
+      SC.SCIntSubref {} -> #reductions .~ []
+      SC.SCUIntSubref {} -> #reductions .~ []
+      SC.SCSignedSubref {} -> #reductions .~ []
+      SC.SCUnsignedSubref {} -> #reductions .~ []
+      _ -> id
 
     ambiguousAssignments :: TypeOperationsMod
-    ambiguousAssignments SC.SCIntSubref {} =
-      composeAll
-      [ #assignTo % #scUInt .~ False
-      , #assignTo % #scInt .~ False
-      ]
-    ambiguousAssignments SC.SCUIntSubref {} =
-      composeAll
-      [ #assignTo % #scUInt .~ False
-      , #assignTo % #scInt .~ False
-      ]
-    ambiguousAssignments SC.SCIntBitref {} =
-      composeAll
-      [ #assignTo % #scUInt .~ False
-      , #assignTo % #scInt .~ False
-      ]
-    ambiguousAssignments SC.SCUIntBitref {} =
-      composeAll
-      [ #assignTo % #scUInt .~ False
-      , #assignTo % #scInt .~ False
-      ]
-    ambiguousAssignments _ = id
+    ambiguousAssignments e = case e.annotation of
+      SC.SCIntSubref {} ->
+        composeAll
+          [ #assignTo % #scUInt .~ False,
+            #assignTo % #scInt .~ False
+          ]
+      SC.SCUIntSubref {} ->
+        composeAll
+          [ #assignTo % #scUInt .~ False,
+            #assignTo % #scInt .~ False
+          ]
+      SC.SCIntBitref {} ->
+        composeAll
+          [ #assignTo % #scUInt .~ False,
+            #assignTo % #scInt .~ False
+          ]
+      SC.SCUIntBitref {} ->
+        composeAll
+          [ #assignTo % #scUInt .~ False,
+            #assignTo % #scInt .~ False
+          ]
+      _ -> id
 
     noFixed =
       composeAll
