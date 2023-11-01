@@ -105,7 +105,7 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper
-systemCHectorWrapper :: SC.Annotation ann => Text -> SC.FunctionDeclaration ann -> Text
+systemCHectorWrapper ::  Text -> SC.FunctionDeclaration -> Text
 systemCHectorWrapper wrapperName SC.FunctionDeclaration {returnType, args, name} =
   [__i|
       \#include<Hector.h>

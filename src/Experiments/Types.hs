@@ -18,7 +18,6 @@ import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Optics (makeFieldLabelsNoPrefix)
 import qualified SystemC as SC
-import GenSystemC (BuildOut)
 
 -- | Identifies a sequence of experiments
 newtype ExperimentSequenceId = ExperimentSequenceId {uuid :: UUID}
@@ -44,7 +43,7 @@ data Experiment = Experiment
   { experimentId :: ExperimentId,
     -- | True if we expect the modules to be equivalent, False if we expect them not to be
     expectedResult :: Bool,
-    design :: SC.FunctionDeclaration BuildOut,
+    design :: SC.FunctionDeclaration,
     -- | Used for ordering reductions of the same experiment. Will probably be
     -- the number of transformations used to generate it
     size :: Int,

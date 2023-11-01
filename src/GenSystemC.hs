@@ -4,7 +4,6 @@
 
 module GenSystemC
   ( -- * Generation
-    BuildOut,
     genSystemCConstant,
     generateFromProcess,
     GenerateProcess (..),
@@ -30,8 +29,7 @@ import GenSystemC.Reduce
     asReducible,
   )
 import GenSystemC.Transformations
-  ( BuildOut,
-    BuildOutState (headExpr, statements),
+  ( BuildOutState (headExpr, statements),
     MonadBuild,
     Transformation (..),
     applyTransformation,
@@ -54,7 +52,7 @@ genSystemCConstant cfg = do
 
   return $ asReducible $ GenerateProcess seed transformations
 
-generateFromProcess :: GenConfig -> Text -> GenerateProcess -> SC.FunctionDeclaration BuildOut
+generateFromProcess :: GenConfig -> Text -> GenerateProcess -> SC.FunctionDeclaration
 generateFromProcess cfg name GenerateProcess {seed, transformations} =
   let finalState = (`execState` initBuildOutState seed) $ do
         mapM_ (applyTransformation cfg) transformations
@@ -66,7 +64,7 @@ generateFromProcess cfg name GenerateProcess {seed, transformations} =
         { returnType = finalState.headExpr.annotation,
           name,
           args = [],
-          body = finalState.statements ++ [SC.Return () finalState.headExpr]
+          body = finalState.statements ++ [SC.Return finalState.headExpr]
         }
   where
     finalizeIfNeeded :: MonadBuild m => m ()
@@ -94,7 +92,7 @@ generateFromProcess cfg name GenerateProcess {seed, transformations} =
         SC.SCUnsignedBitref -> applyTransformation cfg (FunctionalCast SC.CBool)
 
 data GenerateProcess = GenerateProcess
-  { seed :: SC.Expr BuildOut,
+  { seed :: SC.Expr,
     transformations :: [Transformation]
   }
 

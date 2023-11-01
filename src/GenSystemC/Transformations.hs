@@ -8,7 +8,6 @@
 module GenSystemC.Transformations
   ( -- * Transformations
     Transformation (..),
-    BuildOut,
 
     -- * Applying transformations
     applyTransformation,
@@ -47,29 +46,24 @@ data Transformation
   = CastWithAssignment SC.SCType
   | FunctionalCast SC.SCType
   | Range Int Int
-  | Arithmetic SC.BinOp (SC.Expr BuildOut)
-  | UseAsCondition (SC.Expr BuildOut) (SC.Expr BuildOut)
+  | Arithmetic SC.BinOp SC.Expr
+  | UseAsCondition SC.Expr SC.Expr
   | BitSelect Int
   | ApplyReduction SC.ReductionOperation
   | ApplyUnaryOp SC.UnaryOp
   deriving stock (Show, Generic)
 
-data BuildOut
-
-instance SC.Annotation BuildOut where
-  type AnnExpr BuildOut = SC.SCType
-  type AnnStatement BuildOut = ()
 
 type MonadBuild m = MonadState BuildOutState m
 
 data BuildOutState = BuildOutState
-  { statements :: [SC.Statement BuildOut],
-    headExpr :: SC.Expr BuildOut,
+  { statements :: [SC.Statement],
+    headExpr :: SC.Expr,
     nextVarIdx :: Int
   }
   deriving (Generic)
 
-initBuildOutState :: SC.Expr BuildOut -> BuildOutState
+initBuildOutState :: SC.Expr -> BuildOutState
 initBuildOutState headExpr =
   BuildOutState
     { statements = [],
@@ -138,8 +132,8 @@ applyTransformation cfg (CastWithAssignment varType) = do
   when (assignAllowed cfg e.annotation varType) $ do
     #statements
       %= ( ++
-            [ SC.Declaration () varType varName,
-              SC.Assignment () varName e
+            [ SC.Declaration varType varName,
+              SC.Assignment varName e
             ]
         )
     #headExpr .= SC.Variable varType varName
@@ -186,7 +180,7 @@ applyTransformation cfg (ApplyUnaryOp op) = do
       then SC.UnaryOp e.annotation op e
       else e
 
-randomTransformationFor :: forall m. MonadRandom m => GenConfig -> SC.Expr BuildOut -> m Transformation
+randomTransformationFor :: forall m. MonadRandom m => GenConfig -> SC.Expr -> m Transformation
 randomTransformationFor cfg e =
   join . weighted . map (,1) . catMaybes $
     [ guard cfg.mods.transformations.castWithAssignment >> castWithAssignment
@@ -317,10 +311,10 @@ randomTransformationFor cfg e =
       guard (e `is` #_Variable)
       return (ApplyUnaryOp <$> uniform [minBound :: SC.UnaryOp .. maxBound])
 
-    someConstant :: SC.SCType -> m (SC.Expr BuildOut)
+    someConstant :: SC.SCType -> m SC.Expr
     someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)
 
-seedExpr :: MonadRandom m => m (SC.Expr BuildOut)
+seedExpr :: MonadRandom m => m SC.Expr
 seedExpr = do
   value <- getRandomR (-128, 128)
   return (SC.Constant SC.CInt value)

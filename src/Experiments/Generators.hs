@@ -63,7 +63,7 @@ generateProcessToExperiment cfg process@GenerateProcess {seed, transformations} 
 -- as an sc_uint<8> or a sc_fixed<10,3> are represented completely differently.
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
-simulateSystemCConstant :: SC.Annotation ann => SC.FunctionDeclaration ann -> IO ComparisonValue
+simulateSystemCConstant :: SC.FunctionDeclaration -> IO ComparisonValue
 simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shelly . Sh.silently $ do
   let widthExprOrWidth :: Either Text Int = case returnType of
         SC.SCInt n -> Right n
