@@ -58,11 +58,19 @@ class Source a where
   genSource :: a -> Text
 
 data BinOp = Plus | Minus | Multiply | Divide | BitwiseOr
-  deriving (Eq, Show, Generic, Data, Ord)
+  deriving (Eq, Show, Generic, Data, Ord, Bounded, Enum)
+
+data UnaryOp
+  = PreIncrement
+  | PreDecrement
+  | PostIncrement
+  | PostDecrement
+  deriving (Eq, Show, Generic, Data, Ord, Bounded, Enum)
 
 data Expr ann
   = Constant (AnnExpr ann) Int
   | BinOp (AnnExpr ann) (Expr ann) BinOp (Expr ann)
+  | UnaryOp (AnnExpr ann) UnaryOp (Expr ann)
   | Conditional (AnnExpr ann) (Expr ann) (Expr ann) (Expr ann)
   | Variable (AnnExpr ann) Text
   | Cast (AnnExpr ann) SCType (Expr ann)
@@ -81,6 +89,7 @@ deriving instance (Annotation ann, AnnConstraint Data ann) => Data (Expr ann)
 instance (Annotation ann, AnnExpr ann ~ annType) => HasField "annotation" (Expr ann) annType where
   getField (Constant ann _) = ann
   getField (BinOp ann _ _ _) = ann
+  getField (UnaryOp ann _ _) = ann
   getField (Conditional ann _ _ _) = ann
   getField (Variable ann _) = ann
   getField (Cast ann _ _) = ann
@@ -246,6 +255,8 @@ allSCTypes =
 data Operations = Operations
   { -- | Result of the bit select operator (@x[10]@), if that is available
     bitSelect :: Maybe SCType,
+    -- | Increment (++) and decrement (--)
+    incrementDecrement :: Bool,
     -- | Result of the bit select operator (@x.range(10, 2)@), if that is available
     partSelect :: Maybe (Int -> SCType),
     -- | Available reduction operators. See `ReductionOperation` and `reductionMethod`.
@@ -275,6 +286,7 @@ operations SCBigInt {} =
       partSelect = Just SCSignedSubref,
       implicitCasts = [],
       reductions = allReductions,
+      incrementDecrement = True,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -284,6 +296,7 @@ operations SCBigUInt {} =
       partSelect = Just SCUnsignedSubref,
       implicitCasts = [],
       reductions = allReductions,
+      incrementDecrement = True,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -293,6 +306,7 @@ operations SCInt {} =
       partSelect = Just SCIntSubref,
       implicitCasts = [CInt],
       reductions = allReductions,
+      incrementDecrement = True,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -302,6 +316,7 @@ operations SCUInt {} =
       partSelect = Just SCUIntSubref,
       implicitCasts = [CUInt],
       reductions = allReductions,
+      incrementDecrement = True,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -311,6 +326,7 @@ operations SCIntSubref {} =
       partSelect = Nothing,
       implicitCasts = [CInt],
       reductions = allReductions,
+      incrementDecrement = False,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -320,6 +336,7 @@ operations SCUIntSubref {} =
       partSelect = Nothing,
       implicitCasts = [CUInt],
       reductions = allReductions,
+      incrementDecrement = False,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -329,6 +346,7 @@ operations SCSignedSubref {} =
       partSelect = Nothing,
       implicitCasts = [],
       reductions = allReductions,
+      incrementDecrement = False,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -338,6 +356,7 @@ operations SCUnsignedSubref {} =
       partSelect = Nothing,
       implicitCasts = [],
       reductions = allReductions,
+      incrementDecrement = False,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -347,6 +366,7 @@ operations SCFixed {} =
       partSelect = Nothing,
       implicitCasts = [CInt, CDouble],
       reductions = [],
+      incrementDecrement = True,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -356,6 +376,7 @@ operations SCUFixed {} =
       partSelect = Nothing,
       implicitCasts = [CUInt, CDouble],
       reductions = [],
+      incrementDecrement = True,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -365,6 +386,7 @@ operations SCFxnumSubref {} =
       partSelect = Nothing,
       implicitCasts = [],
       reductions = allReductions,
+      incrementDecrement = False,
       constructorInto = allSCTypes,
       assignTo = allSCTypes
     }
@@ -374,6 +396,7 @@ operations SCIntBitref =
       partSelect = Nothing,
       implicitCasts = [CBool],
       reductions = [],
+      incrementDecrement = False,
       constructorInto = allTypes,
       assignTo = allTypes
     }
@@ -383,6 +406,7 @@ operations SCUIntBitref =
       partSelect = Nothing,
       implicitCasts = [CBool],
       reductions = [],
+      incrementDecrement = False,
       constructorInto = allTypes,
       assignTo = allTypes
     }
@@ -392,6 +416,7 @@ operations SCSignedBitref =
       partSelect = Nothing,
       implicitCasts = [CBool],
       reductions = [],
+      incrementDecrement = False,
       constructorInto = allTypes,
       assignTo = allTypes
     }
@@ -401,6 +426,7 @@ operations SCUnsignedBitref =
       partSelect = Nothing,
       implicitCasts = [CBool],
       reductions = [],
+      incrementDecrement = False,
       constructorInto = allTypes,
       assignTo = allTypes
     }
@@ -410,6 +436,7 @@ operations CUInt =
       partSelect = Nothing,
       implicitCasts = [],
       reductions = [],
+      incrementDecrement = True,
       constructorInto = allTypes,
       assignTo = allTypes
     }
@@ -419,6 +446,7 @@ operations CInt =
       partSelect = Nothing,
       implicitCasts = [],
       reductions = [],
+      incrementDecrement = True,
       constructorInto = allTypes,
       assignTo = allTypes
     }
@@ -428,6 +456,7 @@ operations CDouble =
       partSelect = Nothing,
       implicitCasts = [],
       reductions = [],
+      incrementDecrement = True,
       constructorInto = allTypes,
       assignTo = allTypes
     }
@@ -437,6 +466,7 @@ operations CBool =
       partSelect = Nothing,
       implicitCasts = [],
       reductions = [],
+      incrementDecrement = True,
       constructorInto = allTypes,
       assignTo = allTypes
     }
@@ -523,6 +553,12 @@ instance Annotation ann => Pretty (Expr ann) where
     | otherwise = pretty n
   pretty (BinOp _ l op r) =
     hsep ["(", pretty l, pretty op, pretty r, ")"]
+  pretty (UnaryOp _ op expr) =
+    parens $ case op of
+      PostIncrement -> pretty expr <> "++"
+      PreIncrement -> "++" <> pretty expr
+      PostDecrement -> pretty expr <> "--"
+      PreDecrement -> "--" <> pretty expr
   pretty (Conditional _ cond tBranch fBranch) =
     "("
       <> ( align . vsep $

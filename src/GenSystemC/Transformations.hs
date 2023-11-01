@@ -41,6 +41,7 @@ import SystemC qualified as SCUnconfigured (operations)
 import Data.List (intersect)
 import GenSystemC.Config (GenConfig(..), GenMods(..), TransformationFlags(..))
 import Control.Monad (when)
+import Util (is)
 
 data Transformation
   = CastWithAssignment SC.SCType
@@ -50,6 +51,7 @@ data Transformation
   | UseAsCondition (SC.Expr BuildOut) (SC.Expr BuildOut)
   | BitSelect Int
   | ApplyReduction SC.ReductionOperation
+  | ApplyUnaryOp SC.UnaryOp
   deriving stock (Show, Generic)
 
 data BuildOut
@@ -172,11 +174,16 @@ applyTransformation cfg (BitSelect idx) = do
     let idxInBounds = maybe True (idx <) (SC.knownWidth e.annotation)
      in case (modOperations cfg e.annotation).bitSelect of
           Just bitrefType | idxInBounds -> SC.Bitref bitrefType e idx
-          Nothing -> e
+          _ -> e
 applyTransformation cfg (ApplyReduction op) = do
   #headExpr %= \e ->
     if op `elem` (modOperations cfg e.annotation).reductions
       then SC.MethodCall SC.CBool e (SC.reductionMethod op) []
+      else e
+applyTransformation cfg (ApplyUnaryOp op) = do
+  #headExpr %= \e ->
+    if (e `is` #_Variable) && (modOperations cfg e.annotation).incrementDecrement
+      then SC.UnaryOp e.annotation op e
       else e
 
 randomTransformationFor :: forall m. MonadRandom m => GenConfig -> SC.Expr BuildOut -> m Transformation
@@ -190,6 +197,7 @@ randomTransformationFor cfg e =
     , guard cfg.mods.transformations.useAsCondition >> useAsCondition
     , guard cfg.mods.transformations.bitSelect >> bitSelect
     , guard cfg.mods.transformations.applyReduction >> applyReduction
+    , guard cfg.mods.transformations.applyUnaryOp >> applyUnaryOp
 #endif
     ]
   where
@@ -302,6 +310,12 @@ randomTransformationFor cfg e =
       let options = ApplyReduction <$> (modOperations cfg e.annotation).reductions
       guard (not . null $ options)
       return (uniform options)
+
+    applyUnaryOp :: Maybe (m Transformation)
+    applyUnaryOp = do
+      guard (modOperations cfg e.annotation).incrementDecrement
+      guard (e `is` #_Variable)
+      return (ApplyUnaryOp <$> uniform [minBound :: SC.UnaryOp .. maxBound])
 
     someConstant :: SC.SCType -> m (SC.Expr BuildOut)
     someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)

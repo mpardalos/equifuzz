@@ -3,11 +3,13 @@ module Util where
 import Control.Concurrent (MVar, forkFinally, modifyMVar_)
 import Control.Monad (void, when)
 import Control.Monad.Random (foldM_, forever)
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Time (NominalDiffTime, defaultTimeLocale, getZonedTime, zonedTimeToLocalTime)
 import Data.Time.Format (formatTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import GHC.Conc (labelThread)
+import Optics (Prism', preview)
 import Shelly (Sh)
 import Shelly qualified as Sh
 import System.IO (hPutStrLn, stderr)
@@ -84,3 +86,6 @@ bashExec commands = Sh.run "bash" ["-c", commands]
 
 bashExec_ :: Text -> Sh ()
 bashExec_ = void . bashExec
+
+is :: a -> Prism' a b -> Bool
+is x p = isJust $ preview p x
