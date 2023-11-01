@@ -100,3 +100,16 @@ executable equifuzz
     build-depends:
         equifuzz,
         optparse-applicative
+
+Test-Suite fuzzfuzz
+    import:
+        common
+    type:
+        exitcode-stdio-1.0
+    main-is:
+        Main.hs
+    build-depends:
+        equifuzz,
+        containers
+    hs-source-dirs:
+        test
