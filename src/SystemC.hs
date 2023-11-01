@@ -248,6 +248,25 @@ reductionMethod ReduceNor = "nor_reduce"
 reductionMethod ReduceXor = "xor_reduce"
 reductionMethod ReduceXNor = "xnor_reduce"
 
+isLValue :: Expr -> Bool
+isLValue Variable {} = True
+isLValue UnaryOp {} = True
+isLValue (BinOp _ _ op _) =
+  elem @[]
+    op
+    [ PlusAssign,
+      MinusAssign,
+      TimesAssign,
+      DivideAssign,
+      ModAssign,
+      BitwiseAndAssign,
+      BitwiseOrAssign,
+      BitwiseXorAssign,
+      LeftShiftAssign,
+      RightShiftAssign
+    ]
+isLValue _ = False
+
 -- | Get all possible operations for a SystemC expression
 operations :: Expr -> Operations
 operations e = case e.annotation of
@@ -257,7 +276,7 @@ operations e = case e.annotation of
         partSelect = Just SCSignedSubref,
         implicitCasts = [],
         reductions = allReductions,
-        incrementDecrement = True,
+        incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
       }
@@ -267,7 +286,7 @@ operations e = case e.annotation of
         partSelect = Just SCUnsignedSubref,
         implicitCasts = [],
         reductions = allReductions,
-        incrementDecrement = True,
+        incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
       }
@@ -277,7 +296,7 @@ operations e = case e.annotation of
         partSelect = Just SCIntSubref,
         implicitCasts = [CInt],
         reductions = allReductions,
-        incrementDecrement = True,
+        incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
       }
@@ -287,7 +306,7 @@ operations e = case e.annotation of
         partSelect = Just SCUIntSubref,
         implicitCasts = [CUInt],
         reductions = allReductions,
-        incrementDecrement = True,
+        incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
       }
@@ -337,7 +356,7 @@ operations e = case e.annotation of
         partSelect = Nothing,
         implicitCasts = [CInt, CDouble],
         reductions = [],
-        incrementDecrement = True,
+        incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
       }
@@ -347,7 +366,7 @@ operations e = case e.annotation of
         partSelect = Nothing,
         implicitCasts = [CUInt, CDouble],
         reductions = [],
-        incrementDecrement = True,
+        incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
       }
@@ -407,7 +426,7 @@ operations e = case e.annotation of
         partSelect = Nothing,
         implicitCasts = [],
         reductions = [],
-        incrementDecrement = True,
+        incrementDecrement = isLValue e,
         constructorInto = allTypes,
         assignTo = allTypes
       }
@@ -417,7 +436,7 @@ operations e = case e.annotation of
         partSelect = Nothing,
         implicitCasts = [],
         reductions = [],
-        incrementDecrement = True,
+        incrementDecrement = isLValue e,
         constructorInto = allTypes,
         assignTo = allTypes
       }
@@ -427,7 +446,7 @@ operations e = case e.annotation of
         partSelect = Nothing,
         implicitCasts = [],
         reductions = [],
-        incrementDecrement = True,
+        incrementDecrement = isLValue e,
         constructorInto = allTypes,
         assignTo = allTypes
       }
