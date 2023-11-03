@@ -106,6 +106,18 @@ jasperMods = GenMods {operations, transformations}
               [ #partSelect .~ Nothing,
                 #bitSelect .~ Nothing
               ]
+      SC.SCBigInt w
+        | w <= 1 ->
+            composeAll
+              [ #partSelect .~ Nothing,
+                #bitSelect .~ Nothing
+              ]
+      SC.SCBigUInt w
+        | w <= 1 ->
+            composeAll
+              [ #partSelect .~ Nothing,
+                #bitSelect .~ Nothing
+              ]
       _ -> id
 
     -- Try to avoid bug triggered by this code:
