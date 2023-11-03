@@ -48,7 +48,8 @@ jasperMods = GenMods {operations, transformations}
           failingBigIntReductions e,
           missingSubrefReductions e,
           ambiguousAssignments e,
-          noSingleBitSelections e
+          noSingleBitSelections e,
+          noBoolToDouble e
         ]
 
     failingBigIntReductions e = case e.annotation of
@@ -105,6 +106,20 @@ jasperMods = GenMods {operations, transformations}
               [ #partSelect .~ Nothing,
                 #bitSelect .~ Nothing
               ]
+      _ -> id
+
+    -- Try to avoid bug triggered by this code:
+    --   double dut() {
+    --       int x0 = 1;
+    --       return double(bool(x0));
+    --   }
+    noBoolToDouble :: OperationsMod
+    noBoolToDouble e = case e.annotation of
+      SC.CBool ->
+        composeAll
+          [ #constructorInto % #cDouble .~ False,
+            #assignTo % #cDouble .~ False
+          ]
       _ -> id
 
     noFixed =
