@@ -3,8 +3,8 @@ module ToolRestrictions where
 
 import GenSystemC.Config
   ( GenMods (..),
-    TransformationFlags (..),
     OperationsMod,
+    TransformationFlags (..),
     allTransformations,
   )
 import Optics
@@ -47,7 +47,8 @@ jasperMods = GenMods {operations, transformations}
         [ noFixed,
           failingBigIntReductions e,
           missingSubrefReductions e,
-          ambiguousAssignments e
+          ambiguousAssignments e,
+          noSingleBitSelections e
         ]
 
     failingBigIntReductions e = case e.annotation of
@@ -84,6 +85,26 @@ jasperMods = GenMods {operations, transformations}
           [ #assignTo % #scUInt .~ False,
             #assignTo % #scInt .~ False
           ]
+      _ -> id
+
+    -- Trying to prevent undefined behaviour in programs like this:
+    --     sc_dt::sc_uint<18>(sc_dt::sc_int<1>(-1)[0]);
+    -- FIXME: We should detect when the experiment has undefined behaviour and
+    -- be able to mark that in the UI
+    noSingleBitSelections :: OperationsMod
+    noSingleBitSelections e = case e.annotation of
+      SC.SCInt w
+        | w <= 1 ->
+            composeAll
+              [ #partSelect .~ Nothing,
+                #bitSelect .~ Nothing
+              ]
+      SC.SCUInt w
+        | w <= 1 ->
+            composeAll
+              [ #partSelect .~ Nothing,
+                #bitSelect .~ Nothing
+              ]
       _ -> id
 
     noFixed =
