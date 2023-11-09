@@ -8,14 +8,16 @@
 
 {-# HLINT ignore "Use <$>" #-}
 
-module Experiments.Generators (mkSystemCConstantExperiment) where
+module Experiments.Generators (mkSystemCConstantExperiment, generateProcessToExperiment) where
 
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Random.Strict (evalRandIO)
 import Data.Either (fromRight)
 import Data.Functor
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Debug.Trace (traceIO)
 import Experiments.Types
 import GenSystemC
   ( GenConfig,
@@ -38,22 +40,23 @@ generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
 generateProcessToExperiment cfg process@GenerateProcess {seed, transformations} = do
   let design = generateFromProcess cfg "dut" process
 
-  comparisonValue <- simulateSystemCConstant design
+  (comparisonValue, hasUB, extraInfo) <- simulateSystemCConstant design
 
   experimentId <- newExperimentId
   return
     Experiment
       { experimentId,
-        expectedResult = True,
+        expectedResult = not hasUB, -- Expect a negative result for programs with UB
         design,
         size = length transformations,
         longDescription =
-          T.unlines
-            ( T.pack ("Seed: " ++ show seed)
-                : [ T.pack (show n) <> ") " <> T.pack (show t)
-                    | (n, t) <- zip [0 :: Int ..] transformations
-                  ]
-            ),
+          T.unlines . concat $
+            [ [T.pack ("Seed: " ++ show seed)],
+              [ T.pack (show n) <> " " <> T.pack (show t)
+                | (n, t) <- zip [0 :: Int ..] transformations
+              ],
+              [extraInfo]
+            ],
         comparisonValue
       }
 
@@ -63,7 +66,7 @@ generateProcessToExperiment cfg process@GenerateProcess {seed, transformations} 
 -- as an sc_uint<8> or a sc_fixed<10,3> are represented completely differently.
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
-simulateSystemCConstant :: SC.FunctionDeclaration -> IO ComparisonValue
+simulateSystemCConstant :: SC.FunctionDeclaration -> IO (ComparisonValue, Bool, Text)
 simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shelly . Sh.silently $ do
   let widthExprOrWidth :: Either Text Int = case returnType of
         SC.SCInt n -> Right n
@@ -140,13 +143,31 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
   let binPath = tmpDir <> "/main"
 
   Sh.writefile (T.unpack cppPath) fullSource
-  _compileOutput <- Sh.bash "g++" ["-std=c++11", "-I/usr/include/systemc", "-lsystemc", cppPath, "-o", binPath]
+  _compileOutput <- Sh.bash "clang++" ["-fsanitize=undefined", "-std=c++11", "-I/usr/include/systemc", "-lsystemc", cppPath, "-o", binPath]
   programOut <- T.strip <$> Sh.bash (T.unpack binPath) []
+  programStderr <- Sh.lastStderr
+  let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStderr
+      extraInfo =
+        if hasUndefinedBehaviour
+          then T.unlines ["stderr output:", "", programStderr]
+          else ""
   void $ Sh.bash "rm" ["-r", tmpDir]
 
+  liftIO $ do
+    traceIO "----"
+    traceIO (T.unpack fullSource)
+    traceIO "----"
+    traceIO (T.unpack programOut)
+    traceIO "----"
+    traceIO (T.unpack programStderr)
+    traceIO "----"
   let [reportedWidth, reportedValue] = T.lines programOut
 
   let width = fromRight (read . T.unpack $ reportedWidth) widthExprOrWidth
   let value = T.replace "." "" reportedValue
 
-  return (ComparisonValue width (T.pack (show width) <> "'b" <> value))
+  return
+    ( ComparisonValue width (T.pack (show width) <> "'b" <> value),
+      hasUndefinedBehaviour,
+      extraInfo
+    )
