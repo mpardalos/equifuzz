@@ -80,7 +80,7 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
             endExperimentSequence sequenceId
       )
   where
-    runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO (Maybe Bool)
+    runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO Bool
     runReduceLoop sequenceId experimentReducible = do
       experiment <- experimentReducible.value
       progress (ExperimentStarted sequenceId experiment)
@@ -94,10 +94,10 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
       when (isInteresting && experimentReducible.size > 1) $
         void $
           foldMUntil_
-            (fmap (== result.proofFound) . runReduceLoop sequenceId)
+            (runReduceLoop sequenceId)
             (selectReductions experimentReducible)
 
-      return result.proofFound
+      return isInteresting
 
     endExperimentSequence :: ExperimentSequenceId -> IO ()
     endExperimentSequence sequenceId = do
