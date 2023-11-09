@@ -153,14 +153,6 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
           else ""
   void $ Sh.bash "rm" ["-r", tmpDir]
 
-  liftIO $ do
-    traceIO "----"
-    traceIO (T.unpack fullSource)
-    traceIO "----"
-    traceIO (T.unpack programOut)
-    traceIO "----"
-    traceIO (T.unpack programStderr)
-    traceIO "----"
   let [reportedWidth, reportedValue] = T.lines programOut
 
   let width = fromRight (read . T.unpack $ reportedWidth) widthExprOrWidth
