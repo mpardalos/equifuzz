@@ -69,3 +69,18 @@ validateSSH :: SSHConnectionTarget -> Sh Bool
 validateSSH sshOpts = Sh.silently $ do
   textOut <- runSSHCommand sshOpts "echo 'hello'"
   return (textOut == "hello\n")
+
+
+createLocalExperimentDir :: Text -> [(Text, Text)] -> Sh ()
+createLocalExperimentDir remoteExperimentDir files = do
+  localExperimentDir <- T.strip <$> Sh.run "mktemp" ["-d"]
+
+  forM_ files $ \(filename, content) ->
+    Sh.writefile (localExperimentDir </> filename) content
+
+  void $ Sh.bash_ "mkdir" 
+	["-p", remoteExperimentDir <> "/"]
+  void $ Sh.bash_ "cp" 
+	[ localExperimentDir <> "/*"
+	, remoteExperimentDir <> "/"
+	]

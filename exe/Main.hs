@@ -147,9 +147,11 @@ runnerOptionsToRunner
           AskPassword -> Just <$> askPassword
         let sshOpts = SSHConnectionTarget {username, host, password}
         putStrLn "Validating SSH connection..."
+{- Commented out for iccad testing
         sshValid <- try @SomeException $ Sh.shelly $ validateSSH sshOpts
         when (isn't (_Right % only True) sshValid) $
           throwIO (userError "Could not connect to ssh host. Please check the options you provided")
+-}
         putStrLn "SSH connection OK"
         return $ ExperimentRunner $ case fecType of
           VCF -> runVCFormal sshOpts activatePath

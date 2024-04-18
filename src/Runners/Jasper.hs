@@ -15,23 +15,23 @@ import Data.Text qualified as T
 import Experiments.Types (Experiment (..), ExperimentResult (..))
 import Optics ((^.))
 import Runners.Types (SSHConnectionTarget)
-import Runners.Util (createRemoteExperimentDir, runSSHCommand)
+import Runners.Util (createLocalExperimentDir, createRemoteExperimentDir, runSSHCommand)
 import Shelly qualified as Sh
 import SystemC qualified as SC
+import Util (bashExec, bashExec_)
 
 runJasper :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentResult
 runJasper sshOpts mSourcePath Experiment {experimentId, design, comparisonValue} = Sh.shelly . Sh.silently $ do
-  createRemoteExperimentDir
-    sshOpts
+  createLocalExperimentDir
     remoteExperimentDir
     [ (specFilename, wrappedProgram),
       (implFilename, implProgram),
       ("compare.tcl", compareScript)
     ]
 
-  fullOutput <- runSSHCommand sshOpts sshCommand
+  fullOutput <- bashExec sshCommand
 
-  void $ runSSHCommand sshOpts [i|cd ~ && rm -rf ./#{remoteExperimentDir}|]
+  bashExec_ [i|rm -rf ./#{remoteExperimentDir}|]
 
   let proofSuccessful =
         ("- proven                    : 1" `T.isInfixOf`) `any` T.lines fullOutput
