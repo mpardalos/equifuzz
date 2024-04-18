@@ -22,7 +22,7 @@ common common
     default-language:
         GHC2021
     build-depends:
-        base ==4.16.*,
+        base >=4.16,
         optics,
         shelly,
         text,
