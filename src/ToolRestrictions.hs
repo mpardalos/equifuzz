@@ -44,12 +44,14 @@ jasperMods = GenMods {operations, transformations}
     operations :: OperationsMod
     operations e =
       composeAll
-        [ noFixed,
-          failingBigIntReductions e,
-          missingSubrefReductions e,
-          ambiguousAssignments e,
-          noSingleBitSelections e,
-          noBoolToDouble e
+        [ noFixed
+        {- Commented out of iccad evaluation
+        , failingBigIntReductions e
+        , missingSubrefReductions e
+        , ambiguousAssignments e
+        , noSingleBitSelections e
+        , noBoolToDouble e
+        -}
         ]
 
     failingBigIntReductions e = case e.annotation of
