@@ -23,7 +23,7 @@
 
               # Non-Haskell shell tools go here
               shell.buildInputs = with pkgs; [
-                nixpkgs-fmt
+                nixpkgs-fmt systemc
               ];
             };
         })
