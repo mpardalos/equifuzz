@@ -56,8 +56,8 @@ runJasper sshOpts mSourcePath Experiment {experimentId, design, comparisonValue}
 
     sshCommand :: Text
     sshCommand = case mSourcePath of
-      Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && source #{sourcePath} && jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl; echo 'Done'|]
-      Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl; echo 'Done'|]
+      Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && source #{sourcePath} && timeout 300 jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl; echo 'Done'|]
+      Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && timeout 300 jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl; echo 'Done'|]
 
     implProgram :: Text
     implProgram =
