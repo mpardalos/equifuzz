@@ -115,7 +115,8 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
         }
 
 selectReductions :: Reducible a -> [Reducible a]
-selectReductions Reducible {reductions, size} =
+selectReductions Reducible {reductions, size} =  []
+{- Changed for iccad evaluation
   mapMaybe (reductions Map.!?) $
     [ (start, end)
       | chunks <- [2 .. size],
@@ -125,6 +126,7 @@ selectReductions Reducible {reductions, size} =
         let end = start + chunkSize - 1
     ]
       <> [(n, n) | n <- [0 .. size - 1]]
+-}
 
 startLoggerThread :: ProgressChan -> IO ()
 startLoggerThread progressChan =
