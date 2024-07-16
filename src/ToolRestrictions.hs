@@ -44,7 +44,7 @@ jasperMods = GenMods {operations, transformations}
     operations :: OperationsMod
     operations e =
       composeAll
-        [ noFixed,
+        [ noFixed e,
           failingBigIntReductions e,
           missingSubrefReductions e,
           ambiguousAssignments e,
@@ -134,14 +134,47 @@ jasperMods = GenMods {operations, transformations}
           ]
       _ -> id
 
-    noFixed =
-      composeAll
-        [ #constructorInto % #scFixed .~ False,
-          #constructorInto % #scUFixed .~ False,
-          #assignTo % #scFixed .~ False,
-          #assignTo % #scUFixed .~ False
-        ]
     transformations = allTransformations
+
+
+slecMods :: GenMods
+slecMods = GenMods {operations, transformations}
+  where
+    operations :: OperationsMod
+    operations e =
+      composeAll
+        [ failingCasts e,
+          noFixed e -- The assignment operator on sc_(u)fixed is broken
+        ]
+
+    failingCasts e = case e.annotation of
+      SC.SCUInt {} ->
+        composeAll
+          [ #constructorInto % #cDouble .~ False
+          ]
+      SC.CDouble {} ->
+        composeAll
+          [ #constructorInto % #scUInt .~ False
+          , #constructorInto % #scInt .~ False
+          , #constructorInto % #scBigUInt .~ False
+          , #constructorInto % #scBigInt .~ False
+          , #assignTo % #scBigUInt .~ False
+          , #assignTo % #scBigInt .~ False
+          , #assignTo % #scInt .~ False
+          , #assignTo % #scUInt .~ False
+          ]
+      _otherType -> id
+
+    transformations = allTransformations
+
+noFixed :: OperationsMod
+noFixed _expr =
+  composeAll
+    [ #constructorInto % #scFixed .~ False,
+      #constructorInto % #scUFixed .~ False,
+      #assignTo % #scFixed .~ False,
+      #assignTo % #scUFixed .~ False
+    ]
 
 noMods :: GenMods
 noMods =

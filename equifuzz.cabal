@@ -52,6 +52,7 @@ library
         Runners.Util,
         Runners.VCF,
         Runners.Jasper,
+        Runners.SLEC,
         SystemC,
         ToolRestrictions,
         GenSystemC,

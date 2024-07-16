@@ -143,7 +143,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
   let binPath = tmpDir <> "/main"
 
   Sh.writefile (T.unpack cppPath) fullSource
-  _compileOutput <- Sh.bash "clang++" ["-fsanitize=undefined", "-std=c++11", "-I/usr/include/systemc", "-lsystemc", cppPath, "-o", binPath]
+  _compileOutput <- Sh.bash "clang++" ["-fsanitize=undefined", "-I/usr/include/systemc", "-lsystemc", cppPath, "-o", binPath]
   programOut <- T.strip <$> Sh.bash (T.unpack binPath) []
   programStderr <- Sh.lastStderr
   let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStderr

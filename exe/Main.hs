@@ -33,8 +33,9 @@ import Options.Applicative (ReadM)
 import Runners.Util (validateSSH)
 import qualified Shelly as Sh
 import Control.Exception (throwIO, try, SomeException)
-import ToolRestrictions (vcfMods, noMods, jasperMods)
+import ToolRestrictions (vcfMods, noMods, jasperMods, slecMods)
 import GenSystemC.Config (GenMods)
+import Runners.SLEC (runSLEC)
 
 main :: IO ()
 main = do
@@ -68,7 +69,8 @@ data Command
 data WebOptions = WebOptions
   { verbose :: Bool,
     saveResults :: Bool,
-    maxExperiments :: Int,
+    maxConcurrentExperiments :: Int,
+    experimentCount :: Maybe Int,
     runnerOptions :: RunnerOptions,
     genSteps :: Int
   }
@@ -80,7 +82,7 @@ data GenerateOptions = GenerateOptions
 
 data PasswordSource = NoPassword | AskPassword | PasswordGiven Text
 
-data FECType = VCF | Jasper
+data FECType = VCF | Jasper | SLEC
 
 data RunnerOptions
   = TestRunner
@@ -106,7 +108,8 @@ webOptionsToOrchestrationConfig
   WebOptions
     { verbose,
       saveResults,
-      maxExperiments,
+      maxConcurrentExperiments,
+      experimentCount,
       genSteps,
       runnerOptions
     } = do
@@ -120,7 +123,8 @@ webOptionsToOrchestrationConfig
       OrchestrationConfig
         { verbose,
           saveResults,
-          maxExperiments,
+          maxConcurrentExperiments,
+          experimentCount,
           genConfig,
           runner
         }
@@ -128,6 +132,7 @@ webOptionsToOrchestrationConfig
 runnerOptionsToGenMods :: RunnerOptions -> GenMods
 runnerOptionsToGenMods Runner { fecType = VCF } = vcfMods
 runnerOptionsToGenMods Runner { fecType = Jasper } = jasperMods
+runnerOptionsToGenMods Runner { fecType = SLEC } = slecMods
 runnerOptionsToGenMods TestRunner {} = noMods
 
 runnerOptionsToRunner :: RunnerOptions -> IO ExperimentRunner
@@ -154,6 +159,7 @@ runnerOptionsToRunner
         return $ ExperimentRunner $ case fecType of
           VCF -> runVCFormal sshOpts activatePath
           Jasper -> runJasper sshOpts activatePath
+          SLEC -> runSLEC sshOpts activatePath
 
 askPassword :: IO Text
 askPassword = do
@@ -183,12 +189,19 @@ commandParser =
     ]
   where
     webOpts = do
-      maxExperiments <-
+      maxConcurrentExperiments <-
         Opt.option Opt.auto . mconcat $
-          [ Opt.long "max-experiments",
+          [ Opt.long "max-concurrent",
             Opt.metavar "COUNT",
             Opt.help "Maximum number of experiments to allow to run concurrently",
             Opt.value 10,
+            Opt.showDefault
+          ]
+      experimentCount <-
+        Opt.optional . Opt.option Opt.auto . mconcat $
+          [ Opt.long "experiment-count",
+            Opt.metavar "COUNT",
+            Opt.help "Only run this many experiments",
             Opt.showDefault
           ]
       verbose <-
@@ -206,7 +219,8 @@ commandParser =
         WebOptions
           { verbose,
             saveResults,
-            maxExperiments,
+            maxConcurrentExperiments,
+            experimentCount,
             runnerOptions,
             genSteps
           }
@@ -311,7 +325,7 @@ commandParser =
     readFecType = Opt.eitherReader $ \case
       "vcf" -> Right VCF
       "jasper" -> Right Jasper
-      "catapult" -> Left "Siemens catapult is not *yet* supported"
+      "slec" -> Right SLEC
       other -> Left ("FEC '" ++ other ++ "' is unknown")
 
 parseArgs :: IO Command

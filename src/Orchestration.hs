@@ -3,11 +3,11 @@
 
 module Orchestration (ProgressChan, OrchestrationConfig (..), startRunners) where
 
-import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar)
+import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar, threadDelay)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
 import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
 import Control.Exception (SomeException, catch)
-import Control.Monad (void, when)
+import Control.Monad (void, when, forever)
 import Control.Monad.State (execStateT, liftIO)
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -29,6 +29,7 @@ import Optics.State.Operators ((.=))
 import Runners (ExperimentRunner (run))
 import Text.Printf (printf)
 import Util (foldMUntil_, foreverThread, whenJust)
+import Data.IORef (IORef, newIORef, modifyIORef, readIORef)
 
 type ProgressChan = TChan ExperimentProgress
 
@@ -36,7 +37,8 @@ data OrchestrationConfig = OrchestrationConfig
   { runner :: ExperimentRunner,
     verbose :: Bool,
     saveResults :: Bool,
-    maxExperiments :: Int,
+    maxConcurrentExperiments :: Int,
+    experimentCount :: Maybe Int,
     genConfig :: GenConfig
   }
 
@@ -56,9 +58,17 @@ startRunners config = do
 
 startOrchestratorThread :: OrchestrationConfig -> ExperimentRunner -> ProgressChan -> IO ()
 startOrchestratorThread config runner progressChan = do
-  experimentSem <- atomically (newTSem . toInteger $ config.maxExperiments)
+  experimentSem <- atomically (newTSem . toInteger $ config.maxConcurrentExperiments)
+  experimentsLeftRef :: Maybe (IORef Int) <- newIORef `mapM` config.experimentCount
 
   foreverThread "Orchestrator" $ do
+    whenJust experimentsLeftRef $ \ref -> do
+      n <- readIORef ref
+      if n > 0
+        then modifyIORef ref (subtract 1)
+        else do
+          when config.verbose (putStrLn "All required experiments started")
+          forever (threadDelay maxBound)
     atomically (waitTSem experimentSem)
     experimentReducible <- mkSystemCConstantExperiment config.genConfig
     startRunReduceThread experimentSem progressChan runner experimentReducible
