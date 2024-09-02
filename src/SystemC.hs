@@ -122,6 +122,9 @@ data SCType
   | SCUIntBitref
   | SCSignedBitref
   | SCUnsignedBitref
+  | SCLogic
+  | SCBV { width :: Int }
+  | SCLV { width :: Int }
   | CUInt
   | CInt
   | CDouble
@@ -438,6 +441,36 @@ operations e = case e.annotation of
         constructorInto = allTypes,
         assignTo = allTypes
       }
+  SCLogic ->
+    Operations
+      { bitSelect = Nothing,
+        partSelect = Nothing,
+        implicitCasts = [CBool],
+        methods = [],
+        incrementDecrement = False,
+        constructorInto = noTypes,
+        assignTo = noTypes
+      }
+  SCBV { } ->
+    Operations
+      { bitSelect = Nothing,
+        partSelect = Nothing,
+        implicitCasts = [CBool],
+        methods = [],
+        incrementDecrement = False,
+        constructorInto = noTypes,
+        assignTo = noTypes
+      }
+  SCLV { } ->
+    Operations
+      { bitSelect = Nothing,
+        partSelect = Nothing,
+        implicitCasts = [CBool],
+        methods = [],
+        incrementDecrement = False,
+        constructorInto = noTypes,
+        assignTo = noTypes
+      }
   CUInt ->
     Operations
       { bitSelect = Nothing,
@@ -497,6 +530,9 @@ knownWidth SCIntBitref = Nothing
 knownWidth SCUIntBitref = Nothing
 knownWidth SCSignedBitref = Nothing
 knownWidth SCUnsignedBitref = Nothing
+knownWidth SCLogic = Nothing
+knownWidth SCBV {width} = Just width
+knownWidth SCLV {width} = Just width
 knownWidth CInt = Nothing
 knownWidth CUInt = Nothing
 knownWidth CDouble = Nothing
@@ -612,6 +648,9 @@ instance Pretty SCType where
   pretty SCUIntBitref = "sc_dt::sc_uint_bitref"
   pretty SCSignedBitref = "sc_dt::sc_signed_bitref"
   pretty SCUnsignedBitref = "sc_dt::sc_unsigned_bitref"
+  pretty SCBV { width } = "sc_dt::sc_bv<" <> pretty width <> ">"
+  pretty SCLV { width } = "sc_dt::sc_lv<" <> pretty width <> ">"
+  pretty SCLogic = "sc_dt::sc_logic"
   pretty CInt = "int"
   pretty CUInt = "unsigned"
   pretty CDouble = "double"
