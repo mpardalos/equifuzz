@@ -48,7 +48,7 @@ data Transformation
   | Arithmetic SC.BinOp SC.Expr
   | UseAsCondition SC.Expr SC.Expr
   | BitSelect Int
-  | ApplyReduction SC.ReductionOperation
+  | ApplyMethod SC.SCMethod
   | ApplyUnaryOp SC.UnaryOp
   deriving stock (Show, Generic)
 
@@ -168,10 +168,10 @@ applyTransformation cfg (BitSelect idx) = do
      in case (modOperations cfg e).bitSelect of
           Just bitrefType | idxInBounds -> SC.Bitref bitrefType e idx
           _ -> e
-applyTransformation cfg (ApplyReduction op) = do
+applyTransformation cfg (ApplyMethod method) = do
   #headExpr %= \e ->
-    if op `elem` (modOperations cfg e).reductions
-      then SC.MethodCall SC.CBool e (SC.reductionMethod op) []
+    if method `elem` (modOperations cfg e).methods
+      then SC.MethodCall (SC.methodReturn method) e (SC.methodName method) []
       else e
 applyTransformation cfg (ApplyUnaryOp op) = do
   #headExpr %= \e ->
@@ -189,7 +189,7 @@ randomTransformationFor cfg e =
     , guard cfg.mods.transformations.arithmetic >> arithmetic
     , guard cfg.mods.transformations.useAsCondition >> useAsCondition
     , guard cfg.mods.transformations.bitSelect >> bitSelect
-    , guard cfg.mods.transformations.applyReduction >> applyReduction
+    , guard cfg.mods.transformations.applyMethod >> applyMethod
     , guard cfg.mods.transformations.applyUnaryOp >> applyUnaryOp
 #endif
     ]
@@ -298,9 +298,9 @@ randomTransformationFor cfg e =
       width <- SC.knownWidth e.annotation
       return (BitSelect <$> getRandomR (0, width - 1))
 
-    applyReduction :: Maybe (m Transformation)
-    applyReduction = do
-      let options = ApplyReduction <$> (modOperations cfg e).reductions
+    applyMethod :: Maybe (m Transformation)
+    applyMethod = do
+      let options = ApplyMethod <$> (modOperations cfg e).methods
       guard (not . null $ options)
       return (uniform options)
 

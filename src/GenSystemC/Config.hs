@@ -11,7 +11,7 @@ data TransformationFlags = TransformationFlags
     arithmetic :: Bool,
     useAsCondition :: Bool,
     bitSelect :: Bool,
-    applyReduction :: Bool,
+    applyMethod :: Bool,
     applyUnaryOp :: Bool
   }
 
@@ -24,7 +24,7 @@ allTransformations =
       arithmetic = True,
       useAsCondition = True,
       bitSelect = True,
-      applyReduction = True,
+      applyMethod = True,
       applyUnaryOp = True
     }
 

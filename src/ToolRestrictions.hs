@@ -53,15 +53,15 @@ jasperMods = GenMods {operations, transformations}
         ]
 
     failingBigIntReductions e = case e.annotation of
-      SC.SCBigInt {} -> #reductions %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
-      SC.SCBigUInt {} -> #reductions %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
+      SC.SCBigInt {} -> #methods %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
+      SC.SCBigUInt {} -> #methods %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
       _ -> id
 
     missingSubrefReductions e = case e.annotation of
-      SC.SCIntSubref {} -> #reductions .~ []
-      SC.SCUIntSubref {} -> #reductions .~ []
-      SC.SCSignedSubref {} -> #reductions .~ []
-      SC.SCUnsignedSubref {} -> #reductions .~ []
+      SC.SCIntSubref {} -> #methods .~ []
+      SC.SCUIntSubref {} -> #methods .~ []
+      SC.SCSignedSubref {} -> #methods .~ []
+      SC.SCUnsignedSubref {} -> #methods .~ []
       _ -> id
 
     ambiguousAssignments :: OperationsMod

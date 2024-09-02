@@ -128,8 +128,11 @@ data SCType
   | CBool
   deriving (Eq, Show, Ord, Generic, Data)
 
--- | SystemC reduction operators (@.and_reduce()@, @.or_reduce()@, etc.)
-data ReductionOperation
+-- | Methods on SystemC types (@.and_reduce()@, @.or_reduce()@, etc.)  These are
+-- assumed to have a fixed return type, across different SC types.  If we add
+-- methods whose return type differs between SystemC types, this will need to be
+-- changed
+data SCMethod
   = ReduceAnd
   | ReduceNand
   | ReduceOr
@@ -138,8 +141,23 @@ data ReductionOperation
   | ReduceXNor
   deriving (Eq, Show, Ord, Generic, Data, Enum, Bounded)
 
-allReductions :: [ReductionOperation]
-allReductions = [minBound .. maxBound]
+methodReturn :: SCMethod -> SCType
+methodReturn ReduceAnd = CBool
+methodReturn ReduceNand = CBool
+methodReturn ReduceOr = CBool
+methodReturn ReduceNor = CBool
+methodReturn ReduceXor = CBool
+methodReturn ReduceXNor = CBool
+
+allReductions :: [SCMethod]
+allReductions =
+  [ ReduceAnd
+  , ReduceNand
+  , ReduceOr
+  , ReduceNor
+  , ReduceXor
+  , ReduceXNor
+  ]
 
 data SCTypeFlags = SCTypeFlags
   { scInt :: Bool,
@@ -229,8 +247,8 @@ data Operations = Operations
     incrementDecrement :: Bool,
     -- | Result of the bit select operator (@x.range(10, 2)@), if that is available
     partSelect :: Maybe (Int -> SCType),
-    -- | Available reduction operators. See `ReductionOperation` and `reductionMethod`.
-    reductions :: [ReductionOperation],
+    -- | Methods that can be called on this type
+    methods :: [SCMethod],
     -- | Implicit cast operators (e.g. @operator int() const@)
     implicitCasts :: [SCType],
     -- | Types that can be constructed from this
@@ -240,13 +258,13 @@ data Operations = Operations
   }
   deriving (Generic)
 
-reductionMethod :: ReductionOperation -> Text
-reductionMethod ReduceAnd = "and_reduce"
-reductionMethod ReduceNand = "nand_reduce"
-reductionMethod ReduceOr = "or_reduce"
-reductionMethod ReduceNor = "nor_reduce"
-reductionMethod ReduceXor = "xor_reduce"
-reductionMethod ReduceXNor = "xnor_reduce"
+methodName :: SCMethod -> Text
+methodName ReduceAnd = "and_reduce"
+methodName ReduceNand = "nand_reduce"
+methodName ReduceOr = "or_reduce"
+methodName ReduceNor = "nor_reduce"
+methodName ReduceXor = "xor_reduce"
+methodName ReduceXNor = "xnor_reduce"
 
 isLValue :: Expr -> Bool
 isLValue Variable {} = True
@@ -275,7 +293,7 @@ operations e = case e.annotation of
       { bitSelect = Just SCSignedBitref,
         partSelect = Just SCSignedSubref,
         implicitCasts = [],
-        reductions = allReductions,
+        methods = allReductions,
         incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -285,7 +303,7 @@ operations e = case e.annotation of
       { bitSelect = Just SCUnsignedBitref,
         partSelect = Just SCUnsignedSubref,
         implicitCasts = [],
-        reductions = allReductions,
+        methods = allReductions,
         incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -295,7 +313,7 @@ operations e = case e.annotation of
       { bitSelect = Just SCIntBitref,
         partSelect = Just SCIntSubref,
         implicitCasts = [CInt],
-        reductions = allReductions,
+        methods = allReductions,
         incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -305,7 +323,7 @@ operations e = case e.annotation of
       { bitSelect = Just SCUIntBitref,
         partSelect = Just SCUIntSubref,
         implicitCasts = [CUInt],
-        reductions = allReductions,
+        methods = allReductions,
         incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -315,7 +333,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [CInt],
-        reductions = allReductions,
+        methods = allReductions,
         incrementDecrement = False,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -325,7 +343,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [CUInt],
-        reductions = allReductions,
+        methods = allReductions,
         incrementDecrement = False,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -335,7 +353,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [],
-        reductions = allReductions,
+        methods = allReductions,
         incrementDecrement = False,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -345,7 +363,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [],
-        reductions = allReductions,
+        methods = allReductions,
         incrementDecrement = False,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -355,7 +373,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [CInt, CDouble],
-        reductions = [],
+        methods = [],
         incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -365,7 +383,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [CUInt, CDouble],
-        reductions = [],
+        methods = [],
         incrementDecrement = isLValue e,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -375,7 +393,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [],
-        reductions = allReductions,
+        methods = allReductions,
         incrementDecrement = False,
         constructorInto = allSCTypes,
         assignTo = allSCTypes
@@ -385,7 +403,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [CBool],
-        reductions = [],
+        methods = [],
         incrementDecrement = False,
         constructorInto = allTypes,
         assignTo = allTypes
@@ -395,7 +413,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [CBool],
-        reductions = [],
+        methods = [],
         incrementDecrement = False,
         constructorInto = allTypes,
         assignTo = allTypes
@@ -405,7 +423,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [CBool],
-        reductions = [],
+        methods = [],
         incrementDecrement = False,
         constructorInto = allTypes,
         assignTo = allTypes
@@ -415,7 +433,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [CBool],
-        reductions = [],
+        methods = [],
         incrementDecrement = False,
         constructorInto = allTypes,
         assignTo = allTypes
@@ -425,7 +443,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [],
-        reductions = [],
+        methods = [],
         incrementDecrement = isLValue e,
         constructorInto = allTypes,
         assignTo = allTypes
@@ -435,7 +453,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [],
-        reductions = [],
+        methods = [],
         incrementDecrement = isLValue e,
         constructorInto = allTypes,
         assignTo = allTypes
@@ -445,7 +463,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [],
-        reductions = [],
+        methods = [],
         incrementDecrement = isLValue e,
         constructorInto = allTypes,
         assignTo = allTypes
@@ -455,7 +473,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [],
-        reductions = [],
+        methods = [],
         incrementDecrement = False,
         constructorInto = allTypes,
         assignTo = allTypes
@@ -519,13 +537,8 @@ instance Pretty BinOp where
 
 instance Source BinOp
 
-instance Pretty ReductionOperation where
-  pretty ReduceAnd = "and_reduce"
-  pretty ReduceNand = "nand_reduce"
-  pretty ReduceOr = "or_reduce"
-  pretty ReduceNor = "nor_reduce"
-  pretty ReduceXor = "xor_reduce"
-  pretty ReduceXNor = "xnor_reduce"
+instance Pretty SCMethod where
+  pretty = pretty . methodName
 
 annComment :: Doc a -> Doc a
 annComment ann = "/* " <> ann <> " */"
