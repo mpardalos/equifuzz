@@ -180,20 +180,23 @@ applyTransformation cfg (ApplyUnaryOp op) = do
       else e
 
 randomTransformationFor :: forall m. MonadRandom m => GenConfig -> SC.Expr -> m Transformation
-randomTransformationFor cfg e =
-  join . weighted . map (,1) . catMaybes $
-    [ guard cfg.mods.transformations.castWithAssignment >> castWithAssignment
-    , guard cfg.mods.transformations.functionalCast >> functionalCast
-    , guard cfg.mods.transformations.range >> range
-#ifndef EVALUATION_VERSION
-    , guard cfg.mods.transformations.arithmetic >> arithmetic
-    , guard cfg.mods.transformations.useAsCondition >> useAsCondition
-    , guard cfg.mods.transformations.bitSelect >> bitSelect
-    , guard cfg.mods.transformations.applyMethod >> applyMethod
-    , guard cfg.mods.transformations.applyUnaryOp >> applyUnaryOp
-#endif
-    ]
+randomTransformationFor cfg e
+  | null transformationOptions = error ("No transformations possible on this expression: " <> show e)
+  | otherwise = join . weighted . map (,1) $ transformationOptions
   where
+    transformationOptions :: [m Transformation]
+    transformationOptions = catMaybes
+      [ guard cfg.mods.transformations.castWithAssignment >> castWithAssignment
+      , guard cfg.mods.transformations.functionalCast >> functionalCast
+      , guard cfg.mods.transformations.range >> range
+#ifndef EVALUATION_VERSION
+      , guard cfg.mods.transformations.arithmetic >> arithmetic
+      , guard cfg.mods.transformations.useAsCondition >> useAsCondition
+      , guard cfg.mods.transformations.bitSelect >> bitSelect
+      , guard cfg.mods.transformations.applyMethod >> applyMethod
+      , guard cfg.mods.transformations.applyUnaryOp >> applyUnaryOp
+#endif
+      ]
     castWithAssignment :: Maybe (m Transformation)
     castWithAssignment = fmap CastWithAssignment <$> assignmentCastTargetType
 
