@@ -142,6 +142,7 @@ data SCMethod
   | ReduceNor
   | ReduceXor
   | ReduceXNor
+  | Value
   deriving (Eq, Show, Ord, Generic, Data, Enum, Bounded)
 
 methodReturn :: SCMethod -> SCType
@@ -151,6 +152,7 @@ methodReturn ReduceOr = CBool
 methodReturn ReduceNor = CBool
 methodReturn ReduceXor = CBool
 methodReturn ReduceXNor = CBool
+methodReturn Value = CBool
 
 allReductions :: [SCMethod]
 allReductions =
@@ -277,6 +279,7 @@ methodName ReduceOr = "or_reduce"
 methodName ReduceNor = "nor_reduce"
 methodName ReduceXor = "xor_reduce"
 methodName ReduceXNor = "xnor_reduce"
+methodName Value = "value"
 
 isLValue :: Expr -> Bool
 isLValue Variable {} = True
@@ -327,8 +330,8 @@ operations e = case e.annotation of
         implicitCasts = [CInt],
         methods = allReductions,
         incrementDecrement = isLValue e,
-        constructorInto = allSCNumericTypes { scLogic = True },
-        assignTo = allSCNumericTypes { scLogic = True }
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCUInt {} ->
     Operations
@@ -337,8 +340,8 @@ operations e = case e.annotation of
         implicitCasts = [CUInt],
         methods = allReductions,
         incrementDecrement = isLValue e,
-        constructorInto = allSCNumericTypes { scLogic = True },
-        assignTo = allSCNumericTypes { scLogic = True }
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCIntSubref {} ->
     Operations
@@ -454,8 +457,8 @@ operations e = case e.annotation of
     Operations
       { bitSelect = Nothing,
         partSelect = Nothing,
-        implicitCasts = [CBool],
-        methods = [],
+        implicitCasts = [],
+        methods = [Value],
         incrementDecrement = False,
         constructorInto = noTypes,
         assignTo = noTypes
