@@ -178,6 +178,9 @@ data SCTypeFlags = SCTypeFlags
     scUIntBitref :: Bool,
     scSignedBitref :: Bool,
     scUnsignedBitref :: Bool,
+    scLogic :: Bool,
+    scBV :: Bool,
+    scLV :: Bool,
     cUInt :: Bool,
     cInt :: Bool,
     cDouble :: Bool,
@@ -203,14 +206,17 @@ noTypes =
       scUIntBitref = False,
       scSignedBitref = False,
       scUnsignedBitref = False,
+      scLogic = False,
+      scBV = False,
+      scLV = False,
       cUInt = False,
       cInt = False,
       cDouble = False,
       cBool = False
     }
 
-allTypes :: SCTypeFlags
-allTypes =
+allNumericTypes :: SCTypeFlags
+allNumericTypes =
   SCTypeFlags
     { scInt = True,
       scUInt = True,
@@ -227,15 +233,18 @@ allTypes =
       scUIntBitref = True,
       scSignedBitref = True,
       scUnsignedBitref = True,
+      scLogic = False,
+      scBV = False,
+      scLV = False,
       cUInt = True,
       cInt = True,
       cDouble = True,
       cBool = True
     }
 
-allSCTypes :: SCTypeFlags
-allSCTypes =
-  allTypes
+allSCNumericTypes :: SCTypeFlags
+allSCNumericTypes =
+  allNumericTypes
     { cUInt = False,
       cInt = False,
       cDouble = False,
@@ -298,8 +307,8 @@ operations e = case e.annotation of
         implicitCasts = [],
         methods = allReductions,
         incrementDecrement = isLValue e,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCBigUInt {} ->
     Operations
@@ -308,8 +317,8 @@ operations e = case e.annotation of
         implicitCasts = [],
         methods = allReductions,
         incrementDecrement = isLValue e,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCInt {} ->
     Operations
@@ -318,8 +327,8 @@ operations e = case e.annotation of
         implicitCasts = [CInt],
         methods = allReductions,
         incrementDecrement = isLValue e,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes { scLogic = True },
+        assignTo = allSCNumericTypes { scLogic = True }
       }
   SCUInt {} ->
     Operations
@@ -328,8 +337,8 @@ operations e = case e.annotation of
         implicitCasts = [CUInt],
         methods = allReductions,
         incrementDecrement = isLValue e,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes { scLogic = True },
+        assignTo = allSCNumericTypes { scLogic = True }
       }
   SCIntSubref {} ->
     Operations
@@ -338,8 +347,8 @@ operations e = case e.annotation of
         implicitCasts = [CInt],
         methods = allReductions,
         incrementDecrement = False,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCUIntSubref {} ->
     Operations
@@ -348,8 +357,8 @@ operations e = case e.annotation of
         implicitCasts = [CUInt],
         methods = allReductions,
         incrementDecrement = False,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCSignedSubref {} ->
     Operations
@@ -358,8 +367,8 @@ operations e = case e.annotation of
         implicitCasts = [],
         methods = allReductions,
         incrementDecrement = False,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCUnsignedSubref {} ->
     Operations
@@ -368,8 +377,8 @@ operations e = case e.annotation of
         implicitCasts = [],
         methods = allReductions,
         incrementDecrement = False,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCFixed {} ->
     Operations
@@ -378,8 +387,8 @@ operations e = case e.annotation of
         implicitCasts = [CInt, CDouble],
         methods = [],
         incrementDecrement = isLValue e,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCUFixed {} ->
     Operations
@@ -388,8 +397,8 @@ operations e = case e.annotation of
         implicitCasts = [CUInt, CDouble],
         methods = [],
         incrementDecrement = isLValue e,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCFxnumSubref {} ->
     Operations
@@ -398,8 +407,8 @@ operations e = case e.annotation of
         implicitCasts = [],
         methods = allReductions,
         incrementDecrement = False,
-        constructorInto = allSCTypes,
-        assignTo = allSCTypes
+        constructorInto = allSCNumericTypes,
+        assignTo = allSCNumericTypes
       }
   SCIntBitref ->
     Operations
@@ -408,8 +417,8 @@ operations e = case e.annotation of
         implicitCasts = [CBool],
         methods = [],
         incrementDecrement = False,
-        constructorInto = allTypes,
-        assignTo = allTypes
+        constructorInto = allNumericTypes,
+        assignTo = allNumericTypes
       }
   SCUIntBitref ->
     Operations
@@ -418,8 +427,8 @@ operations e = case e.annotation of
         implicitCasts = [CBool],
         methods = [],
         incrementDecrement = False,
-        constructorInto = allTypes,
-        assignTo = allTypes
+        constructorInto = allNumericTypes,
+        assignTo = allNumericTypes
       }
   SCSignedBitref ->
     Operations
@@ -428,8 +437,8 @@ operations e = case e.annotation of
         implicitCasts = [CBool],
         methods = [],
         incrementDecrement = False,
-        constructorInto = allTypes,
-        assignTo = allTypes
+        constructorInto = allNumericTypes,
+        assignTo = allNumericTypes
       }
   SCUnsignedBitref ->
     Operations
@@ -438,8 +447,8 @@ operations e = case e.annotation of
         implicitCasts = [CBool],
         methods = [],
         incrementDecrement = False,
-        constructorInto = allTypes,
-        assignTo = allTypes
+        constructorInto = allNumericTypes,
+        assignTo = allNumericTypes
       }
   SCLogic ->
     Operations
@@ -478,8 +487,8 @@ operations e = case e.annotation of
         implicitCasts = [],
         methods = [],
         incrementDecrement = isLValue e,
-        constructorInto = allTypes,
-        assignTo = allTypes
+        constructorInto = allNumericTypes,
+        assignTo = allNumericTypes
       }
   CInt ->
     Operations
@@ -488,8 +497,8 @@ operations e = case e.annotation of
         implicitCasts = [],
         methods = [],
         incrementDecrement = isLValue e,
-        constructorInto = allTypes,
-        assignTo = allTypes
+        constructorInto = allNumericTypes,
+        assignTo = allNumericTypes
       }
   CDouble ->
     Operations
@@ -498,8 +507,8 @@ operations e = case e.annotation of
         implicitCasts = [],
         methods = [],
         incrementDecrement = isLValue e,
-        constructorInto = allTypes,
-        assignTo = allTypes
+        constructorInto = allNumericTypes,
+        assignTo = allNumericTypes
       }
   CBool ->
     Operations
@@ -508,8 +517,8 @@ operations e = case e.annotation of
         implicitCasts = [],
         methods = [],
         incrementDecrement = False,
-        constructorInto = allTypes,
-        assignTo = allTypes
+        constructorInto = allNumericTypes { scLogic = True },
+        assignTo = allNumericTypes { scLogic = True }
       }
 
 -- | Give the bitwidth of the type where that exists (i.e. SystemC types with a
