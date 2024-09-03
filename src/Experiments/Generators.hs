@@ -75,6 +75,9 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         SC.SCBigUInt n -> Right n
         SC.SCFixed w _ -> Right w
         SC.SCUFixed w _ -> Right w
+        SC.SCLogic -> Right 1
+        SC.SCBV n -> Right n
+        SC.SCLV n -> Right n
         SC.SCFxnumSubref {} -> Left [i|#{name}().length()|]
         SC.SCIntSubref {} -> Left [i|#{name}().length()|]
         SC.SCUIntSubref {} -> Left [i|#{name}().length()|]
@@ -118,6 +121,9 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         SC.SCUIntBitref -> boolToString
         SC.SCSignedBitref -> boolToString
         SC.SCUnsignedBitref -> boolToString
+        SC.SCLogic -> boolToString
+        SC.SCBV {} -> scToString
+        SC.SCLV {} -> scToString
         SC.CUInt -> bitsetToString
         SC.CInt -> bitsetToString
         SC.CDouble -> doubleToString

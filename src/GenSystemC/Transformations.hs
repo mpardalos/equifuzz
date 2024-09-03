@@ -95,6 +95,9 @@ assignAllowed cfg expr toType =
     SC.SCUIntBitref -> flags.scUIntBitref
     SC.SCSignedBitref -> flags.scSignedBitref
     SC.SCUnsignedBitref -> flags.scUnsignedBitref
+    SC.SCLogic -> flags.scLogic
+    SC.SCBV{} -> flags.scBV
+    SC.SCLV{} -> flags.scLV
     SC.CUInt -> flags.cUInt
     SC.CInt -> flags.cInt
     SC.CDouble -> flags.cDouble
@@ -119,6 +122,9 @@ castAllowed cfg expr toType =
     SC.SCUIntBitref -> flags.scUIntBitref
     SC.SCSignedBitref -> flags.scSignedBitref
     SC.SCUnsignedBitref -> flags.scUnsignedBitref
+    SC.SCLogic -> flags.scLogic
+    SC.SCBV{} -> flags.scBV
+    SC.SCLV{} -> flags.scLV
     SC.CUInt -> flags.cUInt
     SC.CInt -> flags.cInt
     SC.CDouble -> flags.cDouble
@@ -227,6 +233,9 @@ randomTransformationFor cfg e
             , guard ts.scBigUInt >> Just (SC.SCBigUInt <$> someBigWidth)
             , guard ts.scFixed >> Just (uncurry SC.SCFixed <$> someWI )
             , guard ts.scUFixed >> Just (uncurry SC.SCUFixed <$> someWI )
+            , guard ts.scLogic >> Just (pure SC.SCLogic)
+            , guard ts.scBV >> Just (SC.SCBV <$> someWidth)
+            , guard ts.scLV >> Just (SC.SCLV <$> someWidth)
             -- No subrefs or bitrefs because they cannot be constructed
             , guard ts.cUInt >> Just (pure SC.CUInt)
             , guard ts.cInt >> Just (pure SC.CInt)
@@ -250,6 +259,9 @@ randomTransformationFor cfg e
             , guard cs.scBigUInt >> Just (SC.SCBigUInt <$> someBigWidth)
             , guard cs.scFixed >> Just (uncurry SC.SCFixed <$> someWI )
             , guard cs.scUFixed >> Just (uncurry SC.SCUFixed <$> someWI )
+            , guard cs.scLogic >> Just (pure SC.SCLogic)
+            , guard cs.scBV >> Just (SC.SCBV <$> someWidth)
+            , guard cs.scLV >> Just (SC.SCLV <$> someWidth)
             -- No subrefs or bitrefs because they cannot be constructed
             , guard cs.cUInt >> Just (pure SC.CUInt)
             , guard cs.cInt >> Just (pure SC.CInt)

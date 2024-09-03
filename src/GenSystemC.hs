@@ -76,6 +76,9 @@ generateFromProcess cfg name GenerateProcess {seed, transformations} =
         SC.SCUFixed {} -> pure ()
         SC.SCBigInt _ -> pure ()
         SC.SCBigUInt _ -> pure ()
+        SC.SCLogic -> pure ()
+        SC.SCBV {} -> pure ()
+        SC.SCLV {} -> pure ()
         -- Explicitly cast native types
         SC.CInt -> applyTransformation cfg (FunctionalCast SC.CInt)
         SC.CUInt -> applyTransformation cfg (FunctionalCast SC.CUInt)
