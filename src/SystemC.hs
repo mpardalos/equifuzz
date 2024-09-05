@@ -143,6 +143,8 @@ data SCMethod
   | ReduceXor
   | ReduceXNor
   | Value
+  | ToBool
+  | Is01
   deriving (Eq, Show, Ord, Generic, Data, Enum, Bounded)
 
 methodReturn :: SCMethod -> SCType
@@ -153,6 +155,8 @@ methodReturn ReduceNor = CBool
 methodReturn ReduceXor = CBool
 methodReturn ReduceXNor = CBool
 methodReturn Value = CBool
+methodReturn ToBool = CBool
+methodReturn Is01 = CBool
 
 allReductions :: [SCMethod]
 allReductions =
@@ -280,6 +284,8 @@ methodName ReduceNor = "nor_reduce"
 methodName ReduceXor = "xor_reduce"
 methodName ReduceXNor = "xnor_reduce"
 methodName Value = "value"
+methodName ToBool = "to_bool"
+methodName Is01 = "is_01"
 
 isLValue :: Expr -> Bool
 isLValue Variable {} = True
@@ -458,7 +464,7 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [],
-        methods = [Value],
+        methods = [Value, ToBool, Is01],
         incrementDecrement = False,
         constructorInto = noTypes,
         assignTo = noTypes
