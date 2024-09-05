@@ -10,14 +10,12 @@
 
 module Experiments.Generators (mkSystemCConstantExperiment, generateProcessToExperiment) where
 
-import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Random.Strict (evalRandIO)
 import Data.Either (fromRight)
 import Data.Functor
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Debug.Trace (traceIO)
 import Experiments.Types
 import GenSystemC
   ( GenConfig,
