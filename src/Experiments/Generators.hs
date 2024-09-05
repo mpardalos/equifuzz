@@ -119,7 +119,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         SC.SCUIntBitref -> boolToString
         SC.SCSignedBitref -> boolToString
         SC.SCUnsignedBitref -> boolToString
-        SC.SCLogic -> boolToString
+        SC.SCLogic -> scToString
         SC.SCBV {} -> scToString
         SC.SCLV {} -> scToString
         SC.CUInt -> bitsetToString
