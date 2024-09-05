@@ -166,9 +166,11 @@ applyTransformation cfg (Range bound1 bound2) = do
 applyTransformation _ (Arithmetic op e') =
   #headExpr %= \e ->
     SC.BinOp e'.annotation e op e'
-applyTransformation _ (UseAsCondition tExpr fExpr) = do
+applyTransformation cfg (UseAsCondition tExpr fExpr) = do
   #headExpr %= \e ->
-    SC.Conditional tExpr.annotation e tExpr fExpr
+    if SC.CBool `elem` (modOperations cfg e).implicitCasts
+    then SC.Conditional tExpr.annotation e tExpr fExpr
+    else e
 applyTransformation cfg (BitSelect idx) = do
   #headExpr %= \e ->
     let idxInBounds = maybe True (idx <) (SC.knownWidth e.annotation)
