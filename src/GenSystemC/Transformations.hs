@@ -40,6 +40,7 @@ import SystemC qualified as SCUnconfigured (operations)
 import Data.List (intersect)
 import GenSystemC.Config (GenConfig(..), GenMods(..), TransformationFlags(..))
 import Util (is)
+import qualified Data.Map as Map
 
 data Transformation
   = CastWithAssignment SC.SCType
@@ -176,9 +177,9 @@ applyTransformation cfg (BitSelect idx) = do
           _ -> e
 applyTransformation cfg (ApplyMethod method) = do
   #headExpr %= \e ->
-    if method `elem` (modOperations cfg e).methods
-      then SC.MethodCall (SC.methodReturn method) e (SC.methodName method) []
-      else e
+    case Map.lookup method (modOperations cfg e).methods of
+      Just sig -> SC.MethodCall sig e (SC.methodName method) []
+      Nothing -> e
 applyTransformation cfg (ApplyUnaryOp op) = do
   #headExpr %= \e ->
     if (e `is` #_Variable) && (modOperations cfg e).incrementDecrement
@@ -315,7 +316,7 @@ randomTransformationFor cfg e
 
     applyMethod :: Maybe (m Transformation)
     applyMethod = do
-      let options = ApplyMethod <$> (modOperations cfg e).methods
+      let options = ApplyMethod <$> Map.keys (modOperations cfg e).methods
       guard (not . null $ options)
       return (uniform options)
 

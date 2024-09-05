@@ -8,6 +8,7 @@ import GenSystemC.Config
     allTransformations,
   )
 import Optics
+import Data.Map qualified as Map
 import SystemC qualified as SC
 
 vcfMods :: GenMods
@@ -53,15 +54,15 @@ jasperMods = GenMods {operations, transformations}
         ]
 
     failingBigIntReductions e = case e.annotation of
-      SC.SCBigInt {} -> #methods %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
-      SC.SCBigUInt {} -> #methods %~ filter (`notElem` [SC.ReduceXor, SC.ReduceXNor])
+      SC.SCBigInt {} -> #methods %~ Map.delete SC.ReduceXor . Map.delete SC.ReduceXNor
+      SC.SCBigUInt {} -> #methods %~ Map.delete SC.ReduceXor . Map.delete SC.ReduceXNor
       _ -> id
 
     missingSubrefReductions e = case e.annotation of
-      SC.SCIntSubref {} -> #methods .~ []
-      SC.SCUIntSubref {} -> #methods .~ []
-      SC.SCSignedSubref {} -> #methods .~ []
-      SC.SCUnsignedSubref {} -> #methods .~ []
+      SC.SCIntSubref {} -> #methods .~ Map.empty
+      SC.SCUIntSubref {} -> #methods .~ Map.empty
+      SC.SCSignedSubref {} -> #methods .~ Map.empty
+      SC.SCUnsignedSubref {} -> #methods .~ Map.empty
       _ -> id
 
     ambiguousAssignments :: OperationsMod

@@ -10,6 +10,8 @@
 module SystemC where
 
 import Data.Data (Data)
+import Data.Map (Map)
+import Data.Map qualified as Map
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import GHC.Records (HasField (getField))
@@ -142,31 +144,30 @@ data SCMethod
   | ReduceNor
   | ReduceXor
   | ReduceXNor
+  | ToInt
+  | ToUInt
+  | ToLong
+  | ToULong
+  | ToInt64
+  | ToUInt64
   | Value
   | ToBool
   | Is01
+  | Reverse
+  | Length
   deriving (Eq, Show, Ord, Generic, Data, Enum, Bounded)
 
-methodReturn :: SCMethod -> SCType
-methodReturn ReduceAnd = CBool
-methodReturn ReduceNand = CBool
-methodReturn ReduceOr = CBool
-methodReturn ReduceNor = CBool
-methodReturn ReduceXor = CBool
-methodReturn ReduceXNor = CBool
-methodReturn Value = CBool
-methodReturn ToBool = CBool
-methodReturn Is01 = CBool
-
-allReductions :: [SCMethod]
+allReductions :: Map SCMethod SCType
 allReductions =
-  [ ReduceAnd
-  , ReduceNand
-  , ReduceOr
-  , ReduceNor
-  , ReduceXor
-  , ReduceXNor
-  ]
+  Map.fromSet
+    (const CBool)
+    [ ReduceAnd,
+      ReduceNand,
+      ReduceOr,
+      ReduceNor,
+      ReduceXor,
+      ReduceXNor
+    ]
 
 data SCTypeFlags = SCTypeFlags
   { scInt :: Bool,
@@ -263,10 +264,10 @@ data Operations = Operations
     bitSelect :: Maybe SCType,
     -- | Increment (++) and decrement (--)
     incrementDecrement :: Bool,
-    -- | Result of the bit select operator (@x.range(10, 2)@), if that is available
+    -- | Result of the part select operator (@x.range(10, 2)@), if that is available
     partSelect :: Maybe (Int -> SCType),
     -- | Methods that can be called on this type
-    methods :: [SCMethod],
+    methods :: Map SCMethod SCType,
     -- | Implicit cast operators (e.g. @operator int() const@)
     implicitCasts :: [SCType],
     -- | Types that can be constructed from this
@@ -283,9 +284,17 @@ methodName ReduceOr = "or_reduce"
 methodName ReduceNor = "nor_reduce"
 methodName ReduceXor = "xor_reduce"
 methodName ReduceXNor = "xnor_reduce"
+methodName ToInt = "to_int"
+methodName ToUInt = "to_uint"
+methodName ToLong = "to_long"
+methodName ToULong = "to_ulong"
+methodName ToInt64 = "to_int64"
+methodName ToUInt64 = "to_uint64"
 methodName Value = "value"
 methodName ToBool = "to_bool"
 methodName Is01 = "is_01"
+methodName Reverse = "reverse"
+methodName Length = "length"
 
 isLValue :: Expr -> Bool
 isLValue Variable {} = True
@@ -308,7 +317,9 @@ isLValue _ = False
 
 -- | Get all possible operations for a SystemC expression
 operations :: Expr -> Operations
-operations e = case e.annotation of
+operations e =
+  let thisType = e.annotation in
+  case thisType of
   SCBigInt {} ->
     Operations
       { bitSelect = Just SCSignedBitref,
@@ -464,17 +475,33 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [],
-        methods = [Value, ToBool, Is01],
+        methods =
+            [ (Value, CBool),
+              (ToBool, CBool),
+              (Is01, CBool)
+            ],
         incrementDecrement = False,
         constructorInto = noTypes,
         assignTo = noTypes
       }
-  SCBV { } ->
+  SCBV {} ->
     Operations
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [CBool],
-        methods = [],
+        methods =
+          [(Reverse, thisType)]
+          <> allReductions
+          -- Missing lrotate, rrotate because they take arguments
+          <> [(Length, CInt)]
+          <> [(ToInt, CInt)]
+          <> [(ToLong, CInt)]
+          <> [(ToInt64, CInt)]
+          <> [(ToUInt, CUInt)]
+          <> [(ToULong, CUInt)]
+          <> [(ToUInt64, CUInt)]
+          <> [(Is01, CBool)]
+      ,
         incrementDecrement = False,
         constructorInto = noTypes,
         assignTo = noTypes
@@ -484,7 +511,18 @@ operations e = case e.annotation of
       { bitSelect = Nothing,
         partSelect = Nothing,
         implicitCasts = [CBool],
-        methods = [],
+        methods =
+          [(Reverse, thisType)]
+          <> allReductions
+          -- Missing lrotate, rrotate because they take arguments
+          <> [(Length, CInt)]
+          <> [(ToInt, CInt)]
+          <> [(ToLong, CInt)]
+          <> [(ToInt64, CInt)]
+          <> [(ToUInt, CUInt)]
+          <> [(ToULong, CUInt)]
+          <> [(ToUInt64, CUInt)]
+          <> [(Is01, CBool)],
         incrementDecrement = False,
         constructorInto = noTypes,
         assignTo = noTypes
