@@ -95,6 +95,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         Right _ -> "std::cout << 0 << std::endl;"
 
   let scToString :: Text = [i|std::cout << #{name}().to_string(sc_dt::SC_BIN, false) << std::endl;|]
+  let scPrintToString :: Text = [i|#{name}().print(); std::cout << std::endl;|]
   let boolToString :: Text = [i| std::cout << (#{name}() ? "1" : "0") << std::endl;|]
   let bitsetToString :: Text = [i| std::cout << std::bitset<32>(#{name}()) << std::endl;|]
   let doubleToString :: Text =
@@ -119,7 +120,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         SC.SCUIntBitref -> boolToString
         SC.SCSignedBitref -> boolToString
         SC.SCUnsignedBitref -> boolToString
-        SC.SCLogic -> scToString
+        SC.SCLogic -> scPrintToString 
         SC.SCBV {} -> scToString
         SC.SCLV {} -> scToString
         SC.CUInt -> bitsetToString
