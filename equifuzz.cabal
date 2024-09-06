@@ -105,12 +105,17 @@ executable equifuzz
 Test-Suite fuzzfuzz
     import:
         common
+    ghc-options:
+        -Wall -Wno-unrecognised-pragmas -threaded -rtsopts "-with-rtsopts=-N"
     type:
         exitcode-stdio-1.0
     main-is:
         Main.hs
     build-depends:
         equifuzz,
-        containers
+        containers,
+        async,
+        stm,
+        ansi-terminal
     hs-source-dirs:
         test
