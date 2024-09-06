@@ -163,9 +163,11 @@ applyTransformation cfg (Range bound1 bound2) = do
                   "range"
                   [SC.Constant SC.CInt hi, SC.Constant SC.CInt lo]
           _ -> e
-applyTransformation _ (Arithmetic op e') =
+applyTransformation cfg (Arithmetic op e') =
   #headExpr %= \e ->
-    SC.BinOp e'.annotation e op e'
+  case (modOperations cfg e).arithmeticResult of
+    Just resultType -> SC.BinOp resultType e op e'
+    Nothing -> e
 applyTransformation cfg (UseAsCondition tExpr fExpr) = do
   #headExpr %= \e ->
     if SC.CBool `elem` (modOperations cfg e).implicitCasts
@@ -285,17 +287,9 @@ randomTransformationFor cfg e
         lo <- getRandomR (0, hi)
         return (Range hi lo)
 
-    arithmeticResultType :: Maybe SC.SCType
-    arithmeticResultType
-      | [t] <-
-          [SC.CInt, SC.CUInt, SC.CDouble]
-            `intersect` (modOperations cfg e).implicitCasts =
-          Just t
-      | otherwise = Nothing
-
     arithmetic :: Maybe (m Transformation)
     arithmetic = do
-      resultType <- arithmeticResultType
+      resultType <- (modOperations cfg e).arithmeticResult
       return $ do
         op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
         constant <- someConstant resultType

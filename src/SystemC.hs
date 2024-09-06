@@ -273,7 +273,9 @@ data Operations = Operations
     -- | Types that can be constructed from this
     constructorInto :: SCTypeFlags,
     -- | Types to which values of this type can be assigned
-    assignTo :: SCTypeFlags
+    assignTo :: SCTypeFlags,
+    -- | Result of arithmetic with constants, if that is allowed
+    arithmeticResult :: Maybe SCType
   }
   deriving (Generic)
 
@@ -328,7 +330,8 @@ operations e =
         methods = allReductions,
         incrementDecrement = isLValue e,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        arithmeticResult = Just thisType
       }
   SCBigUInt {} ->
     Operations
@@ -338,7 +341,8 @@ operations e =
         methods = allReductions,
         incrementDecrement = isLValue e,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        arithmeticResult = Just thisType
       }
   SCInt {} ->
     Operations
@@ -348,7 +352,8 @@ operations e =
         methods = allReductions,
         incrementDecrement = isLValue e,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        arithmeticResult = Just CInt
       }
   SCUInt {} ->
     Operations
@@ -358,7 +363,8 @@ operations e =
         methods = allReductions,
         incrementDecrement = isLValue e,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        arithmeticResult = Just CUInt
       }
   SCIntSubref {} ->
     Operations
@@ -368,7 +374,8 @@ operations e =
         methods = allReductions,
         incrementDecrement = False,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        arithmeticResult = Just CInt
       }
   SCUIntSubref {} ->
     Operations
@@ -378,9 +385,10 @@ operations e =
         methods = allReductions,
         incrementDecrement = False,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        arithmeticResult = Just CUInt
       }
-  SCSignedSubref {} ->
+  SCSignedSubref { width } ->
     Operations
       { bitSelect = Nothing,
         partSelect = Nothing,
@@ -388,9 +396,10 @@ operations e =
         methods = allReductions,
         incrementDecrement = False,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        arithmeticResult = Just (SCBigInt width)
       }
-  SCUnsignedSubref {} ->
+  SCUnsignedSubref { width } ->
     Operations
       { bitSelect = Nothing,
         partSelect = Nothing,
@@ -398,7 +407,8 @@ operations e =
         methods = allReductions,
         incrementDecrement = False,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        arithmeticResult = Just (SCBigUInt width)
       }
   SCFixed {} ->
     Operations
@@ -408,7 +418,10 @@ operations e =
         methods = [],
         incrementDecrement = isLValue e,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        -- FIXME: This is only true for *, +, -, /.
+        --        Other arithmetic happens by implicit conversion to double
+        arithmeticResult = Just thisType
       }
   SCUFixed {} ->
     Operations
@@ -418,7 +431,11 @@ operations e =
         methods = [],
         incrementDecrement = isLValue e,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        -- FIXME: This is only true for *, +, -, /.
+        --        Other arithmetic happens by implicit conversion to double
+        arithmeticResult = Just thisType
+
       }
   SCFxnumSubref {} ->
     Operations
@@ -428,7 +445,9 @@ operations e =
         methods = allReductions,
         incrementDecrement = False,
         constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes
+        assignTo = allSCNumericTypes,
+        arithmeticResult = Nothing
+
       }
   SCIntBitref ->
     Operations
@@ -438,7 +457,9 @@ operations e =
         methods = [],
         incrementDecrement = False,
         constructorInto = allNumericTypes,
-        assignTo = allNumericTypes
+        assignTo = allNumericTypes,
+        arithmeticResult = Nothing
+
       }
   SCUIntBitref ->
     Operations
@@ -448,7 +469,9 @@ operations e =
         methods = [],
         incrementDecrement = False,
         constructorInto = allNumericTypes,
-        assignTo = allNumericTypes
+        assignTo = allNumericTypes,
+        arithmeticResult = Nothing
+
       }
   SCSignedBitref ->
     Operations
@@ -458,7 +481,9 @@ operations e =
         methods = [],
         incrementDecrement = False,
         constructorInto = allNumericTypes,
-        assignTo = allNumericTypes
+        assignTo = allNumericTypes,
+        arithmeticResult = Nothing
+
       }
   SCUnsignedBitref ->
     Operations
@@ -468,7 +493,8 @@ operations e =
         methods = [],
         incrementDecrement = False,
         constructorInto = allNumericTypes,
-        assignTo = allNumericTypes
+        assignTo = allNumericTypes,
+        arithmeticResult = Nothing
       }
   SCLogic ->
     Operations
@@ -482,7 +508,8 @@ operations e =
             ],
         incrementDecrement = False,
         constructorInto = noTypes,
-        assignTo = noTypes
+        assignTo = noTypes,
+        arithmeticResult = Nothing
       }
   SCBV {} ->
     Operations
@@ -504,7 +531,8 @@ operations e =
       ,
         incrementDecrement = False,
         constructorInto = noTypes,
-        assignTo = noTypes
+        assignTo = noTypes,
+        arithmeticResult = Nothing
       }
   SCLV { } ->
     Operations
@@ -525,7 +553,8 @@ operations e =
           <> [(Is01, CBool)],
         incrementDecrement = False,
         constructorInto = noTypes,
-        assignTo = noTypes
+        assignTo = noTypes,
+        arithmeticResult = Nothing
       }
   CUInt ->
     Operations
@@ -535,7 +564,8 @@ operations e =
         methods = [],
         incrementDecrement = isLValue e,
         constructorInto = allNumericTypes,
-        assignTo = allNumericTypes
+        assignTo = allNumericTypes,
+        arithmeticResult = Just CUInt
       }
   CInt ->
     Operations
@@ -545,7 +575,8 @@ operations e =
         methods = [],
         incrementDecrement = isLValue e,
         constructorInto = allNumericTypes,
-        assignTo = allNumericTypes
+        assignTo = allNumericTypes,
+        arithmeticResult = Just CInt
       }
   CDouble ->
     Operations
@@ -555,7 +586,8 @@ operations e =
         methods = [],
         incrementDecrement = isLValue e,
         constructorInto = allNumericTypes,
-        assignTo = allNumericTypes
+        assignTo = allNumericTypes,
+        arithmeticResult = Just CDouble
       }
   CBool ->
     Operations
@@ -565,7 +597,8 @@ operations e =
         methods = [],
         incrementDecrement = False,
         constructorInto = allNumericTypes { scLogic = True },
-        assignTo = allNumericTypes { scLogic = True }
+        assignTo = allNumericTypes { scLogic = True },
+        arithmeticResult = Nothing
       }
 
 -- | Give the bitwidth of the type where that exists (i.e. SystemC types with a
