@@ -15,11 +15,12 @@
           equifuzz =
             final.haskell-nix.project' {
               src = ./.;
-              compiler-nix-name = "ghc92";
+              compiler-nix-name = "ghc98";
 
               shell.tools = {
                 cabal = "latest";
                 haskell-language-server = "latest";
+                fourmolu = "latest";
               };
 
               # Non-Haskell shell tools go here

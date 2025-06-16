@@ -69,7 +69,6 @@ library
         uniplate,
         recursion-schemes,
         uuid,
-        vty == 5.38,
         containers,
         mtl == 2.3.*,
         transformers,
