@@ -26,9 +26,9 @@ common common
         optics,
         shelly,
         text,
-        bytestring == 0.11.*,
-        random == 1.2.*,
-        MonadRandom == 0.6.*
+        bytestring,
+        random,
+        MonadRandom
     default-extensions:
         OverloadedStrings
         OverloadedRecordDot
@@ -70,23 +70,23 @@ library
         recursion-schemes,
         uuid,
         containers,
-        mtl == 2.3.*,
+        mtl,
         transformers,
         prettyprinter,
         data-default-class,
         safe,
         filepath,
-        scotty == 0.12.*,
-        wai == 3.2.*,
-        wai-extra == 3.1.13.0,
-        blaze-html == 0.9.*,
-        blaze-htmx == 0.1.*,
-        http-types == 0.12.*,
-        file-embed == 0.0.15.*,
-        binary == 0.8.*,
-        stm == 2.5.*,
-        time == 1.12.*,
-        async == 2.2.*
+        scotty,
+        wai,
+        wai-extra,
+        blaze-html,
+        blaze-htmx,
+        http-types,
+        file-embed,
+        binary,
+        stm,
+        time,
+        async
 
 executable equifuzz
     import:

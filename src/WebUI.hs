@@ -29,6 +29,7 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (isJust)
 import Data.String.Interpolate (i)
+import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
 import Data.UUID (UUID)
@@ -204,7 +205,7 @@ pruneUninterestingSequences state =
               || sequenceInfo.sequenceId `Map.member` state.interestingExperiments
         )
 
-paramExists :: LT.Text -> ActionM Bool
+paramExists :: T.Text -> ActionM Bool
 paramExists p = isJust . find ((== p) . fst) <$> params
 
 runWebUI :: TChan ExperimentProgress -> IO ()
