@@ -11,11 +11,14 @@
 
 module Experiments.Types where
 
+import Data.Char (intToDigit)
 import Data.Data (Data)
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.UUID (UUID)
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
+import Numeric (showIntAtBase)
 import Optics (makeFieldLabelsNoPrefix)
 import SystemC qualified as SC
 
@@ -33,9 +36,42 @@ newtype ExperimentId = ExperimentId {uuid :: UUID}
 newExperimentId :: IO ExperimentId
 newExperimentId = ExperimentId <$> UUID.nextRandom
 
-data ComparisonValue = ComparisonValue
-  { width :: Int
-  , literal :: Text
+-- | literal value represented as (big-endian) string of 0s and 1s
+newtype ComparisonValue = UnsafeComparisonValue Text
+  deriving newtype (Eq, Ord, Show)
+
+mkComparisonValueInt ::
+  -- | Width
+  Int ->
+  -- | Value
+  Int ->
+  ComparisonValue
+mkComparisonValueInt w v = mkComparisonValueWithWidth w (T.pack (showIntAtBase 2 intToDigit v ""))
+
+mkComparisonValue :: Text -> ComparisonValue
+mkComparisonValue t
+  | Just c <- T.find (`notElem` ['0', '1']) t =
+      error ("Unexpected character in comparison value: " ++ show c)
+  | otherwise = UnsafeComparisonValue t
+
+mkComparisonValueWithWidth :: Int -> Text -> ComparisonValue
+mkComparisonValueWithWidth w t
+  | T.length t < w = mkComparisonValue (T.replicate (w - T.length t) "0" <> t)
+  | otherwise = mkComparisonValue (T.takeEnd w t)
+
+comparisonValueRaw :: ComparisonValue -> Text
+comparisonValueRaw (UnsafeComparisonValue t) = t
+
+comparisonValueAsC :: ComparisonValue -> Text
+comparisonValueAsC (UnsafeComparisonValue t) = "0b" <> t
+
+comparisonValueAsVerilog :: ComparisonValue -> Text
+comparisonValueAsVerilog (UnsafeComparisonValue t) =
+  T.pack (show (T.length t)) <> "'b" <> t
+
+data Evaluation = Evaluation
+  { inputs :: [ComparisonValue]
+  , output :: ComparisonValue
   }
   deriving (Generic, Show, Eq, Ord)
 
@@ -50,8 +86,8 @@ data Experiment = Experiment
   , longDescription :: Text
   -- ^ Human-readable text describing the design/how it was generated
   -- E.g. The series of transformations that generated it
-  , comparisonValue :: ComparisonValue
-  -- ^ Value that the design will be compared to
+  , knownEvaluations :: [Evaluation]
+  -- ^ Input vectors and matching results at which the design will be evaluated
   }
   deriving (Generic, Show, Eq, Ord)
 
@@ -75,7 +111,6 @@ data ExperimentProgress
   | ExperimentSequenceCompleted ExperimentSequenceId
   deriving (Show)
 
-makeFieldLabelsNoPrefix ''ComparisonValue
 makeFieldLabelsNoPrefix ''Experiment
 makeFieldLabelsNoPrefix ''DesignSource
 makeFieldLabelsNoPrefix ''ExperimentResult

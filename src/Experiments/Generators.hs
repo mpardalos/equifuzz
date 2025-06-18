@@ -10,7 +10,7 @@
 
 module Experiments.Generators (mkSystemCConstantExperiment, generateProcessToExperiment) where
 
-import Control.Monad.Random.Strict (evalRandIO)
+import Control.Monad.Random.Strict (MonadRandom (getRandom), evalRandIO)
 import Data.Either (fromRight)
 import Data.Functor
 import Data.String.Interpolate (i, __i)
@@ -38,7 +38,9 @@ generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
 generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} = do
   let design = generateFromProcess cfg "dut" process
 
-  (comparisonValue, hasUB, extraInfo) <- simulateSystemCConstant design
+  inputs <- mapM (comparisonValueOfType . fst) design.args
+
+  (output, hasUB, extraInfo) <- simulateSystemCAt design inputs
 
   experimentId <- newExperimentId
   return
@@ -55,8 +57,13 @@ generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} =
               ]
             , [extraInfo]
             ]
-      , comparisonValue
+      , knownEvaluations = [Evaluation{inputs, output}]
       }
+
+comparisonValueOfType :: MonadRandom m => SC.SCType -> m ComparisonValue
+comparisonValueOfType t = case SC.knownWidth t of
+  Nothing -> mkComparisonValueInt 32 <$> getRandom
+  Just w -> mkComparisonValueInt w <$> getRandom
 
 -- | Run the SystemC function and return its output represented as text of a
 -- Verilog-style constant. We use this output format because the normal
@@ -64,8 +71,11 @@ generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} =
 -- as an sc_uint<8> or a sc_fixed<10,3> are represented completely differently.
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
-simulateSystemCConstant :: SC.FunctionDeclaration -> IO (ComparisonValue, Bool, Text)
-simulateSystemCConstant decl@SC.FunctionDeclaration{returnType, name} = Sh.shelly . Sh.silently $ do
+simulateSystemCAt :: SC.FunctionDeclaration -> [ComparisonValue] -> IO (ComparisonValue, Bool, Text)
+simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = Sh.shelly . Sh.silently $ do
+  let callArgs = T.intercalate ", " (map comparisonValueAsC inputs)
+  let call = name <> "(" <> callArgs <> ")"
+
   let widthExprOrWidth :: Either Text Int = case returnType of
         SC.SCInt n -> Right n
         SC.SCUInt n -> Right n
@@ -76,11 +86,11 @@ simulateSystemCConstant decl@SC.FunctionDeclaration{returnType, name} = Sh.shell
         SC.SCLogic -> Right 1
         SC.SCBV n -> Right n
         SC.SCLV n -> Right n
-        SC.SCFxnumSubref{} -> Left [i|#{name}().length()|]
-        SC.SCIntSubref{} -> Left [i|#{name}().length()|]
-        SC.SCUIntSubref{} -> Left [i|#{name}().length()|]
-        SC.SCSignedSubref{} -> Left [i|#{name}().length()|]
-        SC.SCUnsignedSubref{} -> Left [i|#{name}().length()|]
+        SC.SCFxnumSubref{} -> Left [i|#{call}.length()|]
+        SC.SCIntSubref{} -> Left [i|#{call}.length()|]
+        SC.SCUIntSubref{} -> Left [i|#{call}.length()|]
+        SC.SCSignedSubref{} -> Left [i|#{call}.length()|]
+        SC.SCUnsignedSubref{} -> Left [i|#{call}.length()|]
         SC.SCIntBitref -> Right 1
         SC.SCUIntBitref -> Right 1
         SC.SCSignedBitref -> Right 1
@@ -94,13 +104,13 @@ simulateSystemCConstant decl@SC.FunctionDeclaration{returnType, name} = Sh.shell
         Left e -> [i|std::cout << #{e} << std::endl;|]
         Right _ -> "std::cout << 0 << std::endl;"
 
-  let scToString :: Text = [i|std::cout << #{name}().to_string(sc_dt::SC_BIN, false) << std::endl;|]
-  let scPrintToString :: Text = [i|#{name}().print(); std::cout << std::endl;|]
-  let boolToString :: Text = [i| std::cout << (#{name}() ? "1" : "0") << std::endl;|]
-  let bitsetToString :: Text = [i| std::cout << std::bitset<32>(#{name}()) << std::endl;|]
+  let scToString :: Text = [i|std::cout << #{call}.to_string(sc_dt::SC_BIN, false) << std::endl;|]
+  let scPrintToString :: Text = [i|#{call}.print(); std::cout << std::endl;|]
+  let boolToString :: Text = [i| std::cout << (#{call} ? "1" : "0") << std::endl;|]
+  let bitsetToString :: Text = [i| std::cout << std::bitset<32>(#{call}) << std::endl;|]
   let doubleToString :: Text =
         [i|
-         auto value = #{name}();
+         auto value = #{call};
          std::cout << std::bitset<64>(*reinterpret_cast<unsigned long*>(&value)) << std::endl;
          |]
 
@@ -164,7 +174,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration{returnType, name} = Sh.shell
   let value = T.replace "." "" reportedValue
 
   return
-    ( ComparisonValue width (T.pack (show width) <> "'b" <> value)
+    ( mkComparisonValueWithWidth width value
     , hasUndefinedBehaviour
     , extraInfo
     )
