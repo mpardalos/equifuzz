@@ -1,28 +1,28 @@
 module Main where
 
 import Control.Concurrent (getNumCapabilities)
-import Control.Exception (SomeException, evaluate, bracket_)
+import Control.Concurrent.Async (forConcurrently, forConcurrently_)
+import Control.Concurrent.MVar (MVar, modifyMVar, modifyMVar_, newMVar, putMVar, readMVar, takeMVar)
+import Control.Concurrent.STM.TSem
+import Control.Exception (SomeException, bracket_, evaluate)
 import Control.Monad (forM_, replicateM_)
-import Data.Map qualified as Map
+import Data.List (intercalate)
 import Data.Map (Map)
+import Data.Map qualified as Map
 import Experiments (mkSystemCConstantExperiment)
-import GHC.Conc (numCapabilities, atomically)
+import GHC.Conc (atomically, numCapabilities)
 import GenSystemC (GenConfig (..), Reducible (..))
-import System.IO (hPutStrLn, stderr, hFlush, hPutStr)
+import System.Console.ANSI (hClearLine, hSetCursorColumn)
+import System.IO (hFlush, hPutStr, hPutStrLn, stderr)
+import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf (printf)
 import ToolRestrictions (noMods)
-import Control.Concurrent.Async (forConcurrently, forConcurrently_)
-import Control.Concurrent.MVar (newMVar, MVar, takeMVar, putMVar, modifyMVar, modifyMVar_, readMVar)
-import Control.Concurrent.STM.TSem
-import System.IO.Unsafe (unsafePerformIO)
-import Data.List (intercalate)
-import System.Console.ANSI (hClearLine, hSetCursorColumn)
 
 genConfig :: GenConfig
 genConfig =
   GenConfig
-    { growSteps = 30,
-      mods = noMods
+    { growSteps = 30
+    , mods = noMods
     }
 
 totalExperiments :: Int
@@ -50,7 +50,7 @@ progressBar totalSegments complete total =
   let
     fullSegments = (totalSegments * complete) `div` total
     emptySegments = totalSegments - fullSegments
-  in
+   in
     replicate fullSegments '=' <> replicate emptySegments ' '
 
 runCompleted :: IO ()
@@ -68,12 +68,12 @@ main :: IO ()
 main = do
   capabilities <- getNumCapabilities
   count <- atomically $ newTSem (fromIntegral capabilities)
-  forConcurrently_ [1::Int .. totalExperiments] $ \_experimentIdx -> do
+  forConcurrently_ [1 :: Int .. totalExperiments] $ \_experimentIdx -> do
     atomically $ waitTSem count
     reducible <- mkSystemCConstantExperiment genConfig
     _experiment <- evaluate =<< reducible.value
     runCompleted
-    forM_ (zip [1::Int ..] reductions) $ \(_reductionIdx, bounds) -> do
+    forM_ (zip [1 :: Int ..] reductions) $ \(_reductionIdx, bounds) -> do
       reducible' <- evaluate (reducible.reductions Map.! bounds)
       _experiment <- evaluate =<< reducible'.value
       runCompleted

@@ -11,9 +11,9 @@ import GHC.Generics (Generic)
 import Optics (makeFieldLabelsNoPrefix)
 
 data Reducible a = Reducible
-  { value :: a,
-    size :: Int,
-    reductions :: Map (Int, Int) (Reducible a)
+  { value :: a
+  , size :: Int
+  , reductions :: Map (Int, Int) (Reducible a)
   }
   deriving (Functor, Generic)
 
@@ -22,6 +22,6 @@ class HasReductions a where
   getSize :: a -> Int
 
 asReducible :: HasReductions a => a -> Reducible a
-asReducible value = Reducible {value, size = getSize value, reductions = mkReductions value}
+asReducible value = Reducible{value, size = getSize value, reductions = mkReductions value}
 
 makeFieldLabelsNoPrefix ''Reducible

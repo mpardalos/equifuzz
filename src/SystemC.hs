@@ -17,22 +17,22 @@ import GHC.Generics (Generic)
 import GHC.Records (HasField (getField))
 import Optics (A_Getter, LabelOptic, makeFieldLabelsNoPrefix, to)
 import Optics.Label (LabelOptic (labelOptic))
-import Prettyprinter
-  ( Doc,
-    Pretty (pretty),
-    align,
-    comma,
-    defaultLayoutOptions,
-    hsep,
-    indent,
-    layoutPretty,
-    line,
-    parens,
-    punctuate,
-    sep,
-    vsep,
-    (<+>),
-  )
+import Prettyprinter (
+  Doc,
+  Pretty (pretty),
+  align,
+  comma,
+  defaultLayoutOptions,
+  hsep,
+  indent,
+  layoutPretty,
+  line,
+  parens,
+  punctuate,
+  sep,
+  vsep,
+  (<+>),
+ )
 import Prettyprinter.Render.Text (renderStrict)
 
 class Source a where
@@ -125,8 +125,8 @@ data SCType
   | SCSignedBitref
   | SCUnsignedBitref
   | SCLogic
-  | SCBV { width :: Int }
-  | SCLV { width :: Int }
+  | SCBV {width :: Int}
+  | SCLV {width :: Int}
   | CUInt
   | CInt
   | CDouble
@@ -161,121 +161,121 @@ allReductions :: Map SCMethod SCType
 allReductions =
   Map.fromSet
     (const CBool)
-    [ ReduceAnd,
-      ReduceNand,
-      ReduceOr,
-      ReduceNor,
-      ReduceXor,
-      ReduceXNor
+    [ ReduceAnd
+    , ReduceNand
+    , ReduceOr
+    , ReduceNor
+    , ReduceXor
+    , ReduceXNor
     ]
 
 data SCTypeFlags = SCTypeFlags
-  { scInt :: Bool,
-    scUInt :: Bool,
-    scBigInt :: Bool,
-    scBigUInt :: Bool,
-    scFixed :: Bool,
-    scUFixed :: Bool,
-    scFxnumSubref :: Bool,
-    scIntSubref :: Bool,
-    scUIntSubref :: Bool,
-    scSignedSubref :: Bool,
-    scUnsignedSubref :: Bool,
-    scIntBitref :: Bool,
-    scUIntBitref :: Bool,
-    scSignedBitref :: Bool,
-    scUnsignedBitref :: Bool,
-    scLogic :: Bool,
-    scBV :: Bool,
-    scLV :: Bool,
-    cUInt :: Bool,
-    cInt :: Bool,
-    cDouble :: Bool,
-    cBool :: Bool
+  { scInt :: Bool
+  , scUInt :: Bool
+  , scBigInt :: Bool
+  , scBigUInt :: Bool
+  , scFixed :: Bool
+  , scUFixed :: Bool
+  , scFxnumSubref :: Bool
+  , scIntSubref :: Bool
+  , scUIntSubref :: Bool
+  , scSignedSubref :: Bool
+  , scUnsignedSubref :: Bool
+  , scIntBitref :: Bool
+  , scUIntBitref :: Bool
+  , scSignedBitref :: Bool
+  , scUnsignedBitref :: Bool
+  , scLogic :: Bool
+  , scBV :: Bool
+  , scLV :: Bool
+  , cUInt :: Bool
+  , cInt :: Bool
+  , cDouble :: Bool
+  , cBool :: Bool
   }
   deriving (Eq, Show, Ord, Generic)
 
 noTypes :: SCTypeFlags
 noTypes =
   SCTypeFlags
-    { scInt = False,
-      scUInt = False,
-      scBigInt = False,
-      scBigUInt = False,
-      scFixed = False,
-      scUFixed = False,
-      scFxnumSubref = False,
-      scIntSubref = False,
-      scUIntSubref = False,
-      scSignedSubref = False,
-      scUnsignedSubref = False,
-      scIntBitref = False,
-      scUIntBitref = False,
-      scSignedBitref = False,
-      scUnsignedBitref = False,
-      scLogic = False,
-      scBV = False,
-      scLV = False,
-      cUInt = False,
-      cInt = False,
-      cDouble = False,
-      cBool = False
+    { scInt = False
+    , scUInt = False
+    , scBigInt = False
+    , scBigUInt = False
+    , scFixed = False
+    , scUFixed = False
+    , scFxnumSubref = False
+    , scIntSubref = False
+    , scUIntSubref = False
+    , scSignedSubref = False
+    , scUnsignedSubref = False
+    , scIntBitref = False
+    , scUIntBitref = False
+    , scSignedBitref = False
+    , scUnsignedBitref = False
+    , scLogic = False
+    , scBV = False
+    , scLV = False
+    , cUInt = False
+    , cInt = False
+    , cDouble = False
+    , cBool = False
     }
 
 allNumericTypes :: SCTypeFlags
 allNumericTypes =
   SCTypeFlags
-    { scInt = True,
-      scUInt = True,
-      scBigInt = True,
-      scBigUInt = True,
-      scFixed = True,
-      scUFixed = True,
-      scFxnumSubref = True,
-      scIntSubref = True,
-      scUIntSubref = True,
-      scSignedSubref = True,
-      scUnsignedSubref = True,
-      scIntBitref = True,
-      scUIntBitref = True,
-      scSignedBitref = True,
-      scUnsignedBitref = True,
-      scLogic = False,
-      scBV = False,
-      scLV = False,
-      cUInt = True,
-      cInt = True,
-      cDouble = True,
-      cBool = True
+    { scInt = True
+    , scUInt = True
+    , scBigInt = True
+    , scBigUInt = True
+    , scFixed = True
+    , scUFixed = True
+    , scFxnumSubref = True
+    , scIntSubref = True
+    , scUIntSubref = True
+    , scSignedSubref = True
+    , scUnsignedSubref = True
+    , scIntBitref = True
+    , scUIntBitref = True
+    , scSignedBitref = True
+    , scUnsignedBitref = True
+    , scLogic = False
+    , scBV = False
+    , scLV = False
+    , cUInt = True
+    , cInt = True
+    , cDouble = True
+    , cBool = True
     }
 
 allSCNumericTypes :: SCTypeFlags
 allSCNumericTypes =
   allNumericTypes
-    { cUInt = False,
-      cInt = False,
-      cDouble = False,
-      cBool = False
+    { cUInt = False
+    , cInt = False
+    , cDouble = False
+    , cBool = False
     }
 
 -- | Possible operations on a SystemC type
 data Operations = Operations
-  { -- | Result of the bit select operator (@x[10]@), if that is available
-    bitSelect :: Maybe SCType,
-    -- | Increment (++) and decrement (--)
-    incrementDecrement :: Bool,
-    -- | Result of the part select operator (@x.range(10, 2)@), if that is available
-    partSelect :: Maybe (Int -> SCType),
-    -- | Methods that can be called on this type
-    methods :: Map SCMethod SCType,
-    -- | Implicit cast operators (e.g. @operator int() const@)
-    implicitCasts :: [SCType],
-    -- | Types that can be constructed from this
-    constructorInto :: SCTypeFlags,
-    -- | Types to which values of this type can be assigned
-    assignTo :: SCTypeFlags,
-    -- | Result of arithmetic with constants, if that is allowed
-    arithmeticResult :: Maybe SCType
+  { bitSelect :: Maybe SCType
+  -- ^ Result of the bit select operator (@x[10]@), if that is available
+  , incrementDecrement :: Bool
+  -- ^ Increment (++) and decrement (--)
+  , partSelect :: Maybe (Int -> SCType)
+  -- ^ Result of the part select operator (@x.range(10, 2)@), if that is available
+  , methods :: Map SCMethod SCType
+  -- ^ Methods that can be called on this type
+  , implicitCasts :: [SCType]
+  -- ^ Implicit cast operators (e.g. @operator int() const@)
+  , constructorInto :: SCTypeFlags
+  -- ^ Types that can be constructed from this
+  , assignTo :: SCTypeFlags
+  -- ^ Types to which values of this type can be assigned
+  , arithmeticResult :: Maybe SCType
+  -- ^ Result of arithmetic with constants, if that is allowed
   }
   deriving (Generic)
 
@@ -299,339 +299,333 @@ methodName Reverse = "reverse"
 methodName Length = "length"
 
 isLValue :: Expr -> Bool
-isLValue Variable {} = True
-isLValue UnaryOp {} = True
+isLValue Variable{} = True
+isLValue UnaryOp{} = True
 isLValue (BinOp _ _ op _) =
   elem @[]
     op
-    [ PlusAssign,
-      MinusAssign,
-      TimesAssign,
-      DivideAssign,
-      ModAssign,
-      BitwiseAndAssign,
-      BitwiseOrAssign,
-      BitwiseXorAssign,
-      LeftShiftAssign,
-      RightShiftAssign
+    [ PlusAssign
+    , MinusAssign
+    , TimesAssign
+    , DivideAssign
+    , ModAssign
+    , BitwiseAndAssign
+    , BitwiseOrAssign
+    , BitwiseXorAssign
+    , LeftShiftAssign
+    , RightShiftAssign
     ]
 isLValue _ = False
 
 -- | Get all possible operations for a SystemC expression
 operations :: Expr -> Operations
 operations e =
-  let thisType = e.annotation in
-  case thisType of
-  SCBigInt {} ->
-    Operations
-      { bitSelect = Just SCSignedBitref,
-        partSelect = Just SCSignedSubref,
-        implicitCasts = [],
-        methods = allReductions,
-        incrementDecrement = isLValue e,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        arithmeticResult = Just thisType
-      }
-  SCBigUInt {} ->
-    Operations
-      { bitSelect = Just SCUnsignedBitref,
-        partSelect = Just SCUnsignedSubref,
-        implicitCasts = [],
-        methods = allReductions,
-        incrementDecrement = isLValue e,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        arithmeticResult = Just thisType
-      }
-  SCInt {} ->
-    Operations
-      { bitSelect = Just SCIntBitref,
-        partSelect = Just SCIntSubref,
-        implicitCasts = [CInt],
-        methods = allReductions,
-        incrementDecrement = isLValue e,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        arithmeticResult = Just CInt
-      }
-  SCUInt {} ->
-    Operations
-      { bitSelect = Just SCUIntBitref,
-        partSelect = Just SCUIntSubref,
-        implicitCasts = [CUInt],
-        methods = allReductions,
-        incrementDecrement = isLValue e,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        arithmeticResult = Just CUInt
-      }
-  SCIntSubref {} ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [CInt],
-        methods = allReductions,
-        incrementDecrement = False,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        arithmeticResult = Just CInt
-      }
-  SCUIntSubref {} ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [CUInt],
-        methods = allReductions,
-        incrementDecrement = False,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        arithmeticResult = Just CUInt
-      }
-  SCSignedSubref { width } ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [],
-        methods = allReductions,
-        incrementDecrement = False,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        arithmeticResult = Just (SCBigInt width)
-      }
-  SCUnsignedSubref { width } ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [],
-        methods = allReductions,
-        incrementDecrement = False,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        arithmeticResult = Just (SCBigUInt width)
-      }
-  SCFixed {} ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [CInt, CDouble],
-        methods = [],
-        incrementDecrement = isLValue e,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        -- FIXME: This is only true for *, +, -, /.
-        --        Other arithmetic happens by implicit conversion to double
-        arithmeticResult = Just thisType
-      }
-  SCUFixed {} ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [CUInt, CDouble],
-        methods = [],
-        incrementDecrement = isLValue e,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        -- FIXME: This is only true for *, +, -, /.
-        --        Other arithmetic happens by implicit conversion to double
-        arithmeticResult = Just thisType
-
-      }
-  SCFxnumSubref {} ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [],
-        methods = allReductions,
-        incrementDecrement = False,
-        constructorInto = allSCNumericTypes,
-        assignTo = allSCNumericTypes,
-        arithmeticResult = Nothing
-
-      }
-  SCIntBitref ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [CBool],
-        methods = [],
-        incrementDecrement = False,
-        constructorInto = allNumericTypes,
-        assignTo = allNumericTypes,
-        arithmeticResult = Nothing
-
-      }
-  SCUIntBitref ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [CBool],
-        methods = [],
-        incrementDecrement = False,
-        constructorInto = allNumericTypes,
-        assignTo = allNumericTypes,
-        arithmeticResult = Nothing
-
-      }
-  SCSignedBitref ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [CBool],
-        methods = [],
-        incrementDecrement = False,
-        constructorInto = allNumericTypes,
-        assignTo = allNumericTypes,
-        arithmeticResult = Nothing
-
-      }
-  SCUnsignedBitref ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [CBool],
-        methods = [],
-        incrementDecrement = False,
-        constructorInto = allNumericTypes,
-        assignTo = allNumericTypes,
-        arithmeticResult = Nothing
-      }
-  SCLogic ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [],
-        methods =
-            [ (Value, CBool),
-              (ToBool, CBool),
-              (Is01, CBool)
-            ],
-        incrementDecrement = False,
-        constructorInto = noTypes,
-        assignTo = noTypes,
-        arithmeticResult = Nothing
-      }
-  SCBV {} ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [CBool],
-        methods =
-          [(Reverse, thisType)]
-          <> allReductions
-          -- Missing lrotate, rrotate because they take arguments
-          <> [(Length, CInt)]
-          <> [(ToInt, CInt)]
-          <> [(ToLong, CInt)]
-          <> [(ToInt64, CInt)]
-          <> [(ToUInt, CUInt)]
-          <> [(ToULong, CUInt)]
-          <> [(ToUInt64, CUInt)]
-          <> [(Is01, CBool)]
-      ,
-        incrementDecrement = False,
-        constructorInto = noTypes,
-        assignTo = noTypes,
-        arithmeticResult = Nothing
-      }
-  SCLV { } ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [CBool],
-        methods =
-          [(Reverse, thisType)]
-          <> allReductions
-          -- Missing lrotate, rrotate because they take arguments
-          <> [(Length, CInt)]
-          <> [(ToInt, CInt)]
-          <> [(ToLong, CInt)]
-          <> [(ToInt64, CInt)]
-          <> [(ToUInt, CUInt)]
-          <> [(ToULong, CUInt)]
-          <> [(ToUInt64, CUInt)]
-          <> [(Is01, CBool)],
-        incrementDecrement = False,
-        constructorInto = noTypes,
-        assignTo = noTypes,
-        arithmeticResult = Nothing
-      }
-  CUInt ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [],
-        methods = [],
-        incrementDecrement = isLValue e,
-        constructorInto = allNumericTypes,
-        assignTo = allNumericTypes,
-        arithmeticResult = Just CUInt
-      }
-  CInt ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [],
-        methods = [],
-        incrementDecrement = isLValue e,
-        constructorInto = allNumericTypes,
-        assignTo = allNumericTypes,
-        arithmeticResult = Just CInt
-      }
-  CDouble ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [],
-        methods = [],
-        incrementDecrement = isLValue e,
-        constructorInto = allNumericTypes,
-        assignTo = allNumericTypes,
-        arithmeticResult = Just CDouble
-      }
-  CBool ->
-    Operations
-      { bitSelect = Nothing,
-        partSelect = Nothing,
-        implicitCasts = [],
-        methods = [],
-        incrementDecrement = False,
-        constructorInto = allNumericTypes { scLogic = True },
-        assignTo = allNumericTypes { scLogic = True },
-        arithmeticResult = Nothing
-      }
+  let thisType = e.annotation
+   in case thisType of
+        SCBigInt{} ->
+          Operations
+            { bitSelect = Just SCSignedBitref
+            , partSelect = Just SCSignedSubref
+            , implicitCasts = []
+            , methods = allReductions
+            , incrementDecrement = isLValue e
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , arithmeticResult = Just thisType
+            }
+        SCBigUInt{} ->
+          Operations
+            { bitSelect = Just SCUnsignedBitref
+            , partSelect = Just SCUnsignedSubref
+            , implicitCasts = []
+            , methods = allReductions
+            , incrementDecrement = isLValue e
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , arithmeticResult = Just thisType
+            }
+        SCInt{} ->
+          Operations
+            { bitSelect = Just SCIntBitref
+            , partSelect = Just SCIntSubref
+            , implicitCasts = [CInt]
+            , methods = allReductions
+            , incrementDecrement = isLValue e
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , arithmeticResult = Just CInt
+            }
+        SCUInt{} ->
+          Operations
+            { bitSelect = Just SCUIntBitref
+            , partSelect = Just SCUIntSubref
+            , implicitCasts = [CUInt]
+            , methods = allReductions
+            , incrementDecrement = isLValue e
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , arithmeticResult = Just CUInt
+            }
+        SCIntSubref{} ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = [CInt]
+            , methods = allReductions
+            , incrementDecrement = False
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , arithmeticResult = Just CInt
+            }
+        SCUIntSubref{} ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = [CUInt]
+            , methods = allReductions
+            , incrementDecrement = False
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , arithmeticResult = Just CUInt
+            }
+        SCSignedSubref{width} ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = []
+            , methods = allReductions
+            , incrementDecrement = False
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , arithmeticResult = Just (SCBigInt width)
+            }
+        SCUnsignedSubref{width} ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = []
+            , methods = allReductions
+            , incrementDecrement = False
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , arithmeticResult = Just (SCBigUInt width)
+            }
+        SCFixed{} ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = [CInt, CDouble]
+            , methods = []
+            , incrementDecrement = isLValue e
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , -- FIXME: This is only true for *, +, -, /.
+              --        Other arithmetic happens by implicit conversion to double
+              arithmeticResult = Just thisType
+            }
+        SCUFixed{} ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = [CUInt, CDouble]
+            , methods = []
+            , incrementDecrement = isLValue e
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , -- FIXME: This is only true for *, +, -, /.
+              --        Other arithmetic happens by implicit conversion to double
+              arithmeticResult = Just thisType
+            }
+        SCFxnumSubref{} ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = []
+            , methods = allReductions
+            , incrementDecrement = False
+            , constructorInto = allSCNumericTypes
+            , assignTo = allSCNumericTypes
+            , arithmeticResult = Nothing
+            }
+        SCIntBitref ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = [CBool]
+            , methods = []
+            , incrementDecrement = False
+            , constructorInto = allNumericTypes
+            , assignTo = allNumericTypes
+            , arithmeticResult = Nothing
+            }
+        SCUIntBitref ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = [CBool]
+            , methods = []
+            , incrementDecrement = False
+            , constructorInto = allNumericTypes
+            , assignTo = allNumericTypes
+            , arithmeticResult = Nothing
+            }
+        SCSignedBitref ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = [CBool]
+            , methods = []
+            , incrementDecrement = False
+            , constructorInto = allNumericTypes
+            , assignTo = allNumericTypes
+            , arithmeticResult = Nothing
+            }
+        SCUnsignedBitref ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = [CBool]
+            , methods = []
+            , incrementDecrement = False
+            , constructorInto = allNumericTypes
+            , assignTo = allNumericTypes
+            , arithmeticResult = Nothing
+            }
+        SCLogic ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = []
+            , methods =
+                [ (Value, CBool)
+                , (ToBool, CBool)
+                , (Is01, CBool)
+                ]
+            , incrementDecrement = False
+            , constructorInto = noTypes
+            , assignTo = noTypes
+            , arithmeticResult = Nothing
+            }
+        SCBV{} ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = [CBool]
+            , methods =
+                [(Reverse, thisType)]
+                  <> allReductions
+                  -- Missing lrotate, rrotate because they take arguments
+                  <> [(Length, CInt)]
+                  <> [(ToInt, CInt)]
+                  <> [(ToLong, CInt)]
+                  <> [(ToInt64, CInt)]
+                  <> [(ToUInt, CUInt)]
+                  <> [(ToULong, CUInt)]
+                  <> [(ToUInt64, CUInt)]
+                  <> [(Is01, CBool)]
+            , incrementDecrement = False
+            , constructorInto = noTypes
+            , assignTo = noTypes
+            , arithmeticResult = Nothing
+            }
+        SCLV{} ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = [CBool]
+            , methods =
+                [(Reverse, thisType)]
+                  <> allReductions
+                  -- Missing lrotate, rrotate because they take arguments
+                  <> [(Length, CInt)]
+                  <> [(ToInt, CInt)]
+                  <> [(ToLong, CInt)]
+                  <> [(ToInt64, CInt)]
+                  <> [(ToUInt, CUInt)]
+                  <> [(ToULong, CUInt)]
+                  <> [(ToUInt64, CUInt)]
+                  <> [(Is01, CBool)]
+            , incrementDecrement = False
+            , constructorInto = noTypes
+            , assignTo = noTypes
+            , arithmeticResult = Nothing
+            }
+        CUInt ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = []
+            , methods = []
+            , incrementDecrement = isLValue e
+            , constructorInto = allNumericTypes
+            , assignTo = allNumericTypes
+            , arithmeticResult = Just CUInt
+            }
+        CInt ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = []
+            , methods = []
+            , incrementDecrement = isLValue e
+            , constructorInto = allNumericTypes
+            , assignTo = allNumericTypes
+            , arithmeticResult = Just CInt
+            }
+        CDouble ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = []
+            , methods = []
+            , incrementDecrement = isLValue e
+            , constructorInto = allNumericTypes
+            , assignTo = allNumericTypes
+            , arithmeticResult = Just CDouble
+            }
+        CBool ->
+          Operations
+            { bitSelect = Nothing
+            , partSelect = Nothing
+            , implicitCasts = []
+            , methods = []
+            , incrementDecrement = False
+            , constructorInto = allNumericTypes{scLogic = True}
+            , assignTo = allNumericTypes{scLogic = True}
+            , arithmeticResult = Nothing
+            }
 
 -- | Give the bitwidth of the type where that exists (i.e. SystemC types with a
 -- width template parameters)
 knownWidth :: SCType -> Maybe Int
 knownWidth (SCInt n) = Just n
 knownWidth (SCBigInt n) = Just n
-knownWidth SCFixed {w} = Just w
+knownWidth SCFixed{w} = Just w
 knownWidth (SCUInt n) = Just n
 knownWidth (SCBigUInt n) = Just n
-knownWidth SCUFixed {w} = Just w
-knownWidth SCFxnumSubref {width} = Just width
-knownWidth SCIntSubref {width} = Just width
-knownWidth SCUIntSubref {width} = Just width
-knownWidth SCSignedSubref {width} = Just width
-knownWidth SCUnsignedSubref {width} = Just width
+knownWidth SCUFixed{w} = Just w
+knownWidth SCFxnumSubref{width} = Just width
+knownWidth SCIntSubref{width} = Just width
+knownWidth SCUIntSubref{width} = Just width
+knownWidth SCSignedSubref{width} = Just width
+knownWidth SCUnsignedSubref{width} = Just width
 knownWidth SCIntBitref = Nothing
 knownWidth SCUIntBitref = Nothing
 knownWidth SCSignedBitref = Nothing
 knownWidth SCUnsignedBitref = Nothing
 knownWidth SCLogic = Nothing
-knownWidth SCBV {width} = Just width
-knownWidth SCLV {width} = Just width
+knownWidth SCBV{width} = Just width
+knownWidth SCLV{width} = Just width
 knownWidth CInt = Nothing
 knownWidth CUInt = Nothing
 knownWidth CDouble = Nothing
 knownWidth CBool = Nothing
 
 data FunctionDeclaration = FunctionDeclaration
-  { returnType :: SCType,
-    name :: Text,
-    args :: [(SCType, Text)],
-    body :: [Statement]
+  { returnType :: SCType
+  , name :: Text
+  , args :: [(SCType, Text)]
+  , body :: [Statement]
   }
   deriving (Generic, Eq, Ord, Show, Data)
 
@@ -683,10 +677,10 @@ instance Pretty Expr where
   pretty (Conditional _ cond tBranch fBranch) =
     "("
       <> ( align . vsep $
-             [ pretty cond,
-               "?" <+> pretty tBranch,
-               ":" <+> pretty fBranch
-             ]
+            [ pretty cond
+            , "?" <+> pretty tBranch
+            , ":" <+> pretty fBranch
+            ]
          )
       <> ")"
   pretty (Variable _ name) =
@@ -728,17 +722,17 @@ instance Pretty SCType where
   pretty (SCBigUInt size) = "sc_dt::sc_biguint<" <> pretty size <> ">"
   pretty (SCFixed w i) = "sc_dt::sc_fixed<" <> pretty w <> "," <> pretty i <> ">"
   pretty (SCUFixed w i) = "sc_dt::sc_ufixed<" <> pretty w <> "," <> pretty i <> ">"
-  pretty SCFxnumSubref {} = "sc_dt::sc_fxnum_subref"
-  pretty SCIntSubref {} = "sc_dt::sc_int_subref"
-  pretty SCUIntSubref {} = "sc_dt::sc_uint_subref"
-  pretty SCSignedSubref {} = "sc_dt::sc_signed_subref"
-  pretty SCUnsignedSubref {} = "sc_dt::sc_unsigned_subref"
+  pretty SCFxnumSubref{} = "sc_dt::sc_fxnum_subref"
+  pretty SCIntSubref{} = "sc_dt::sc_int_subref"
+  pretty SCUIntSubref{} = "sc_dt::sc_uint_subref"
+  pretty SCSignedSubref{} = "sc_dt::sc_signed_subref"
+  pretty SCUnsignedSubref{} = "sc_dt::sc_unsigned_subref"
   pretty SCIntBitref = "sc_dt::sc_int_bitref"
   pretty SCUIntBitref = "sc_dt::sc_uint_bitref"
   pretty SCSignedBitref = "sc_dt::sc_signed_bitref"
   pretty SCUnsignedBitref = "sc_dt::sc_unsigned_bitref"
-  pretty SCBV { width } = "sc_dt::sc_bv<" <> pretty width <> ">"
-  pretty SCLV { width } = "sc_dt::sc_lv<" <> pretty width <> ">"
+  pretty SCBV{width} = "sc_dt::sc_bv<" <> pretty width <> ">"
+  pretty SCLV{width} = "sc_dt::sc_lv<" <> pretty width <> ">"
   pretty SCLogic = "sc_dt::sc_logic"
   pretty CInt = "int"
   pretty CUInt = "unsigned"
@@ -748,17 +742,17 @@ instance Pretty SCType where
 instance Source SCType
 
 instance Pretty FunctionDeclaration where
-  pretty FunctionDeclaration {..} =
+  pretty FunctionDeclaration{..} =
     pretty returnType
       <+> pretty name
-        <> prettyArgs
+      <> prettyArgs
       <+> prettyBlock body
-    where
-      prettyArgs =
-        parens . sep . punctuate comma $
-          [ pretty argType <+> pretty argName
-            | (argType, argName) <- args
-          ]
+   where
+    prettyArgs =
+      parens . sep . punctuate comma $
+        [ pretty argType <+> pretty argName
+        | (argType, argName) <- args
+        ]
 
 instance Source FunctionDeclaration
 

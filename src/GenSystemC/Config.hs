@@ -5,35 +5,35 @@ import SystemC qualified as SC
 type OperationsMod = SC.Expr -> SC.Operations -> SC.Operations
 
 data TransformationFlags = TransformationFlags
-  { castWithAssignment :: Bool,
-    functionalCast :: Bool,
-    range :: Bool,
-    arithmetic :: Bool,
-    useAsCondition :: Bool,
-    bitSelect :: Bool,
-    applyMethod :: Bool,
-    applyUnaryOp :: Bool
+  { castWithAssignment :: Bool
+  , functionalCast :: Bool
+  , range :: Bool
+  , arithmetic :: Bool
+  , useAsCondition :: Bool
+  , bitSelect :: Bool
+  , applyMethod :: Bool
+  , applyUnaryOp :: Bool
   }
 
 allTransformations :: TransformationFlags
 allTransformations =
   TransformationFlags
-    { castWithAssignment = True,
-      functionalCast = True,
-      range = True,
-      arithmetic = True,
-      useAsCondition = True,
-      bitSelect = True,
-      applyMethod = True,
-      applyUnaryOp = True
+    { castWithAssignment = True
+    , functionalCast = True
+    , range = True
+    , arithmetic = True
+    , useAsCondition = True
+    , bitSelect = True
+    , applyMethod = True
+    , applyUnaryOp = True
     }
 
 data GenMods = GenMods
-  { operations :: OperationsMod,
-    transformations :: TransformationFlags
+  { operations :: OperationsMod
+  , transformations :: TransformationFlags
   }
 
 data GenConfig = GenConfig
-  { growSteps :: Int,
-    mods :: GenMods
+  { growSteps :: Int
+  , mods :: GenMods
   }

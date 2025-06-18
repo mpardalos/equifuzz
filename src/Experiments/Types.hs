@@ -17,7 +17,7 @@ import Data.UUID (UUID)
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Optics (makeFieldLabelsNoPrefix)
-import qualified SystemC as SC
+import SystemC qualified as SC
 
 -- | Identifies a sequence of experiments
 newtype ExperimentSequenceId = ExperimentSequenceId {uuid :: UUID}
@@ -40,32 +40,32 @@ data ComparisonValue = ComparisonValue
   deriving (Generic, Show, Eq, Ord)
 
 data Experiment = Experiment
-  { experimentId :: ExperimentId,
-    -- | True if we expect the modules to be equivalent, False if we expect them not to be
-    expectedResult :: Bool,
-    design :: SC.FunctionDeclaration,
-    -- | Used for ordering reductions of the same experiment. Will probably be
-    -- the number of transformations used to generate it
-    size :: Int,
-    -- | Human-readable text describing the design/how it was generated
-    -- E.g. The series of transformations that generated it
-    longDescription :: Text,
-    -- | Value that the design will be compared to
-    comparisonValue :: ComparisonValue
+  { experimentId :: ExperimentId
+  , expectedResult :: Bool
+  -- ^ True if we expect the modules to be equivalent, False if we expect them not to be
+  , design :: SC.FunctionDeclaration
+  , size :: Int
+  -- ^ Used for ordering reductions of the same experiment. Will probably be
+  -- the number of transformations used to generate it
+  , longDescription :: Text
+  -- ^ Human-readable text describing the design/how it was generated
+  -- E.g. The series of transformations that generated it
+  , comparisonValue :: ComparisonValue
+  -- ^ Value that the design will be compared to
   }
   deriving (Generic, Show, Eq, Ord)
 
 data DesignSource = DesignSource
-  { topName :: Text,
-    source :: Text
+  { topName :: Text
+  , source :: Text
   }
   deriving (Show, Eq, Ord)
 
 data ExperimentResult = ExperimentResult
-  { experimentId :: ExperimentId,
-    proofFound :: Maybe Bool,
-    counterExample :: Maybe Text,
-    fullOutput :: Text
+  { experimentId :: ExperimentId
+  , proofFound :: Maybe Bool
+  , counterExample :: Maybe Text
+  , fullOutput :: Text
   }
   deriving (Show, Generic, Eq)
 

@@ -17,13 +17,13 @@ import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments.Types
-import GenSystemC
-  ( GenConfig,
-    GenerateProcess (..),
-    Reducible,
-    genSystemCConstant,
-    generateFromProcess,
-  )
+import GenSystemC (
+  GenConfig,
+  GenerateProcess (..),
+  Reducible,
+  genSystemCConstant,
+  generateFromProcess,
+ )
 import Shelly qualified as Sh
 import SystemC qualified as SC
 
@@ -35,7 +35,7 @@ mkSystemCConstantExperiment cfg =
     evalRandIO (genSystemCConstant cfg)
 
 generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
-generateProcessToExperiment cfg process@GenerateProcess {seed, transformations} = do
+generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} = do
   let design = generateFromProcess cfg "dut" process
 
   (comparisonValue, hasUB, extraInfo) <- simulateSystemCConstant design
@@ -43,19 +43,19 @@ generateProcessToExperiment cfg process@GenerateProcess {seed, transformations} 
   experimentId <- newExperimentId
   return
     Experiment
-      { experimentId,
-        expectedResult = not hasUB, -- Expect a negative result for programs with UB
-        design,
-        size = length transformations,
-        longDescription =
+      { experimentId
+      , expectedResult = not hasUB -- Expect a negative result for programs with UB
+      , design
+      , size = length transformations
+      , longDescription =
           T.unlines . concat $
-            [ [T.pack ("Seed: " ++ show seed)],
-              [ T.pack (show n) <> " " <> T.pack (show t)
-                | (n, t) <- zip [0 :: Int ..] transformations
-              ],
-              [extraInfo]
-            ],
-        comparisonValue
+            [ [T.pack ("Seed: " ++ show seed)]
+            , [ T.pack (show n) <> " " <> T.pack (show t)
+              | (n, t) <- zip [0 :: Int ..] transformations
+              ]
+            , [extraInfo]
+            ]
+      , comparisonValue
       }
 
 -- | Run the SystemC function and return its output represented as text of a
@@ -65,7 +65,7 @@ generateProcessToExperiment cfg process@GenerateProcess {seed, transformations} 
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
 simulateSystemCConstant :: SC.FunctionDeclaration -> IO (ComparisonValue, Bool, Text)
-simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shelly . Sh.silently $ do
+simulateSystemCConstant decl@SC.FunctionDeclaration{returnType, name} = Sh.shelly . Sh.silently $ do
   let widthExprOrWidth :: Either Text Int = case returnType of
         SC.SCInt n -> Right n
         SC.SCUInt n -> Right n
@@ -76,11 +76,11 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
         SC.SCLogic -> Right 1
         SC.SCBV n -> Right n
         SC.SCLV n -> Right n
-        SC.SCFxnumSubref {} -> Left [i|#{name}().length()|]
-        SC.SCIntSubref {} -> Left [i|#{name}().length()|]
-        SC.SCUIntSubref {} -> Left [i|#{name}().length()|]
-        SC.SCSignedSubref {} -> Left [i|#{name}().length()|]
-        SC.SCUnsignedSubref {} -> Left [i|#{name}().length()|]
+        SC.SCFxnumSubref{} -> Left [i|#{name}().length()|]
+        SC.SCIntSubref{} -> Left [i|#{name}().length()|]
+        SC.SCUIntSubref{} -> Left [i|#{name}().length()|]
+        SC.SCSignedSubref{} -> Left [i|#{name}().length()|]
+        SC.SCUnsignedSubref{} -> Left [i|#{name}().length()|]
         SC.SCIntBitref -> Right 1
         SC.SCUIntBitref -> Right 1
         SC.SCSignedBitref -> Right 1
@@ -105,24 +105,24 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
          |]
 
   let showValue :: Text = case returnType of
-        SC.SCInt {} -> scToString
-        SC.SCUInt {} -> scToString
-        SC.SCBigInt {} -> scToString
-        SC.SCBigUInt {} -> scToString
-        SC.SCFixed {} -> scToString
-        SC.SCUFixed {} -> scToString
-        SC.SCFxnumSubref {} -> scToString
-        SC.SCIntSubref {} -> scToString
-        SC.SCUIntSubref {} -> scToString
-        SC.SCSignedSubref {} -> scToString
-        SC.SCUnsignedSubref {} -> scToString
+        SC.SCInt{} -> scToString
+        SC.SCUInt{} -> scToString
+        SC.SCBigInt{} -> scToString
+        SC.SCBigUInt{} -> scToString
+        SC.SCFixed{} -> scToString
+        SC.SCUFixed{} -> scToString
+        SC.SCFxnumSubref{} -> scToString
+        SC.SCIntSubref{} -> scToString
+        SC.SCUIntSubref{} -> scToString
+        SC.SCSignedSubref{} -> scToString
+        SC.SCUnsignedSubref{} -> scToString
         SC.SCIntBitref -> boolToString
         SC.SCUIntBitref -> boolToString
         SC.SCSignedBitref -> boolToString
         SC.SCUnsignedBitref -> boolToString
-        SC.SCLogic -> scPrintToString 
-        SC.SCBV {} -> scToString
-        SC.SCLV {} -> scToString
+        SC.SCLogic -> scPrintToString
+        SC.SCBV{} -> scToString
+        SC.SCLV{} -> scToString
         SC.CUInt -> bitsetToString
         SC.CInt -> bitsetToString
         SC.CDouble -> doubleToString
@@ -164,7 +164,7 @@ simulateSystemCConstant decl@SC.FunctionDeclaration {returnType, name} = Sh.shel
   let value = T.replace "." "" reportedValue
 
   return
-    ( ComparisonValue width (T.pack (show width) <> "'b" <> value),
-      hasUndefinedBehaviour,
-      extraInfo
+    ( ComparisonValue width (T.pack (show width) <> "'b" <> value)
+    , hasUndefinedBehaviour
+    , extraInfo
     )

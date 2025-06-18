@@ -1,10 +1,10 @@
 {-# LANGUAGE QuasiQuotes #-}
 
-module Experiments
-  ( module Experiments.Generators,
-    module Experiments.Types,
-    saveExperiment
-  )
+module Experiments (
+  module Experiments.Generators,
+  module Experiments.Types,
+  saveExperiment,
+)
 where
 
 import Data.Maybe (isJust)

@@ -20,13 +20,13 @@ import Shelly qualified as Sh
 import SystemC qualified as SC
 
 runSLEC :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentResult
-runSLEC sshOpts mSourcePath Experiment {experimentId, design, comparisonValue} = Sh.shelly . Sh.silently $ do
+runSLEC sshOpts mSourcePath Experiment{experimentId, design, comparisonValue} = Sh.shelly . Sh.silently $ do
   createRemoteExperimentDir
     sshOpts
     remoteExperimentDir
-    [ (specFilename, wrappedProgram),
-      (implFilename, implProgram),
-      ("compare.tcl", compareScript)
+    [ (specFilename, wrappedProgram)
+    , (implFilename, implProgram)
+    , ("compare.tcl", compareScript)
     ]
 
   fullOutput <- runSSHCommand sshOpts sshCommand
@@ -43,38 +43,37 @@ runSLEC sshOpts mSourcePath Experiment {experimentId, design, comparisonValue} =
         (False, True) -> Just False
         _ -> Nothing
 
-  return $ ExperimentResult {proofFound, counterExample = Nothing, fullOutput, experimentId}
-  where
-    remoteDir :: Text
-    remoteDir = "equifuzz_slec_experiment"
+  return $ ExperimentResult{proofFound, counterExample = Nothing, fullOutput, experimentId}
+ where
+  remoteDir :: Text
+  remoteDir = "equifuzz_slec_experiment"
 
-    remoteExperimentDir :: Text
-    remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
+  remoteExperimentDir :: Text
+  remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
 
-    specFilename :: Text = "spec.cpp"
-    implFilename :: Text = "impl.sv"
+  specFilename :: Text = "spec.cpp"
+  implFilename :: Text = "impl.sv"
 
-    sourceCommand :: Text
-    sourceCommand = case mSourcePath of
-      Just sourcePath -> [i|source #{sourcePath}|]
-      Nothing -> [i|echo 'Not sourcing anything'|]
+  sourceCommand :: Text
+  sourceCommand = case mSourcePath of
+    Just sourcePath -> [i|source #{sourcePath}|]
+    Nothing -> [i|echo 'Not sourcing anything'|]
 
+  sshCommand :: Text
+  sshCommand =
+    [i|cd #{remoteExperimentDir} && pwd && ls -ltr && #{sourceCommand} && slec compare.tcl; echo '-- slec.log --'; cat calypto/slec.log; echo 'Done' |]
 
-    sshCommand :: Text
-    sshCommand =
-      [i|cd #{remoteExperimentDir} && pwd && ls -ltr && #{sourceCommand} && slec compare.tcl; echo '-- slec.log --'; cat calypto/slec.log; echo 'Done' |]
-
-    implProgram :: Text
-    implProgram =
-      [__i|
+  implProgram :: Text
+  implProgram =
+    [__i|
           module top (output [#{comparisonValue ^. #width - 1}:0] out);
                 assign out = #{comparisonValue ^. #literal};
           endmodule
           |]
 
-    wrappedProgram :: Text
-    wrappedProgram =
-      [__i|
+  wrappedProgram :: Text
+  wrappedProgram =
+    [__i|
           \#define SC_INCLUDE_FX
           \#include <systemc.h>
 
@@ -93,15 +92,15 @@ runSLEC sshOpts mSourcePath Experiment {experimentId, design, comparisonValue} =
           };
           |]
 
-    outType :: Text
-    outType = SC.genSource design.returnType
+  outType :: Text
+  outType = SC.genSource design.returnType
 
-    inputNames :: Text
-    inputNames = T.intercalate ", " [name | (_, name) <- design.args]
+  inputNames :: Text
+  inputNames = T.intercalate ", " [name | (_, name) <- design.args]
 
-    compareScript :: Text
-    compareScript =
-      [__i|
+  compareScript :: Text
+  compareScript =
+    [__i|
         build_design -spec #{specFilename}
         build_design -impl #{implFilename}
         verify

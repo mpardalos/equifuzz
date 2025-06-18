@@ -34,14 +34,14 @@ import Data.Text.Lazy qualified as LT
 import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
-import Experiments
-  ( Experiment (..),
-    ExperimentId (..),
-    ExperimentProgress (..),
-    ExperimentResult (..),
-    ExperimentSequenceId (..),
-    ComparisonValue(..)
-  )
+import Experiments (
+  ComparisonValue (..),
+  Experiment (..),
+  ExperimentId (..),
+  ExperimentProgress (..),
+  ExperimentResult (..),
+  ExperimentSequenceId (..),
+ )
 import GHC.Generics (Generic)
 import Meta
 import Network.HTTP.Types (status200)
@@ -62,26 +62,26 @@ import Util (diffTimeHMSFormat, foreverThread, modifyMVarPure_, mwhen, whenJust,
 import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, middleware, next, param, params, raw, scotty, setHeader, status, stream)
 
 data ExperimentSequenceInfo = ExperimentSequenceInfo
-  { sequenceId :: ExperimentSequenceId,
-    experiments :: Map ExperimentId ExperimentInfo
+  { sequenceId :: ExperimentSequenceId
+  , experiments :: Map ExperimentId ExperimentInfo
   }
   deriving (Generic, Eq, Show)
 
 data ExperimentInfo = ExperimentInfo
-  { experiment :: Experiment,
-    result :: Maybe ExperimentResult
+  { experiment :: Experiment
+  , result :: Maybe ExperimentResult
   }
   deriving (Generic, Eq, Show)
 
 data WebUIState = WebUIState
-  { runningExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo,
-    interestingExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo,
-    uninterestingExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo,
-    experimentsSem :: Semaphore,
-    totalRunCount :: Int,
-    totalRunCountSem :: Semaphore,
-    liveUpdates :: Bool,
-    runTime :: NominalDiffTime
+  { runningExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo
+  , interestingExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo
+  , uninterestingExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo
+  , experimentsSem :: Semaphore
+  , totalRunCount :: Int
+  , totalRunCountSem :: Semaphore
+  , liveUpdates :: Bool
+  , runTime :: NominalDiffTime
   }
   deriving (Generic)
 
@@ -91,14 +91,14 @@ newWebUIState = do
   totalRunCountSem <- atomically newSemaphore
   return
     WebUIState
-      { interestingExperiments = Map.empty,
-        runningExperiments = Map.empty,
-        uninterestingExperiments = Map.empty,
-        experimentsSem,
-        totalRunCount = 0,
-        totalRunCountSem,
-        liveUpdates = True,
-        runTime = 0
+      { interestingExperiments = Map.empty
+      , runningExperiments = Map.empty
+      , uninterestingExperiments = Map.empty
+      , experimentsSem
+      , totalRunCount = 0
+      , totalRunCountSem
+      , liveUpdates = True
+      , runTime = 0
       }
 
 at2 :: ExperimentSequenceId -> ExperimentId -> Lens' (Map ExperimentSequenceId ExperimentSequenceInfo) (Maybe ExperimentInfo)
@@ -118,7 +118,7 @@ handleProgress stateVar progress = do
       -- FIXME: Report error if experiment still has active runs
       mExperiment <- use (#runningExperiments % at2 sequenceId result.experimentId)
       whenJust mExperiment $ \runningExperiment -> do
-        let completedExperiment = runningExperiment {result = Just result}
+        let completedExperiment = runningExperiment{result = Just result}
         if isInteresting completedExperiment
           then #interestingExperiments % at2 sequenceId result.experimentId .= Just completedExperiment
           else #uninterestingExperiments % at2 sequenceId result.experimentId .= Just completedExperiment
@@ -159,9 +159,9 @@ scottyServer stateVar = scotty 8888 $ do
 
     let mExperimentInfo :: Maybe ExperimentInfo =
           asum . map (view (at2 sequenceId experimentId)) $
-            [ state.runningExperiments,
-              state.interestingExperiments,
-              state.uninterestingExperiments
+            [ state.runningExperiments
+            , state.interestingExperiments
+            , state.uninterestingExperiments
             ]
 
     case mExperimentInfo of
@@ -176,7 +176,7 @@ scottyServer stateVar = scotty 8888 $ do
     setHeader "Content-Type" "text/event-stream"
     stream . eventStreamFromIO . atomically $ do
       waitForSemaphore state.experimentsSem
-      pure [EventStreamEvent {event = "experiment-list", data_ = "update"}]
+      pure [EventStreamEvent{event = "experiment-list", data_ = "update"}]
 
   get "/experiments" $ do
     whenM (paramExists "toggle-updates") $
@@ -253,13 +253,13 @@ experimentInfoPage state info =
 experimentInfoBlock :: ExperimentInfo -> Html
 experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
   infoBoxNoTitle . table $
-    [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)],
-      ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"],
-      ["Comparison Value", H.text info.experiment.comparisonValue.literal],
-      case info.result of
+    [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)]
+    , ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"]
+    , ["Comparison Value", H.text info.experiment.comparisonValue.literal]
+    , case info.result of
         Just result ->
-          [ "Actual Result",
-            case result.proofFound of
+          [ "Actual Result"
+          , case result.proofFound of
               Just True -> "Equivalent"
               Just False -> "Non-equivalent"
               Nothing -> "Inconclusive"
@@ -293,78 +293,79 @@ experimentList state = H.div
       experimentSubList "Interesting" state.interestingExperiments
       experimentSubList "Uninteresting" state.uninterestingExperiments
     table
-      [ ["Total runs", H.toHtml (show state.totalRunCount)],
-        ["Running time", H.toHtml (diffTimeHMSFormat state.runTime)],
-        [ "Amortised experiment time",
-          H.toHtml @String (printf "%.1fs" amortisedExperimentTime)
-        ],
-        ["Live Updates", toggleUpdatesButton]
+      [ ["Total runs", H.toHtml (show state.totalRunCount)]
+      , ["Running time", H.toHtml (diffTimeHMSFormat state.runTime)]
+      ,
+        [ "Amortised experiment time"
+        , H.toHtml @String (printf "%.1fs" amortisedExperimentTime)
+        ]
+      , ["Live Updates", toggleUpdatesButton]
       ]
     pruneUninterestingButton
-  where
-    amortisedExperimentTime :: Float
-    amortisedExperimentTime
-      | state.totalRunCount == 0 = 0
-      | otherwise =
-          realToFrac
-            (nominalDiffTimeToSeconds state.runTime / fromIntegral state.totalRunCount)
+ where
+  amortisedExperimentTime :: Float
+  amortisedExperimentTime
+    | state.totalRunCount == 0 = 0
+    | otherwise =
+        realToFrac
+          (nominalDiffTimeToSeconds state.runTime / fromIntegral state.totalRunCount)
 
-    toggleUpdatesButton =
-      H.button
-        H.! hxGet "/experiments?toggle-updates=1"
-        H.! hxTarget "closest #experiment-list-area"
-        H.! hxSwap "outerHTML"
-        $ if state.liveUpdates
-          then "ON"
-          else "OFF"
+  toggleUpdatesButton =
+    H.button
+      H.! hxGet "/experiments?toggle-updates=1"
+      H.! hxTarget "closest #experiment-list-area"
+      H.! hxSwap "outerHTML"
+      $ if state.liveUpdates
+        then "ON"
+        else "OFF"
 
-    pruneUninterestingButton =
-      H.button
-        H.! hxGet "/experiments?prune-uninteresting=1"
-        H.! hxTarget "closest #experiment-list-area"
-        H.! hxSwap "outerHTML"
-        $ "Prune uninteresting"
+  pruneUninterestingButton =
+    H.button
+      H.! hxGet "/experiments?prune-uninteresting=1"
+      H.! hxTarget "closest #experiment-list-area"
+      H.! hxSwap "outerHTML"
+      $ "Prune uninteresting"
 
-    experimentSubList title experiments =
-      infoBoxWithSideTitle
-        title
-        (H.toHtml (length experiments))
-        (mapM_ experimentSequenceList experiments)
+  experimentSubList title experiments =
+    infoBoxWithSideTitle
+      title
+      (H.toHtml (length experiments))
+      (mapM_ experimentSequenceList experiments)
 
-    experimentSequenceList :: ExperimentSequenceInfo -> Html
-    experimentSequenceList sequenceInfo =
-      let items =
-            sort
-              [ (size, experimentId)
-                | ExperimentInfo {experiment = Experiment {size, experimentId}} <-
-                    Map.elems sequenceInfo.experiments
-              ]
-       in H.div H.! A.class_ "experiment-list-item" $ do
-            H.span H.! A.class_ "experiment-list-uuid" $ do
-              H.toHtml (show sequenceInfo.sequenceId.uuid)
+  experimentSequenceList :: ExperimentSequenceInfo -> Html
+  experimentSequenceList sequenceInfo =
+    let items =
+          sort
+            [ (size, experimentId)
+            | ExperimentInfo{experiment = Experiment{size, experimentId}} <-
+                Map.elems sequenceInfo.experiments
+            ]
+     in H.div H.! A.class_ "experiment-list-item" $ do
+          H.span H.! A.class_ "experiment-list-uuid" $ do
+            H.toHtml (show sequenceInfo.sequenceId.uuid)
 
-              whenJust (headMay items) $ \(size, experimentId) ->
-                H.div $
-                  experimentLink sequenceInfo.sequenceId experimentId size
+            whenJust (headMay items) $ \(size, experimentId) ->
+              H.div $
+                experimentLink sequenceInfo.sequenceId experimentId size
 
-              when (length items > 1) $
-                H.details $ do
-                  H.summary "Other runs"
-                  H.ul H.! A.class_ "experiment-list-run-list" $ do
-                    sequence_
-                      [ H.li (experimentLink sequenceInfo.sequenceId experimentId size)
-                        | (size, experimentId) <- tailSafe items
-                      ]
+            when (length items > 1) $
+              H.details $ do
+                H.summary "Other runs"
+                H.ul H.! A.class_ "experiment-list-run-list" $ do
+                  sequence_
+                    [ H.li (experimentLink sequenceInfo.sequenceId experimentId size)
+                    | (size, experimentId) <- tailSafe items
+                    ]
 
-    experimentLink :: ExperimentSequenceId -> ExperimentId -> Int -> Html
-    experimentLink sequenceId experimentId size =
-      H.a
-        H.! hxTarget "#run-info"
-        H.! hxSwap "outerHTML"
-        H.! hxPushUrl "true"
-        H.! hxGet [i|/experiments/#{sequenceId ^. #uuid}/#{experimentId ^. #uuid}|]
-        H.! A.href [i|/experiments/#{sequenceId ^. #uuid}/#{experimentId ^. #uuid}|]
-        $ H.toHtml ("Size " <> show size)
+  experimentLink :: ExperimentSequenceId -> ExperimentId -> Int -> Html
+  experimentLink sequenceId experimentId size =
+    H.a
+      H.! hxTarget "#run-info"
+      H.! hxSwap "outerHTML"
+      H.! hxPushUrl "true"
+      H.! hxGet [i|/experiments/#{sequenceId ^. #uuid}/#{experimentId ^. #uuid}|]
+      H.! A.href [i|/experiments/#{sequenceId ^. #uuid}/#{experimentId ^. #uuid}|]
+      $ H.toHtml ("Size " <> show size)
 
 table :: [[Html]] -> Html
 table rows = H.table $
@@ -411,24 +412,24 @@ instance Parsable UUIDParam where
 type EventStream = StreamingBody
 
 data EventStreamEvent = EventStreamEvent
-  { event :: LB.ByteString,
-    data_ :: LB.ByteString
+  { event :: LB.ByteString
+  , data_ :: LB.ByteString
   }
 
 eventStreamEventToBuilder :: EventStreamEvent -> Binary.Builder
-eventStreamEventToBuilder EventStreamEvent {event, data_} =
+eventStreamEventToBuilder EventStreamEvent{event, data_} =
   Binary.fromLazyByteString eventBS
-  where
-    eventValue :: LB.ByteString
-    eventValue = eventEncode "event: " event
+ where
+  eventValue :: LB.ByteString
+  eventValue = eventEncode "event: " event
 
-    eventData :: LB.ByteString
-    eventData = eventEncode "data: " data_
+  eventData :: LB.ByteString
+  eventData = eventEncode "data: " data_
 
-    eventEncode :: LB.ByteString -> LB.ByteString -> LB.ByteString
-    eventEncode label bs = LB.unlines [label <> line | line <- LB.lines bs]
+  eventEncode :: LB.ByteString -> LB.ByteString -> LB.ByteString
+  eventEncode label bs = LB.unlines [label <> line | line <- LB.lines bs]
 
-    eventBS = eventValue <> eventData <> "\n"
+  eventBS = eventValue <> eventData <> "\n"
 
 eventStreamFromIO :: IO [EventStreamEvent] -> EventStream
 eventStreamFromIO produceEvent send flush = do

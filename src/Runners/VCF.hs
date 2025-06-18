@@ -14,7 +14,7 @@ import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments.Types
-import Optics ((^.), (%))
+import Optics ((%), (^.))
 import Runners.Types (SSHConnectionTarget (..))
 import Runners.Util (createRemoteExperimentDir, runSSHCommand)
 import Shelly qualified as Sh
@@ -22,12 +22,12 @@ import SystemC qualified as SC
 
 -- | Run an experiment using VC Formal on a remote host
 runVCFormal :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentResult
-runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = Sh.shelly . Sh.silently $ do
+runVCFormal sshOpts mSourcePath experiment@Experiment{experimentId, design} = Sh.shelly . Sh.silently $ do
   createRemoteExperimentDir
     sshOpts
     remoteExperimentDir
-    [ (filename, wrappedProgram),
-      ("compare.tcl", compareScript)
+    [ (filename, wrappedProgram)
+    , ("compare.tcl", compareScript)
     ]
 
   fullOutput <- runSSHCommand sshOpts sshCommand
@@ -53,26 +53,26 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
         (False, True) -> Just False
         _ -> Nothing
 
-  return $ ExperimentResult {proofFound, counterExample = Just counterExample, fullOutput, experimentId}
-  where
-    remoteDir :: Text
-    remoteDir = "equifuzz_vcf_experiment"
+  return $ ExperimentResult{proofFound, counterExample = Just counterExample, fullOutput, experimentId}
+ where
+  remoteDir :: Text
+  remoteDir = "equifuzz_vcf_experiment"
 
-    remoteExperimentDir :: Text
-    remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
+  remoteExperimentDir :: Text
+  remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
 
-    filename :: Text = "impl.cpp"
+  filename :: Text = "impl.cpp"
 
-    topName :: Text = "impl"
+  topName :: Text = "impl"
 
-    sshCommand :: Text
-    sshCommand = case mSourcePath of
-      Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
-      Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && vcf -fmode DPV -f compare.tcl|]
+  sshCommand :: Text
+  sshCommand = case mSourcePath of
+    Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
+    Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && vcf -fmode DPV -f compare.tcl|]
 
-    wrappedProgram :: Text
-    wrappedProgram =
-      [__i|
+  wrappedProgram :: Text
+  wrappedProgram =
+    [__i|
           #{SC.includeHeader}
 
           #{SC.genSource design}
@@ -80,9 +80,9 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
           #{systemCHectorWrapper topName design}
           |]
 
-    compareScript :: Text
-    compareScript =
-      [__i|
+  compareScript :: Text
+  compareScript =
+    [__i|
                 set_custom_solve_script "orch_multipliers"
                 set_user_assumes_lemmas_procedure "miter"
 
@@ -105,8 +105,8 @@ runVCFormal sshOpts mSourcePath experiment@Experiment {experimentId, design} = S
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper
-systemCHectorWrapper ::  Text -> SC.FunctionDeclaration -> Text
-systemCHectorWrapper wrapperName SC.FunctionDeclaration {returnType, args, name} =
+systemCHectorWrapper :: Text -> SC.FunctionDeclaration -> Text
+systemCHectorWrapper wrapperName SC.FunctionDeclaration{returnType, args, name} =
   [__i|
       \#include<Hector.h>
 
@@ -123,25 +123,25 @@ systemCHectorWrapper wrapperName SC.FunctionDeclaration {returnType, args, name}
       }
 
       |]
-  where
-    inputDeclarations :: Text
-    inputDeclarations =
-      T.intercalate
-        "\n    "
-        [ SC.genSource argType <> " " <> argName <> ";"
-          | (argType, argName) <- args
-        ]
+ where
+  inputDeclarations :: Text
+  inputDeclarations =
+    T.intercalate
+      "\n    "
+      [ SC.genSource argType <> " " <> argName <> ";"
+      | (argType, argName) <- args
+      ]
 
-    outType :: Text
-    outType = SC.genSource returnType
+  outType :: Text
+  outType = SC.genSource returnType
 
-    hectorRegisterInputs :: Text
-    hectorRegisterInputs =
-      T.intercalate
-        "\n    "
-        [ "Hector::registerInput(\"" <> argName <> "\", " <> argName <> ");"
-          | (_, argName) <- args
-        ]
+  hectorRegisterInputs :: Text
+  hectorRegisterInputs =
+    T.intercalate
+      "\n    "
+      [ "Hector::registerInput(\"" <> argName <> "\", " <> argName <> ");"
+      | (_, argName) <- args
+      ]
 
-    argList :: Text
-    argList = T.intercalate ", " [argName | (_, argName) <- args]
+  argList :: Text
+  argList = T.intercalate ", " [argName | (_, argName) <- args]

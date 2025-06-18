@@ -18,9 +18,9 @@ newtype ExperimentRunner = ExperimentRunner
   }
 
 data SSHConnectionTarget = SSHConnectionTarget
-  { host :: Text,
-    username :: Text,
-    password :: Maybe Text
+  { host :: Text
+  , username :: Text
+  , password :: Maybe Text
   }
 
 makeFieldLabelsNoPrefix ''SSHConnectionTarget

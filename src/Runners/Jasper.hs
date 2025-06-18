@@ -20,13 +20,13 @@ import Shelly qualified as Sh
 import SystemC qualified as SC
 
 runJasper :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentResult
-runJasper sshOpts mSourcePath Experiment {experimentId, design, comparisonValue} = Sh.shelly . Sh.silently $ do
+runJasper sshOpts mSourcePath Experiment{experimentId, design, comparisonValue} = Sh.shelly . Sh.silently $ do
   createRemoteExperimentDir
     sshOpts
     remoteExperimentDir
-    [ (specFilename, wrappedProgram),
-      (implFilename, implProgram),
-      ("compare.tcl", compareScript)
+    [ (specFilename, wrappedProgram)
+    , (implFilename, implProgram)
+    , ("compare.tcl", compareScript)
     ]
 
   fullOutput <- runSSHCommand sshOpts sshCommand
@@ -43,33 +43,33 @@ runJasper sshOpts mSourcePath Experiment {experimentId, design, comparisonValue}
         (False, True) -> Just False
         _ -> Nothing
 
-  return $ ExperimentResult {proofFound, counterExample = Nothing, fullOutput, experimentId}
-  where
-    remoteDir :: Text
-    remoteDir = "equifuzz_jasper_experiment"
+  return $ ExperimentResult{proofFound, counterExample = Nothing, fullOutput, experimentId}
+ where
+  remoteDir :: Text
+  remoteDir = "equifuzz_jasper_experiment"
 
-    remoteExperimentDir :: Text
-    remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
+  remoteExperimentDir :: Text
+  remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
 
-    specFilename :: Text = "spec.cpp"
-    implFilename :: Text = "impl.sv"
+  specFilename :: Text = "spec.cpp"
+  implFilename :: Text = "impl.sv"
 
-    sshCommand :: Text
-    sshCommand = case mSourcePath of
-      Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && source #{sourcePath} && jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl; echo 'Done'|]
-      Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl; echo 'Done'|]
+  sshCommand :: Text
+  sshCommand = case mSourcePath of
+    Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && source #{sourcePath} && jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl; echo 'Done'|]
+    Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl; echo 'Done'|]
 
-    implProgram :: Text
-    implProgram =
-      [__i|
+  implProgram :: Text
+  implProgram =
+    [__i|
           module top (output [#{comparisonValue ^. #width - 1}:0] out);
                 assign out = #{comparisonValue ^. #literal};
           endmodule
           |]
 
-    wrappedProgram :: Text
-    wrappedProgram =
-      [__i|
+  wrappedProgram :: Text
+  wrappedProgram =
+    [__i|
           \#include <systemc.h>
           \#include <jasperc.h>
 
@@ -88,29 +88,29 @@ runJasper sshOpts mSourcePath Experiment {experimentId, design, comparisonValue}
           }
           |]
 
-    outType :: Text
-    outType = SC.genSource design.returnType
+  outType :: Text
+  outType = SC.genSource design.returnType
 
-    declareInputs :: Text
-    declareInputs =
-      T.unlines
-        [ SC.genSource t <> " " <> name <> ";"
-          | (t, name) <- design.args
-        ]
+  declareInputs :: Text
+  declareInputs =
+    T.unlines
+      [ SC.genSource t <> " " <> name <> ";"
+      | (t, name) <- design.args
+      ]
 
-    registerInputs :: Text
-    registerInputs =
-      T.unlines
-        [ "JASPER_INPUT("<> name <> ");"
-          | (_, name) <- design.args
-        ]
+  registerInputs :: Text
+  registerInputs =
+    T.unlines
+      [ "JASPER_INPUT(" <> name <> ");"
+      | (_, name) <- design.args
+      ]
 
-    inputNames :: Text
-    inputNames = T.intercalate ", " [name | (_, name) <- design.args]
+  inputNames :: Text
+  inputNames = T.intercalate ", " [name | (_, name) <- design.args]
 
-    compareScript :: Text
-    compareScript =
-      [__i|
+  compareScript :: Text
+  compareScript =
+    [__i|
         check_c2rtl -set_dynamic_pruning -spec; check_c2rtl -compile -spec #{specFilename}
         check_c2rtl -analyze -imp -sv #{implFilename} ;
         check_c2rtl -elaborate -imp -top top

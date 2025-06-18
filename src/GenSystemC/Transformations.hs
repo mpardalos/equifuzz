@@ -1,26 +1,26 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE CPP #-}
 
-module GenSystemC.Transformations
-  ( -- * Transformations
-    Transformation (..),
+module GenSystemC.Transformations (
+  -- * Transformations
+  Transformation (..),
 
-    -- * Applying transformations
-    applyTransformation,
+  -- * Applying transformations
+  applyTransformation,
 
-    -- ** Monad for applying transformations
-    MonadBuild,
-    BuildOutState (..),
-    initBuildOutState,
+  -- ** Monad for applying transformations
+  MonadBuild,
+  BuildOutState (..),
+  initBuildOutState,
 
-    -- * Generating transformations
-    randomTransformationFor,
-    seedExpr,
-  )
+  -- * Generating transformations
+  randomTransformationFor,
+  seedExpr,
+)
 where
 
 import Control.Monad (guard, join, when)
@@ -32,15 +32,17 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics (use)
 import Optics.State.Operators ((%=), (.=))
+
 -- Import modOperations cfg as SCUnconfigured.operations, because we need to make
 -- sure to run its result through GenConfig.modOperations, and never use it
 -- directly
+
+import Data.List (intersect)
+import Data.Map qualified as Map
+import GenSystemC.Config (GenConfig (..), GenMods (..), TransformationFlags (..))
 import SystemC qualified as SC hiding (operations)
 import SystemC qualified as SCUnconfigured (operations)
-import Data.List (intersect)
-import GenSystemC.Config (GenConfig(..), GenMods(..), TransformationFlags(..))
 import Util (is)
-import qualified Data.Map as Map
 
 data Transformation
   = CastWithAssignment SC.SCType
@@ -53,22 +55,21 @@ data Transformation
   | ApplyUnaryOp SC.UnaryOp
   deriving stock (Show, Generic)
 
-
 type MonadBuild m = MonadState BuildOutState m
 
 data BuildOutState = BuildOutState
-  { statements :: [SC.Statement],
-    headExpr :: SC.Expr,
-    nextVarIdx :: Int
+  { statements :: [SC.Statement]
+  , headExpr :: SC.Expr
+  , nextVarIdx :: Int
   }
   deriving (Generic)
 
 initBuildOutState :: SC.Expr -> BuildOutState
 initBuildOutState headExpr =
   BuildOutState
-    { statements = [],
-      headExpr,
-      nextVarIdx = 0
+    { statements = []
+    , headExpr
+    , nextVarIdx = 0
     }
 
 newVar :: MonadBuild m => m Text
@@ -81,55 +82,55 @@ assignAllowed :: GenConfig -> SC.Expr -> SC.SCType -> Bool
 assignAllowed cfg expr toType =
   let flags = (modOperations cfg expr).assignTo
    in case toType of
-    SC.SCInt{} -> flags.scInt
-    SC.SCUInt{} -> flags.scUInt
-    SC.SCBigInt{} -> flags.scBigInt
-    SC.SCBigUInt{} -> flags.scBigUInt
-    SC.SCFixed{} -> flags.scFixed
-    SC.SCUFixed{} -> flags.scUFixed
-    SC.SCFxnumSubref{} -> flags.scFxnumSubref
-    SC.SCIntSubref{} -> flags.scIntSubref
-    SC.SCUIntSubref{} -> flags.scUIntSubref
-    SC.SCSignedSubref{} -> flags.scSignedSubref
-    SC.SCUnsignedSubref{} -> flags.scUnsignedSubref
-    SC.SCIntBitref -> flags.scIntBitref
-    SC.SCUIntBitref -> flags.scUIntBitref
-    SC.SCSignedBitref -> flags.scSignedBitref
-    SC.SCUnsignedBitref -> flags.scUnsignedBitref
-    SC.SCLogic -> flags.scLogic
-    SC.SCBV{} -> flags.scBV
-    SC.SCLV{} -> flags.scLV
-    SC.CUInt -> flags.cUInt
-    SC.CInt -> flags.cInt
-    SC.CDouble -> flags.cDouble
-    SC.CBool -> flags.cBool
+        SC.SCInt{} -> flags.scInt
+        SC.SCUInt{} -> flags.scUInt
+        SC.SCBigInt{} -> flags.scBigInt
+        SC.SCBigUInt{} -> flags.scBigUInt
+        SC.SCFixed{} -> flags.scFixed
+        SC.SCUFixed{} -> flags.scUFixed
+        SC.SCFxnumSubref{} -> flags.scFxnumSubref
+        SC.SCIntSubref{} -> flags.scIntSubref
+        SC.SCUIntSubref{} -> flags.scUIntSubref
+        SC.SCSignedSubref{} -> flags.scSignedSubref
+        SC.SCUnsignedSubref{} -> flags.scUnsignedSubref
+        SC.SCIntBitref -> flags.scIntBitref
+        SC.SCUIntBitref -> flags.scUIntBitref
+        SC.SCSignedBitref -> flags.scSignedBitref
+        SC.SCUnsignedBitref -> flags.scUnsignedBitref
+        SC.SCLogic -> flags.scLogic
+        SC.SCBV{} -> flags.scBV
+        SC.SCLV{} -> flags.scLV
+        SC.CUInt -> flags.cUInt
+        SC.CInt -> flags.cInt
+        SC.CDouble -> flags.cDouble
+        SC.CBool -> flags.cBool
 
 castAllowed :: GenConfig -> SC.Expr -> SC.SCType -> Bool
 castAllowed cfg expr toType =
   let flags = (modOperations cfg expr).constructorInto
    in case toType of
-    SC.SCInt{} -> flags.scInt
-    SC.SCUInt{} -> flags.scUInt
-    SC.SCBigInt{} -> flags.scBigInt
-    SC.SCBigUInt{} -> flags.scBigUInt
-    SC.SCFixed{} -> flags.scFixed
-    SC.SCUFixed{} -> flags.scUFixed
-    SC.SCFxnumSubref{} -> flags.scFxnumSubref
-    SC.SCIntSubref{} -> flags.scIntSubref
-    SC.SCUIntSubref{} -> flags.scUIntSubref
-    SC.SCSignedSubref{} -> flags.scSignedSubref
-    SC.SCUnsignedSubref{} -> flags.scUnsignedSubref
-    SC.SCIntBitref -> flags.scIntBitref
-    SC.SCUIntBitref -> flags.scUIntBitref
-    SC.SCSignedBitref -> flags.scSignedBitref
-    SC.SCUnsignedBitref -> flags.scUnsignedBitref
-    SC.SCLogic -> flags.scLogic
-    SC.SCBV{} -> flags.scBV
-    SC.SCLV{} -> flags.scLV
-    SC.CUInt -> flags.cUInt
-    SC.CInt -> flags.cInt
-    SC.CDouble -> flags.cDouble
-    SC.CBool -> flags.cBool
+        SC.SCInt{} -> flags.scInt
+        SC.SCUInt{} -> flags.scUInt
+        SC.SCBigInt{} -> flags.scBigInt
+        SC.SCBigUInt{} -> flags.scBigUInt
+        SC.SCFixed{} -> flags.scFixed
+        SC.SCUFixed{} -> flags.scUFixed
+        SC.SCFxnumSubref{} -> flags.scFxnumSubref
+        SC.SCIntSubref{} -> flags.scIntSubref
+        SC.SCUIntSubref{} -> flags.scUIntSubref
+        SC.SCSignedSubref{} -> flags.scSignedSubref
+        SC.SCUnsignedSubref{} -> flags.scUnsignedSubref
+        SC.SCIntBitref -> flags.scIntBitref
+        SC.SCUIntBitref -> flags.scUIntBitref
+        SC.SCSignedBitref -> flags.scSignedBitref
+        SC.SCUnsignedBitref -> flags.scUnsignedBitref
+        SC.SCLogic -> flags.scLogic
+        SC.SCBV{} -> flags.scBV
+        SC.SCLV{} -> flags.scLV
+        SC.CUInt -> flags.cUInt
+        SC.CInt -> flags.cInt
+        SC.CDouble -> flags.cDouble
+        SC.CBool -> flags.cBool
 
 applyTransformation :: MonadBuild m => GenConfig -> Transformation -> m ()
 applyTransformation cfg (CastWithAssignment varType) = do
@@ -138,16 +139,16 @@ applyTransformation cfg (CastWithAssignment varType) = do
   when (assignAllowed cfg e varType) $ do
     #statements
       %= ( ++
-            [ SC.Declaration varType varName,
-              SC.Assignment varName e
+            [ SC.Declaration varType varName
+            , SC.Assignment varName e
             ]
-        )
+         )
     #headExpr .= SC.Variable varType varName
 applyTransformation cfg (FunctionalCast castType) =
   #headExpr %= \e ->
     if castAllowed cfg e castType
-       then SC.Cast castType castType e
-       else e
+      then SC.Cast castType castType e
+      else e
 applyTransformation cfg (Range bound1 bound2) = do
   #headExpr %= \e ->
     let hi = max bound1 bound2
@@ -165,14 +166,14 @@ applyTransformation cfg (Range bound1 bound2) = do
           _ -> e
 applyTransformation cfg (Arithmetic op e') =
   #headExpr %= \e ->
-  case (modOperations cfg e).arithmeticResult of
-    Just resultType -> SC.BinOp resultType e op e'
-    Nothing -> e
+    case (modOperations cfg e).arithmeticResult of
+      Just resultType -> SC.BinOp resultType e op e'
+      Nothing -> e
 applyTransformation cfg (UseAsCondition tExpr fExpr) = do
   #headExpr %= \e ->
     if SC.CBool `elem` (modOperations cfg e).implicitCasts
-    then SC.Conditional tExpr.annotation e tExpr fExpr
-    else e
+      then SC.Conditional tExpr.annotation e tExpr fExpr
+      else e
 applyTransformation cfg (BitSelect idx) = do
   #headExpr %= \e ->
     let idxInBounds = maybe True (idx <) (SC.knownWidth e.annotation)

@@ -29,11 +29,11 @@ createRemoteExperimentDir sshOpts remoteExperimentDir files = do
 
 runSSHCommand :: SSHConnectionTarget -> Text -> Sh Text
 runSSHCommand sshOpts command = bashExec [i|#{ssh} #{sshString} '#{command}'|]
-  where
-    sshString = sshOpts.username <> "@" <> sshOpts.host
-    ssh :: Text = case sshOpts.password of
-      Nothing -> "ssh -o PasswordAuthentication=no -o StrictHostKeychecking=no"
-      Just pass -> [i|sshpass -p #{pass} ssh -o StrictHostKeychecking=no|]
+ where
+  sshString = sshOpts.username <> "@" <> sshOpts.host
+  ssh :: Text = case sshOpts.password of
+    Nothing -> "ssh -o PasswordAuthentication=no -o StrictHostKeychecking=no"
+    Just pass -> [i|sshpass -p #{pass} ssh -o StrictHostKeychecking=no|]
 
 scpDownload ::
   SSHConnectionTarget ->
@@ -44,11 +44,11 @@ scpDownload ::
   Sh Text
 scpDownload sshOpts remote local =
   bashExec [i|#{scp} #{sshString}:#{remote} #{local}|]
-  where
-    sshString = sshOpts.username <> "@" <> sshOpts.host
-    scp :: Text = case sshOpts.password of
-      Nothing -> "scp -o PasswordAuthentication=no -o StrictHostKeychecking=no"
-      Just pass -> [i|sshpass -p #{pass} scp -o StrictHostKeychecking=no|]
+ where
+  sshString = sshOpts.username <> "@" <> sshOpts.host
+  scp :: Text = case sshOpts.password of
+    Nothing -> "scp -o PasswordAuthentication=no -o StrictHostKeychecking=no"
+    Just pass -> [i|sshpass -p #{pass} scp -o StrictHostKeychecking=no|]
 
 scpUpload ::
   SSHConnectionTarget ->
@@ -59,11 +59,11 @@ scpUpload ::
   Sh Text
 scpUpload sshOpts local remote =
   bashExec [i|#{scp} -r #{local} #{sshString}:#{remote}|]
-  where
-    sshString = sshOpts.username <> "@" <> sshOpts.host
-    scp :: Text = case sshOpts.password of
-      Nothing -> "scp -o PasswordAuthentication=no -o StrictHostKeychecking=no"
-      Just pass -> [i|sshpass -p #{pass} scp -o StrictHostKeychecking=no|]
+ where
+  sshString = sshOpts.username <> "@" <> sshOpts.host
+  scp :: Text = case sshOpts.password of
+    Nothing -> "scp -o PasswordAuthentication=no -o StrictHostKeychecking=no"
+    Just pass -> [i|sshpass -p #{pass} scp -o StrictHostKeychecking=no|]
 
 validateSSH :: SSHConnectionTarget -> Sh Bool
 validateSSH sshOpts = Sh.silently $ do

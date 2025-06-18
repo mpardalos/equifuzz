@@ -7,39 +7,39 @@ import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar, threadDelay)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
 import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
 import Control.Exception (SomeException, catch)
-import Control.Monad (void, when, forever)
+import Control.Monad (forever, void, when)
 import Control.Monad.State (execStateT, liftIO)
+import Data.IORef (IORef, modifyIORef, newIORef, readIORef)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
-import Experiments
-  ( Experiment (..),
-    ExperimentId (uuid),
-    ExperimentProgress (..),
-    ExperimentResult (..),
-    ExperimentSequenceId (uuid),
-    mkSystemCConstantExperiment,
-    newExperimentSequenceId,
-    saveExperiment,
-  )
+import Experiments (
+  Experiment (..),
+  ExperimentId (uuid),
+  ExperimentProgress (..),
+  ExperimentResult (..),
+  ExperimentSequenceId (uuid),
+  mkSystemCConstantExperiment,
+  newExperimentSequenceId,
+  saveExperiment,
+ )
 import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
 import Runners (ExperimentRunner (run))
 import Text.Printf (printf)
 import Util (foldMUntil_, foreverThread, whenJust)
-import Data.IORef (IORef, newIORef, modifyIORef, readIORef)
 
 type ProgressChan = TChan ExperimentProgress
 
 data OrchestrationConfig = OrchestrationConfig
-  { runner :: ExperimentRunner,
-    verbose :: Bool,
-    saveResults :: Bool,
-    maxConcurrentExperiments :: Int,
-    experimentCount :: Maybe Int,
-    genConfig :: GenConfig
+  { runner :: ExperimentRunner
+  , verbose :: Bool
+  , saveResults :: Bool
+  , maxConcurrentExperiments :: Int
+  , experimentCount :: Maybe Int
+  , genConfig :: GenConfig
   }
 
 startRunners :: OrchestrationConfig -> IO ProgressChan
@@ -89,50 +89,50 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
             printf "==============================\n\n"
             endExperimentSequence sequenceId
       )
-  where
-    runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO Bool
-    runReduceLoop sequenceId experimentReducible = do
-      experiment <- experimentReducible.value
-      progress (ExperimentStarted sequenceId experiment)
-      result <-
-        runner.run experiment
-          `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
-      progress (ExperimentCompleted sequenceId result)
+ where
+  runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO Bool
+  runReduceLoop sequenceId experimentReducible = do
+    experiment <- experimentReducible.value
+    progress (ExperimentStarted sequenceId experiment)
+    result <-
+      runner.run experiment
+        `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
+    progress (ExperimentCompleted sequenceId result)
 
-      let isInteresting = result.proofFound /= Just experiment.expectedResult
+    let isInteresting = result.proofFound /= Just experiment.expectedResult
 
-      when (isInteresting && experimentReducible.size > 1) $
-        void $
-          foldMUntil_
-            (runReduceLoop sequenceId)
-            (selectReductions experimentReducible)
+    when (isInteresting && experimentReducible.size > 1) $
+      void $
+        foldMUntil_
+          (runReduceLoop sequenceId)
+          (selectReductions experimentReducible)
 
-      return isInteresting
+    return isInteresting
 
-    endExperimentSequence :: ExperimentSequenceId -> IO ()
-    endExperimentSequence sequenceId = do
-      atomically (signalTSem experimentSem)
-      progress (ExperimentSequenceCompleted sequenceId)
+  endExperimentSequence :: ExperimentSequenceId -> IO ()
+  endExperimentSequence sequenceId = do
+    atomically (signalTSem experimentSem)
+    progress (ExperimentSequenceCompleted sequenceId)
 
-    progress = atomically . writeTChan progressChan
+  progress = atomically . writeTChan progressChan
 
-    errorResult experimentId err =
-      ExperimentResult
-        { experimentId = experimentId,
-          proofFound = Nothing,
-          counterExample = Nothing,
-          fullOutput = "Runner crashed with exception:\n" <> T.pack (show err)
-        }
+  errorResult experimentId err =
+    ExperimentResult
+      { experimentId = experimentId
+      , proofFound = Nothing
+      , counterExample = Nothing
+      , fullOutput = "Runner crashed with exception:\n" <> T.pack (show err)
+      }
 
 selectReductions :: Reducible a -> [Reducible a]
-selectReductions Reducible {reductions, size} =
+selectReductions Reducible{reductions, size} =
   mapMaybe (reductions Map.!?) $
     [ (start, end)
-      | chunks <- [2 .. size],
-        let chunkSize = size `div` chunks,
-        chunkSize > 1,
-        start <- [0, chunkSize .. size - chunkSize],
-        let end = start + chunkSize - 1
+    | chunks <- [2 .. size]
+    , let chunkSize = size `div` chunks
+    , chunkSize > 1
+    , start <- [0, chunkSize .. size - chunkSize]
+    , let end = start + chunkSize - 1
     ]
       <> [(n, n) | n <- [0 .. size - 1]]
 
