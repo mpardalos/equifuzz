@@ -18,7 +18,7 @@ where
 import Control.Monad (replicateM_)
 import Control.Monad.Random.Strict (Rand, StdGen)
 import Control.Monad.State.Strict (evalStateT, execState)
-import Control.Monad.Writer.Strict (MonadWriter (tell), runWriterT)
+import Control.Monad.Writer.Strict (MonadWriter (tell), execWriterT)
 import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -37,18 +37,33 @@ import GenSystemC.Transformations (
   randomTransformationFor,
   seedExpr,
  )
-import Optics (use, (%))
+import Optics (use, (%), _1, _2, Zoom (zoom))
 import SystemC qualified as SC
+import Data.List (nub)
+import qualified Data.Text as T
 
+genSystemC :: GenConfig -> Rand StdGen (Reducible GenerateProcess)
+genSystemC cfg = do
+  seed <- seedExpr
+  transformations <- execWriterT . flip evalStateT (initBuildOutState seed, []) $
+    replicateM_ cfg.growSteps $ do
+      e <- use (_1 % #headExpr)
+      transformation <- zoom _2 (randomTransformationFor cfg e)
+      tell [transformation]
+      zoom _1 (applyTransformation cfg transformation)
+
+  return $ asReducible $ GenerateProcess seed transformations
+
+-- FIXME: This will generate free variables. Stop it
 genSystemCConstant :: GenConfig -> Rand StdGen (Reducible GenerateProcess)
 genSystemCConstant cfg = do
   seed <- seedExpr
-  ((), transformations) <- runWriterT . (`evalStateT` initBuildOutState seed) $
+  transformations <- execWriterT . flip evalStateT (initBuildOutState seed, []) $
     replicateM_ cfg.growSteps $ do
-      e <- use #headExpr
-      transformation <- randomTransformationFor cfg e
+      e <- use (_1 % #headExpr)
+      transformation <- zoom _2 (randomTransformationFor cfg e)
       tell [transformation]
-      applyTransformation cfg transformation
+      zoom _1 (applyTransformation cfg transformation)
 
   return $ asReducible $ GenerateProcess seed transformations
 
@@ -60,11 +75,13 @@ generateFromProcess cfg name GenerateProcess{seed, transformations} =
         -- \*not* be in the GenerateProcess, so that it is dynamically added in
         -- the reduced experiments, depending on what the reduction has left as the final expression.
         finalizeIfNeeded
+      body = finalState.statements ++ [SC.Return finalState.headExpr]
+      args = nub [(t, v) | (t, v) <- SC.freeVars body, T.length v == 5]
    in SC.FunctionDeclaration
         { returnType = finalState.headExpr.annotation
         , name
-        , args = []
-        , body = finalState.statements ++ [SC.Return finalState.headExpr]
+        , args
+        , body
         }
  where
   finalizeIfNeeded :: MonadBuild m => m ()

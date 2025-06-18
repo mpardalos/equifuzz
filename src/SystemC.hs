@@ -10,6 +10,7 @@
 module SystemC where
 
 import Data.Data (Data)
+import Data.Generics.Uniplate.Data (universeBi)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
@@ -81,6 +82,10 @@ data Expr
   | Bitref ExprAnn Expr Int
   | MethodCall ExprAnn Expr Text [Expr]
   deriving (Generic, Eq, Ord, Show, Data)
+
+-- | Extract all variables referenced by the expression
+freeVars :: Data from => from -> [(SCType, Text)]
+freeVars e = [(t, name) | Variable t name <- universeBi e]
 
 instance HasField "annotation" Expr ExprAnn where
   getField (Constant ann _) = ann

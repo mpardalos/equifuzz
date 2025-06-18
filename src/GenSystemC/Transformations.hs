@@ -4,6 +4,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE LambdaCase #-}
 
 module GenSystemC.Transformations (
   -- * Transformations
@@ -23,9 +24,9 @@ module GenSystemC.Transformations (
 )
 where
 
-import Control.Monad (guard, join, when)
-import Control.Monad.Random.Strict (MonadRandom, getRandomR, uniform)
-import Control.Monad.State.Strict (MonadState)
+import Control.Monad (guard, join, when, replicateM)
+import Control.Monad.Random.Strict (MonadRandom (getRandom), getRandomR, uniform, uniformMay)
+import Control.Monad.State.Strict (MonadState (get), modify')
 import Data.Maybe (catMaybes, isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -42,7 +43,8 @@ import Data.Map qualified as Map
 import GenSystemC.Config (GenConfig (..), GenMods (..), TransformationFlags (..))
 import SystemC qualified as SC hiding (operations)
 import SystemC qualified as SCUnconfigured (operations)
-import Util (is)
+import Util (is, (<<$>>))
+import Data.Map (Map)
 
 data Transformation
   = CastWithAssignment SC.SCType
@@ -191,7 +193,14 @@ applyTransformation cfg (ApplyUnaryOp op) = do
       then SC.UnaryOp e.annotation op e
       else e
 
-randomTransformationFor :: forall m. MonadRandom m => GenConfig -> SC.Expr -> m Transformation
+randomTransformationFor ::
+  forall m.
+  ( MonadRandom m
+  , MonadState [(SC.VarName, SC.SCType)] m
+  ) =>
+  GenConfig ->
+  SC.Expr ->
+  m Transformation
 randomTransformationFor cfg e
   | null transformationOptions = error ("No transformations possible on this expression: " <> show e)
   | otherwise = join . uniform $ transformationOptions
@@ -293,7 +302,7 @@ randomTransformationFor cfg e
       resultType <- (modOperations cfg e).arithmeticResult
       return $ do
         op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
-        constant <- someConstant resultType
+        constant <- someAtomicExpr resultType
         return (Arithmetic op constant)
 
     useAsCondition :: Maybe (m Transformation)
@@ -301,8 +310,8 @@ randomTransformationFor cfg e
       guard (SC.CBool `elem` (modOperations cfg e).implicitCasts)
       return
         ( UseAsCondition
-            <$> someConstant SC.CInt
-            <*> someConstant SC.CInt
+            <$> someAtomicExpr SC.CInt
+            <*> someAtomicExpr SC.CInt
         )
 
     bitSelect :: Maybe (m Transformation)
@@ -323,8 +332,38 @@ randomTransformationFor cfg e
       guard (e `is` #_Variable)
       return (ApplyUnaryOp <$> uniform [minBound :: SC.UnaryOp .. maxBound])
 
+    someAtomicExpr :: SC.SCType -> m SC.Expr
+    someAtomicExpr t =
+      join . uniform $
+        [ someConstant t
+        , someExistingVar t
+        , someNewVar t
+        ]
+
     someConstant :: SC.SCType -> m SC.Expr
     someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)
+
+    someExistingVar :: SC.SCType -> m SC.Expr
+    someExistingVar t = do
+      existingVars <- get
+      uniformMay [n | (n, t') <- existingVars, t' == t] >>= \case
+        Just n -> return (SC.Variable t n)
+        Nothing -> someNewVar t
+
+    someNewVar :: SC.SCType -> m SC.Expr
+    someNewVar t = do
+      existingVars <- get
+      name <- someVarName
+      if name `elem` map fst existingVars
+        -- Yes, maybe an infinite loop, but don't worry about it.
+        -- After enough tries we will get an actually fresh name
+        then someNewVar t
+        else do
+          modify' ((name, t) :)
+          return (SC.Variable t name)
+
+    someVarName :: m Text
+    someVarName = T.pack <$> replicateM 5 (uniform ['a'..'z'])
 
 seedExpr :: MonadRandom m => m SC.Expr
 seedExpr = do
