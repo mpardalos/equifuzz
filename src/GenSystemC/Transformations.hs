@@ -24,7 +24,7 @@ module GenSystemC.Transformations (
 where
 
 import Control.Monad (guard, join, when)
-import Control.Monad.Random.Strict (MonadRandom, getRandomR, uniform, weighted)
+import Control.Monad.Random.Strict (MonadRandom, getRandomR, uniform)
 import Control.Monad.State.Strict (MonadState)
 import Data.Maybe (catMaybes, isJust)
 import Data.Text (Text)
@@ -194,8 +194,8 @@ applyTransformation cfg (ApplyUnaryOp op) = do
 randomTransformationFor :: forall m. MonadRandom m => GenConfig -> SC.Expr -> m Transformation
 randomTransformationFor cfg e
   | null transformationOptions = error ("No transformations possible on this expression: " <> show e)
-  | otherwise = join . weighted . map (,1) $ transformationOptions
-  where
+  | otherwise = join . uniform $ transformationOptions
+ where
     transformationOptions :: [m Transformation]
     transformationOptions = catMaybes
       [ guard cfg.mods.transformations.castWithAssignment >> castWithAssignment
