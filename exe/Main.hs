@@ -58,7 +58,7 @@ main = do
         T.putStrLn longDescription
         putStrLn "---------"
         forM_ knownEvaluations $ \Evaluation{inputs, output} -> do
-          T.putStr "*\t"
+          T.putStr "\n*\t"
           T.putStr $ T.intercalate "\n\t" $
             [
               name <> "=" <> comparisonValueAsC value
@@ -88,6 +88,7 @@ data WebOptions = WebOptions
 data GenerateOptions = GenerateOptions
   { count :: Int
   , genSteps :: Int
+  , evaluations :: Int
   }
 
 data PasswordSource = NoPassword | AskPassword | PasswordGiven Text
@@ -107,10 +108,11 @@ data RunnerOptions
       }
 
 generateOptionsToGenConfig :: GenerateOptions -> GenConfig
-generateOptionsToGenConfig GenerateOptions {genSteps} =
+generateOptionsToGenConfig GenerateOptions {genSteps, evaluations} =
   GenConfig
-    { growSteps = genSteps,
-      mods = noMods
+    { growSteps = genSteps
+    , mods = noMods
+    , evaluations
     }
 
 webOptionsToOrchestrationConfig :: WebOptions -> IO OrchestrationConfig
@@ -261,8 +263,9 @@ commandParser =
             Opt.showDefault
           ]
 
+      evaluations <- evaluationsFlag
       genSteps <- genStepsFlag
-      return GenerateOptions {count, genSteps}
+      return GenerateOptions {count, genSteps, evaluations}
 
     validateCount :: Int -> ReadM Int
 #ifdef EVALUATION_VERSION
@@ -272,6 +275,16 @@ commandParser =
 #else
     validateCount = pure
 #endif
+
+    evaluationsFlag :: Opt.Parser Int
+    evaluationsFlag =
+      Opt.option Opt.auto . mconcat $
+        [ Opt.long "evaluations",
+          Opt.metavar "COUNT",
+          Opt.help "How many inputs to evaluate the generated design at",
+          Opt.value 10,
+          Opt.showDefault
+        ]
 
     genStepsFlag :: Opt.Parser Int
     genStepsFlag =

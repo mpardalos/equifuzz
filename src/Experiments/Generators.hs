@@ -10,6 +10,7 @@
 
 module Experiments.Generators (mkSystemCConstantExperiment, generateProcessToExperiment) where
 
+import Control.Monad (replicateM)
 import Control.Monad.Random.Strict (MonadRandom (getRandom), evalRandIO)
 import Data.Either (fromRight)
 import Data.Functor
@@ -18,7 +19,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments.Types
 import GenSystemC (
-  GenConfig,
+  GenConfig(..),
   GenerateProcess (..),
   Reducible,
   genSystemCConstant,
@@ -38,9 +39,16 @@ generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
 generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} = do
   let design = generateFromProcess cfg "dut" process
 
-  inputs <- mapM (comparisonValueOfType . fst) design.args
+  inputss <-
+    replicateM cfg.evaluations $
+      mapM (comparisonValueOfType . fst) design.args
 
-  (output, hasUB, extraInfo) <- simulateSystemCAt design inputs
+  (outputs, hasUBs, extraInfos) <-
+    unzip3 <$> mapM (simulateSystemCAt design) inputss
+
+  let knownEvaluations = [Evaluation{..} | (inputs, output) <- zip inputss outputs]
+  let hasUB = or hasUBs
+  let extraInfo = T.intercalate "-\n" extraInfos
 
   experimentId <- newExperimentId
   return
@@ -57,7 +65,7 @@ generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} =
               ]
             , [extraInfo]
             ]
-      , knownEvaluations = [Evaluation{inputs, output}]
+      , knownEvaluations
       }
 
 comparisonValueOfType :: MonadRandom m => SC.SCType -> m ComparisonValue

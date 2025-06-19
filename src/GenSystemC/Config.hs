@@ -36,4 +36,5 @@ data GenMods = GenMods
 data GenConfig = GenConfig
   { growSteps :: Int
   , mods :: GenMods
+  , evaluations :: Int
   }
