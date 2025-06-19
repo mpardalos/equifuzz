@@ -28,7 +28,7 @@ import qualified SystemC as SC
 import Data.Text (Text)
 import System.IO (stdin, hSetEcho, hFlush, stdout)
 import Text.Printf (printf)
-import Control.Monad (replicateM_, when)
+import Control.Monad (replicateM_, when, forM_)
 import Options.Applicative (ReadM)
 import Runners.Util (validateSSH)
 import qualified Shelly as Sh
@@ -36,6 +36,7 @@ import Control.Exception (throwIO, try, SomeException)
 import ToolRestrictions (vcfMods, noMods, jasperMods, slecMods)
 import GenSystemC.Config (GenMods)
 import Runners.SLEC (runSLEC)
+import qualified Data.Text as T
 
 main :: IO ()
 main = do
@@ -50,13 +51,22 @@ main = do
       runWebUI progressChan
     Generate genOpts -> do
       replicateM_ genOpts.count $ do
-        Experiment {design, longDescription, comparisonValue} <-
+        Experiment {design, longDescription, knownEvaluations} <-
           mkSystemCConstantExperiment (generateOptionsToGenConfig genOpts) >>= view #value
         T.putStrLn (SC.genSource design)
         putStrLn "---------"
         T.putStrLn longDescription
         putStrLn "---------"
-        T.putStrLn comparisonValue.literal
+        forM_ knownEvaluations $ \Evaluation{inputs, output} -> do
+          T.putStr "*\t"
+          T.putStr $ T.intercalate "\n\t" $
+            [
+              name <> "=" <> comparisonValueAsC value
+              | ((_, name), value) <- zip design.args inputs
+            ]
+          T.putStrLn ""
+          T.putStr "\t-> "
+          T.putStr (comparisonValueAsC output)
     PrintVersion -> putStrLn versionName
 
 --------------------------- CLI Parser -----------------------------------------
