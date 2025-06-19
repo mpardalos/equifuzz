@@ -19,14 +19,16 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments.Types
 import GenSystemC (
-  GenConfig(..),
+  GenConfig (..),
   GenerateProcess (..),
   Reducible,
   genSystemCConstant,
   generateFromProcess,
  )
+import Optics (view)
 import Shelly qualified as Sh
 import SystemC qualified as SC
+import GenSystemC.Config (GenMods(..))
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally

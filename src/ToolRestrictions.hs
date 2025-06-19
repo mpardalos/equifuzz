@@ -46,6 +46,7 @@ jasperMods = GenMods{operations, transformations}
   operations e =
     composeAll
       [ noFixed e
+      , noLogic e
       , failingBigIntReductions e
       , missingSubrefReductions e
       , ambiguousAssignments e
@@ -175,6 +176,16 @@ noFixed _expr =
     , #assignTo % #scFixed .~ False
     , #assignTo % #scUFixed .~ False
     ]
+
+noLogic :: OperationsMod
+noLogic _expr =
+  composeAll
+    [ #constructorInto % #scLogic .~ False
+    , #constructorInto % #scLogic .~ False
+    , #assignTo % #scLogic .~ False
+    , #assignTo % #scLogic .~ False
+    ]
+
 
 noMods :: GenMods
 noMods =

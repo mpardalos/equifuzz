@@ -14,6 +14,8 @@ import Shelly (Sh)
 import Shelly qualified as Sh
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
+import System.Process (readProcess)
+import qualified Data.Text as T
 
 iterateM :: Monad m => Int -> (a -> m a) -> a -> m a
 iterateM 0 _ x = pure x
@@ -86,6 +88,9 @@ bashExec commands = Sh.run "bash" ["-c", commands]
 
 bashExec_ :: Text -> Sh ()
 bashExec_ = void . bashExec
+
+runBash :: String -> IO Text
+runBash script = T.pack <$> readProcess "bash" ["-c", script] ""
 
 is :: a -> Prism' a b -> Bool
 is x p = isJust $ preview p x

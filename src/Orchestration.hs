@@ -27,7 +27,7 @@ import Experiments (
 import GenSystemC (GenConfig, Reducible (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
-import Runners (ExperimentRunner (run))
+import Runners (ExperimentRunner)
 import Text.Printf (printf)
 import Util (foldMUntil_, foreverThread, whenJust)
 
@@ -95,7 +95,7 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
     experiment <- experimentReducible.value
     progress (ExperimentStarted sequenceId experiment)
     result <-
-      runner.run experiment
+      runner experiment
         `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
     progress (ExperimentCompleted sequenceId result)
 

@@ -1,123 +1,135 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE ExtendedDefaultRules #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fno-warn-type-defaults #-}
 
-module Runners.Jasper (runJasper) where
+module Runners.Jasper (jasper) where
 
-import Control.Monad (void)
-import Data.String.Interpolate (i, __i)
+import Data.String.Interpolate (__i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments.Types (Experiment (..), ExperimentResult (..))
 import Optics ((^.))
-import Runners.Types (SSHConnectionTarget)
-import Runners.Util (createRemoteExperimentDir, runSSHCommand)
-import Shelly qualified as Sh
+import Runners.Types (EquivalenceCheckerConfig (..))
+import Runners.Util (verilogImplForEvals)
 import SystemC qualified as SC
 
-runJasper :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentResult
-runJasper sshOpts mSourcePath Experiment{experimentId, design, comparisonValue} = Sh.shelly . Sh.silently $ do
-  createRemoteExperimentDir
-    sshOpts
-    remoteExperimentDir
+default (T.Text)
+
+jasper :: EquivalenceCheckerConfig
+jasper =
+  EquivalenceCheckerConfig
+    { name = "jasper"
+    , runScript = "jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl"
+    , makeFiles
+    , parseOutput
+    }
+ where
+  makeFiles Experiment{experimentId, design, knownEvaluations} =
     [ (specFilename, wrappedProgram)
     , (implFilename, implProgram)
     , ("compare.tcl", compareScript)
     ]
+   where
+    specFilename = "spec.cpp"
+    implFilename = "impl.sv"
 
-  fullOutput <- runSSHCommand sshOpts sshCommand
+    implProgram :: Text
+    implProgram = verilogImplForEvals jasperTypeWidths design knownEvaluations
 
-  void $ runSSHCommand sshOpts [i|cd ~ && rm -rf ./#{remoteExperimentDir}|]
+    wrappedProgram :: Text
+    wrappedProgram =
+      [__i|
+              \#include <systemc.h>
+              \#include <jasperc.h>
 
-  let proofSuccessful =
-        ("- proven                    : 1" `T.isInfixOf`) `any` T.lines fullOutput
-  let proofFailed =
-        ("- cex                       : 1" `T.isInfixOf`) `any` T.lines fullOutput
+              #{SC.genSource design}
 
-  let proofFound = case (proofSuccessful, proofFailed) of
-        (True, False) -> Just True
-        (False, True) -> Just False
-        _ -> Nothing
+              int main() {
+                  #{declareInputs}
 
-  return $ ExperimentResult{proofFound, counterExample = Nothing, fullOutput, experimentId}
- where
-  remoteDir :: Text
-  remoteDir = "equifuzz_jasper_experiment"
+                  #{registerInputs}
 
-  remoteExperimentDir :: Text
-  remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
+                  #{outType} out = #{design ^. #name}(#{inputNames});
 
-  specFilename :: Text = "spec.cpp"
-  implFilename :: Text = "impl.sv"
+                  JASPER_OUTPUT(out);
 
-  sshCommand :: Text
-  sshCommand = case mSourcePath of
-    Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && source #{sourcePath} && jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl; echo 'Done'|]
-    Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl; echo 'Done'|]
+                  return 0;
+              }
+              |]
 
-  implProgram :: Text
-  implProgram =
-    [__i|
-          module top (output [#{comparisonValue ^. #width - 1}:0] out);
-                assign out = #{comparisonValue ^. #literal};
-          endmodule
-          |]
+    outType :: Text
+    outType = SC.genSource design.returnType
 
-  wrappedProgram :: Text
-  wrappedProgram =
-    [__i|
-          \#include <systemc.h>
-          \#include <jasperc.h>
+    declareInputs :: Text
+    declareInputs =
+      T.unlines
+        [ SC.genSource t <> " " <> name <> ";"
+        | (t, name) <- design.args
+        ]
 
-          #{SC.genSource design}
+    registerInputs :: Text
+    registerInputs =
+      T.unlines
+        [ "JASPER_INPUT(" <> name <> ");"
+        | (_, name) <- design.args
+        ]
 
-          int main() {
-              #{declareInputs}
+    inputNames :: Text
+    inputNames = T.intercalate ", " [name | (_, name) <- design.args]
 
-              #{registerInputs}
+    compareScript :: Text
+    compareScript =
+      [__i|
+            check_c2rtl -set_dynamic_pruning -spec; check_c2rtl -compile -spec #{specFilename}
+            check_c2rtl -analyze -imp -sv #{implFilename} ;
+            check_c2rtl -elaborate -imp -top top
+            check_c2rtl -setup
+            clock -clear; clock -none
+            reset -none;
+            check_c2rtl -generate_verification
+            check_c2rtl -interface -task <embedded>
+            prove -all
+              |]
 
-              #{outType} out = #{design ^. #name}(#{inputNames});
+  parseOutput Experiment{experimentId} fullOutput =
+    let proofSuccessful =
+          ("- proven                    : 1" `T.isInfixOf`) `any` T.lines fullOutput
+        proofFailed =
+          ("- cex                       : 1" `T.isInfixOf`) `any` T.lines fullOutput
 
-              JASPER_OUTPUT(out);
+        proofFound = case (proofSuccessful, proofFailed) of
+          (True, False) -> Just True
+          (False, True) -> Just False
+          _ -> Nothing
+     in ExperimentResult{proofFound, counterExample = Nothing, fullOutput, experimentId}
 
-              return 0;
-          }
-          |]
-
-  outType :: Text
-  outType = SC.genSource design.returnType
-
-  declareInputs :: Text
-  declareInputs =
-    T.unlines
-      [ SC.genSource t <> " " <> name <> ";"
-      | (t, name) <- design.args
-      ]
-
-  registerInputs :: Text
-  registerInputs =
-    T.unlines
-      [ "JASPER_INPUT(" <> name <> ");"
-      | (_, name) <- design.args
-      ]
-
-  inputNames :: Text
-  inputNames = T.intercalate ", " [name | (_, name) <- design.args]
-
-  compareScript :: Text
-  compareScript =
-    [__i|
-        check_c2rtl -set_dynamic_pruning -spec; check_c2rtl -compile -spec #{specFilename}
-        check_c2rtl -analyze -imp -sv #{implFilename} ;
-        check_c2rtl -elaborate -imp -top top
-        check_c2rtl -setup
-        clock -clear; clock -none
-        reset -none;
-        check_c2rtl -generate_verification
-        check_c2rtl -interface -task <embedded>
-        prove -all -bg
-          |]
+jasperTypeWidths :: SC.SCType -> Int
+jasperTypeWidths (SC.SCInt n) = n
+jasperTypeWidths (SC.SCUInt n) = n
+jasperTypeWidths (SC.SCBigInt n) = n
+jasperTypeWidths (SC.SCBigUInt n) = n
+jasperTypeWidths SC.SCFixed{w} = w
+jasperTypeWidths SC.SCUFixed{w} = w
+jasperTypeWidths SC.SCFxnumSubref{width} = width
+jasperTypeWidths SC.SCIntSubref{width} = width
+jasperTypeWidths SC.SCUIntSubref{width} = width
+jasperTypeWidths SC.SCSignedSubref{width} = width
+jasperTypeWidths SC.SCUnsignedSubref{width} = width
+jasperTypeWidths SC.SCIntBitref = 1
+jasperTypeWidths SC.SCUIntBitref = 1
+jasperTypeWidths SC.SCSignedBitref = 1
+jasperTypeWidths SC.SCUnsignedBitref = 1
+jasperTypeWidths SC.SCLogic = 1
+jasperTypeWidths SC.SCBV{width} = width
+jasperTypeWidths SC.SCLV{width} = width
+jasperTypeWidths SC.CUInt = 32
+jasperTypeWidths SC.CInt = 32
+jasperTypeWidths SC.CDouble = 64
+jasperTypeWidths SC.CBool = 1

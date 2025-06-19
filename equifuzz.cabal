@@ -86,7 +86,8 @@ library
         binary,
         stm,
         time,
-        async
+        async,
+        process
 
 executable equifuzz
     import:

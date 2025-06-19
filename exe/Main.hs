@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# HLINT ignore "Use unless" #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Main where
 
@@ -35,7 +36,6 @@ import qualified Shelly as Sh
 import Control.Exception (throwIO, try, SomeException)
 import ToolRestrictions (vcfMods, noMods, jasperMods, slecMods)
 import GenSystemC.Config (GenMods)
-import Runners.SLEC (runSLEC)
 import qualified Data.Text as T
 
 main :: IO ()
@@ -82,7 +82,8 @@ data WebOptions = WebOptions
     maxConcurrentExperiments :: Int,
     experimentCount :: Maybe Int,
     runnerOptions :: RunnerOptions,
-    genSteps :: Int
+    genSteps :: Int,
+    evaluations :: Int
   }
 
 data GenerateOptions = GenerateOptions
@@ -95,16 +96,18 @@ data PasswordSource = NoPassword | AskPassword | PasswordGiven Text
 
 data FECType = VCF | Jasper | SLEC
 
+data SSHOptions = SSHOptions
+  { host :: Text
+  , username :: Text
+  , passwordSource :: PasswordSource
+  , activatePath :: Maybe Text
+  }
+
 data RunnerOptions
-  = TestRunner
-      { includeInconclusive :: Bool
-      }
+  = TestRunner {includeInconclusive :: Bool}
   | Runner
-      { host :: Text,
-        username :: Text,
-        passwordSource :: PasswordSource,
-        activatePath :: Maybe Text,
-        fecType :: FECType
+      { sshOptions :: Maybe SSHOptions
+      , fecType :: FECType
       }
 
 generateOptionsToGenConfig :: GenerateOptions -> GenConfig
@@ -123,13 +126,15 @@ webOptionsToOrchestrationConfig
       maxConcurrentExperiments,
       experimentCount,
       genSteps,
-      runnerOptions
+      runnerOptions,
+      evaluations
     } = do
     runner <- runnerOptionsToRunner runnerOptions
     let genConfig =
           GenConfig
-            { growSteps = genSteps,
-              mods = runnerOptionsToGenMods runnerOptions
+            { growSteps = genSteps
+            , mods = runnerOptionsToGenMods runnerOptions
+            , evaluations
             }
     return
       OrchestrationConfig
@@ -148,30 +153,35 @@ runnerOptionsToGenMods Runner { fecType = SLEC } = slecMods
 runnerOptionsToGenMods TestRunner {} = noMods
 
 runnerOptionsToRunner :: RunnerOptions -> IO ExperimentRunner
-runnerOptionsToRunner TestRunner { includeInconclusive} =
+runnerOptionsToRunner TestRunner{includeInconclusive} =
   return (testRunner includeInconclusive)
 runnerOptionsToRunner
   Runner
-    { host,
-      username,
-      passwordSource,
-      activatePath,
-      fecType
+    { sshOptions
+    , fecType
     } = do
+    -- host,
+    -- username,
+    -- passwordSource,
+    -- activatePath,
+    let ec = case fecType of
+          VCF -> vcFormal
+          Jasper -> jasper
+          SLEC -> slec
+    case sshOptions of
+      Nothing -> return (runECLocal ec)
+      Just SSHOptions{..} -> do
         password <- case passwordSource of
           NoPassword -> pure Nothing
           PasswordGiven pass -> pure (Just pass)
           AskPassword -> Just <$> askPassword
-        let sshOpts = SSHConnectionTarget {username, host, password}
+        let sshOpts = SSHConnectionTarget{username, host, password}
         putStrLn "Validating SSH connection..."
         sshValid <- try @SomeException $ Sh.shelly $ validateSSH sshOpts
         when (isn't (_Right % only True) sshValid) $
           throwIO (userError "Could not connect to ssh host. Please check the options you provided")
         putStrLn "SSH connection OK"
-        return $ ExperimentRunner $ case fecType of
-          VCF -> runVCFormal sshOpts activatePath
-          Jasper -> runJasper sshOpts activatePath
-          SLEC -> runSLEC sshOpts activatePath
+        return $ runECRemote SSHConnectionTarget {..} activatePath ec
 
 askPassword :: IO Text
 askPassword = do
@@ -225,6 +235,7 @@ commandParser =
           [ Opt.long "no-save",
             Opt.help "Do not save successful experiment results"
           ])
+      evaluations <- evaluationsFlag
       genSteps <- genStepsFlag
       runnerOptions <- runnerConfigOpts <|> testFlag
       return
@@ -234,7 +245,8 @@ commandParser =
             maxConcurrentExperiments,
             experimentCount,
             runnerOptions,
-            genSteps
+            genSteps,
+            evaluations
           }
 
     testFlag :: Opt.Parser RunnerOptions
@@ -300,7 +312,7 @@ commandParser =
         ]
 #endif
 
-    runnerConfigOpts = do
+    sshOpts = Opt.optional $ do
       host <-
         Opt.strOption . mconcat $
           [ Opt.long "host",
@@ -320,14 +332,17 @@ commandParser =
             Opt.metavar "PATH",
             Opt.help "Script to be sourced on the remote host before running vcf"
           ]
+      return SSHOptions {..}
 
+    runnerConfigOpts = do
+      sshOptions <- sshOpts
       fecType <- Opt.option readFecType . mconcat $
         [ Opt.long "fec-type"
         , Opt.metavar "TYPE"
         , Opt.help "What FEC type we are running against (vcf|catapult|jasper)"
         ]
 
-      return Runner {host, username, passwordSource, activatePath, fecType}
+      return Runner {sshOptions, fecType}
 
     askPasswordFlag :: Opt.Parser PasswordSource
     askPasswordFlag =
@@ -365,7 +380,7 @@ parseArgs =
 --------------------------- Testing --------------------------------------------
 
 testRunner :: Bool -> ExperimentRunner
-testRunner inconclusiveResults = ExperimentRunner $ \experiment -> do
+testRunner inconclusiveResults experiment = do
   getStdRandom (uniformR (1_000_000, 5_000_000)) >>= threadDelay
 
   proofFound <-

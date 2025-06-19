@@ -6,102 +6,96 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Runners.VCF (runVCFormal) where
+module Runners.VCF (vcFormal) where
 
-import Control.Monad (void)
 import Data.Function ((&))
-import Data.String.Interpolate (i, __i)
+import Data.String.Interpolate (__i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments.Types
-import Optics ((%), (^.))
-import Runners.Types (SSHConnectionTarget (..))
-import Runners.Util (createRemoteExperimentDir, runSSHCommand)
-import Shelly qualified as Sh
+import Runners.Types (EquivalenceCheckerConfig (..))
 import SystemC qualified as SC
+import Runners.Util (verilogImplForEvals)
 
 -- | Run an experiment using VC Formal on a remote host
-runVCFormal :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentResult
-runVCFormal sshOpts mSourcePath experiment@Experiment{experimentId, design} = Sh.shelly . Sh.silently $ do
-  createRemoteExperimentDir
-    sshOpts
-    remoteExperimentDir
-    [ (filename, wrappedProgram)
+vcFormal :: EquivalenceCheckerConfig
+vcFormal =
+  EquivalenceCheckerConfig
+    { name = "vcf"
+    , runScript = "vcf -fmode DPV -f compare.tcl; (cat counter_example.txt || echo __NO_CEX__)"
+    , makeFiles
+    , parseOutput
+    }
+ where
+  makeFiles Experiment{..} =
+    [ (scFilename, systemCProgram)
+    , (verilogFilename, verilogProgram)
     , ("compare.tcl", compareScript)
     ]
+   where
+    scFilename :: Text = "spec.cpp"
+    scTopName :: Text = "spec"
 
-  fullOutput <- runSSHCommand sshOpts sshCommand
+    systemCProgram :: Text
+    systemCProgram =
+      [__i|
+        #{SC.includeHeader}
+        #{SC.genSource design}
+        #{systemCHectorWrapper scTopName design}
+        |]
 
-  counterExample <-
-    Sh.errExit False $
-      runSSHCommand sshOpts [i|cat #{remoteExperimentDir}/counter_example.txt|]
+    verilogFilename :: Text = "impl.sv"
+    verilogTopName :: Text = "top"
 
-  void $ runSSHCommand sshOpts [i|cd ~ && rm -rf ./#{remoteExperimentDir}|]
+    verilogProgram :: Text
+    verilogProgram = verilogImplForEvals vcfTypeWidths design knownEvaluations
 
-  let proofSuccessful =
-        fullOutput
-          & T.lines
-          & any ("Status for proof \"proof\": SUCCESSFUL" `T.isInfixOf`)
+    compareScript :: Text
+    compareScript =
+      [__i|
+         set_custom_solve_script "orch_multipliers"
 
-  let proofFailed =
-        fullOutput
-          & T.lines
-          & any ("Status for proof \"proof\": FAILED" `T.isInfixOf`)
+         create_design -name spec -top #{scTopName}
+         scdtan -DSC_INCLUDE_FX #{scFilename}
+         compile_design spec
 
-  let proofFound = case (proofSuccessful, proofFailed) of
-        (True, False) -> Just True
-        (False, True) -> Just False
-        _ -> Nothing
+         create_design -name impl -top #{verilogTopName}
+         vcs -sverilog #{verilogFilename}
+         compile_design impl
 
-  return $ ExperimentResult{proofFound, counterExample = Just counterExample, fullOutput, experimentId}
- where
-  remoteDir :: Text
-  remoteDir = "equifuzz_vcf_experiment"
+         set_user_assumes_lemmas_procedure "miter"
+         proc miter {} {
+           map_by_name -inputs -specphase 1 -implphase 1
+           lemma out_equiv = spec.out(1) == impl.out(1)
+         }
 
-  remoteExperimentDir :: Text
-  remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
-
-  filename :: Text = "impl.cpp"
-
-  topName :: Text = "impl"
-
-  sshCommand :: Text
-  sshCommand = case mSourcePath of
-    Just sourcePath -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && source #{sourcePath} && vcf -fmode DPV -f compare.tcl|]
-    Nothing -> [i|cd #{remoteExperimentDir} && ls -ltr && md5sum * && vcf -fmode DPV -f compare.tcl|]
-
-  wrappedProgram :: Text
-  wrappedProgram =
-    [__i|
-          #{SC.includeHeader}
-
-          #{SC.genSource design}
-
-          #{systemCHectorWrapper topName design}
+         compose -nospec
+         solveNB proof
+         proofwait
+         listproof
+         simcex -txt counter_example.txt out_equiv
+         exit
+         exit
           |]
 
-  compareScript :: Text
-  compareScript =
-    [__i|
-                set_custom_solve_script "orch_multipliers"
-                set_user_assumes_lemmas_procedure "miter"
+  parseOutput Experiment{..} fullOutput =
+    let proofSuccessful =
+          fullOutput
+            & T.lines
+            & any ("Status for proof \"proof\": SUCCESSFUL" `T.isInfixOf`)
 
-                create_design -name impl -top #{topName}
-                scdtan -DSC_INCLUDE_FX #{filename}
-                compile_design impl
+        proofFailed =
+          fullOutput
+            & T.lines
+            & any ("Status for proof \"proof\": FAILED" `T.isInfixOf`)
 
-                proc miter {} {
-                        lemma out_equiv = out(1) == #{experiment ^. #comparisonValue % #literal}
-                }
+        proofFound = case (proofSuccessful, proofFailed) of
+          (True, False) -> Just True
+          (False, True) -> Just False
+          _ -> Nothing
 
-                compose -nospec
-                solveNB proof
-                proofwait
-                listproof
-                simcex -txt counter_example.txt out_equiv
-                exit
-                exit
-      |]
+        counterExample = "TODO"
+     in ExperimentResult{proofFound, counterExample = Just counterExample, fullOutput, experimentId}
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper
@@ -145,3 +139,27 @@ systemCHectorWrapper wrapperName SC.FunctionDeclaration{returnType, args, name} 
 
   argList :: Text
   argList = T.intercalate ", " [argName | (_, argName) <- args]
+
+vcfTypeWidths :: SC.SCType -> Int
+vcfTypeWidths (SC.SCInt n) = n
+vcfTypeWidths (SC.SCUInt n) = n
+vcfTypeWidths (SC.SCBigInt n) = n
+vcfTypeWidths (SC.SCBigUInt n) = n
+vcfTypeWidths SC.SCFixed{w} = w
+vcfTypeWidths SC.SCUFixed{w} = w
+vcfTypeWidths SC.SCFxnumSubref{width} = width
+vcfTypeWidths SC.SCIntSubref{width} = width
+vcfTypeWidths SC.SCUIntSubref{width} = width
+vcfTypeWidths SC.SCSignedSubref{width} = width
+vcfTypeWidths SC.SCUnsignedSubref{width} = width
+vcfTypeWidths SC.SCIntBitref = 1
+vcfTypeWidths SC.SCUIntBitref = 1
+vcfTypeWidths SC.SCSignedBitref = 1
+vcfTypeWidths SC.SCUnsignedBitref = 1
+vcfTypeWidths SC.SCLogic = 1
+vcfTypeWidths SC.SCBV{width} = width
+vcfTypeWidths SC.SCLV{width} = width
+vcfTypeWidths SC.CUInt = 32
+vcfTypeWidths SC.CInt = 32
+vcfTypeWidths SC.CDouble = 64
+vcfTypeWidths SC.CBool = 1

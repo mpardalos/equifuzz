@@ -6,102 +6,104 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Runners.SLEC (runSLEC) where
+module Runners.SLEC (slec) where
 
-import Control.Monad (void)
-import Data.String.Interpolate (i, __i)
+import Data.String.Interpolate (__i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments.Types (Experiment (..), ExperimentResult (..))
 import Optics ((^.))
-import Runners.Types (SSHConnectionTarget)
-import Runners.Util (createRemoteExperimentDir, runSSHCommand)
-import Shelly qualified as Sh
+import Runners.Types (EquivalenceCheckerConfig (..))
+import Runners.Util (verilogImplForEvals)
 import SystemC qualified as SC
 
-runSLEC :: SSHConnectionTarget -> Maybe Text -> Experiment -> IO ExperimentResult
-runSLEC sshOpts mSourcePath Experiment{experimentId, design, comparisonValue} = Sh.shelly . Sh.silently $ do
-  createRemoteExperimentDir
-    sshOpts
-    remoteExperimentDir
+slec :: EquivalenceCheckerConfig
+slec =
+  EquivalenceCheckerConfig
+    { name = "slec"
+    , runScript = "slec compare.tcl; echo '-- slec.log --'; cat calypto/slec.log; echo 'Done'"
+    , makeFiles
+    , parseOutput
+    }
+ where
+  makeFiles Experiment{design, knownEvaluations} =
     [ (specFilename, wrappedProgram)
     , (implFilename, implProgram)
     , ("compare.tcl", compareScript)
     ]
+   where
+    specFilename = "spec.cpp"
+    implFilename = "impl.sv"
 
-  fullOutput <- runSSHCommand sshOpts sshCommand
+    implProgram :: Text
+    implProgram = verilogImplForEvals slecTypeWidths design knownEvaluations
 
-  void $ runSSHCommand sshOpts [i|cd ~ && rm -rf ./#{remoteExperimentDir}|]
+    wrappedProgram :: Text
+    wrappedProgram =
+      [__i|
+            \#define SC_INCLUDE_FX
+            \#include <systemc.h>
 
-  let proofSuccessful =
-        ("Output-Maps                 1" `T.isPrefixOf`) `any` T.lines fullOutput
-  let proofFailed =
-        ("Output-Maps                 0           0              0         1" `T.isPrefixOf`) `any` T.lines fullOutput
+            #{SC.genSource design}
 
-  let proofFound = case (proofSuccessful, proofFailed) of
-        (True, False) -> Just True
-        (False, True) -> Just False
-        _ -> Nothing
+            SC_MODULE(spec) {
+              sc_out<#{outType}> out;
 
-  return $ ExperimentResult{proofFound, counterExample = Nothing, fullOutput, experimentId}
- where
-  remoteDir :: Text
-  remoteDir = "equifuzz_slec_experiment"
+              SC_CTOR(spec) {
+                SC_METHOD(update);
+              }
 
-  remoteExperimentDir :: Text
-  remoteExperimentDir = [i|#{remoteDir}/#{experimentId ^. #uuid}|]
+              void update() {
+                out = #{design ^. #name}(#{inputNames});
+              }
+            };
+            |]
 
-  specFilename :: Text = "spec.cpp"
-  implFilename :: Text = "impl.sv"
+    outType :: Text
+    outType = SC.genSource design.returnType
 
-  sourceCommand :: Text
-  sourceCommand = case mSourcePath of
-    Just sourcePath -> [i|source #{sourcePath}|]
-    Nothing -> [i|echo 'Not sourcing anything'|]
+    inputNames :: Text
+    inputNames = T.intercalate ", " [name | (_, name) <- design.args]
 
-  sshCommand :: Text
-  sshCommand =
-    [i|cd #{remoteExperimentDir} && pwd && ls -ltr && #{sourceCommand} && slec compare.tcl; echo '-- slec.log --'; cat calypto/slec.log; echo 'Done' |]
+    compareScript :: Text
+    compareScript =
+      [__i|
+          build_design -spec #{specFilename}
+          build_design -impl #{implFilename}
+          verify
+            |]
 
-  implProgram :: Text
-  implProgram =
-    [__i|
-          module top (output [#{comparisonValue ^. #width - 1}:0] out);
-                assign out = #{comparisonValue ^. #literal};
-          endmodule
-          |]
+  parseOutput Experiment{experimentId} fullOutput =
+    let proofSuccessful =
+          ("Output-Maps                 1" `T.isPrefixOf`) `any` T.lines fullOutput
+        proofFailed =
+          ("Output-Maps                 0           0              0         1" `T.isPrefixOf`) `any` T.lines fullOutput
+        proofFound = case (proofSuccessful, proofFailed) of
+          (True, False) -> Just True
+          (False, True) -> Just False
+          _ -> Nothing
+     in ExperimentResult{proofFound, counterExample = Nothing, fullOutput, experimentId}
 
-  wrappedProgram :: Text
-  wrappedProgram =
-    [__i|
-          \#define SC_INCLUDE_FX
-          \#include <systemc.h>
-
-          #{SC.genSource design}
-
-          SC_MODULE(spec) {
-            sc_out<#{outType}> out;
-
-            SC_CTOR(spec) {
-              SC_METHOD(update);
-            }
-
-            void update() {
-              out = #{design ^. #name}(#{inputNames});
-            }
-          };
-          |]
-
-  outType :: Text
-  outType = SC.genSource design.returnType
-
-  inputNames :: Text
-  inputNames = T.intercalate ", " [name | (_, name) <- design.args]
-
-  compareScript :: Text
-  compareScript =
-    [__i|
-        build_design -spec #{specFilename}
-        build_design -impl #{implFilename}
-        verify
-          |]
+slecTypeWidths :: SC.SCType -> Int
+slecTypeWidths (SC.SCInt n) = n
+slecTypeWidths (SC.SCUInt n) = n
+slecTypeWidths (SC.SCBigInt n) = n
+slecTypeWidths (SC.SCBigUInt n) = n
+slecTypeWidths SC.SCFixed{w} = w
+slecTypeWidths SC.SCUFixed{w} = w
+slecTypeWidths SC.SCFxnumSubref{width} = width
+slecTypeWidths SC.SCIntSubref{width} = width
+slecTypeWidths SC.SCUIntSubref{width} = width
+slecTypeWidths SC.SCSignedSubref{width} = width
+slecTypeWidths SC.SCUnsignedSubref{width} = width
+slecTypeWidths SC.SCIntBitref = 1
+slecTypeWidths SC.SCUIntBitref = 1
+slecTypeWidths SC.SCSignedBitref = 1
+slecTypeWidths SC.SCUnsignedBitref = 1
+slecTypeWidths SC.SCLogic = 1
+slecTypeWidths SC.SCBV{width} = width
+slecTypeWidths SC.SCLV{width} = width
+slecTypeWidths SC.CUInt = 32
+slecTypeWidths SC.CInt = 32
+slecTypeWidths SC.CDouble = 64
+slecTypeWidths SC.CBool = 1
