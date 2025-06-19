@@ -35,7 +35,6 @@ import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime, nominalDiffTimeT
 import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Experiments (
-  ComparisonValue (..),
   Experiment (..),
   ExperimentId (..),
   ExperimentProgress (..),
@@ -255,7 +254,7 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
   infoBoxNoTitle . table $
     [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)]
     , ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"]
-    , ["Comparison Value", H.text info.experiment.comparisonValue.literal]
+    , ["Comparison Value", H.text (T.pack $ show info.experiment.knownEvaluations) ]
     , case info.result of
         Just result ->
           [ "Actual Result"
