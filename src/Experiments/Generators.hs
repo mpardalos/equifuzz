@@ -62,8 +62,8 @@ generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} =
 
 comparisonValueOfType :: MonadRandom m => SC.SCType -> m ComparisonValue
 comparisonValueOfType t = case SC.knownWidth t of
-  Nothing -> mkComparisonValueInt 32 <$> getRandom
-  Just w -> mkComparisonValueInt w <$> getRandom
+  Nothing -> mkComparisonValueWord 32 <$> getRandom
+  Just w -> mkComparisonValueWord w <$> getRandom
 
 -- | Run the SystemC function and return its output represented as text of a
 -- Verilog-style constant. We use this output format because the normal

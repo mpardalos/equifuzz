@@ -40,13 +40,13 @@ newExperimentId = ExperimentId <$> UUID.nextRandom
 newtype ComparisonValue = UnsafeComparisonValue Text
   deriving newtype (Eq, Ord, Show)
 
-mkComparisonValueInt ::
+mkComparisonValueWord ::
   -- | Width
   Int ->
   -- | Value
-  Int ->
+  Word ->
   ComparisonValue
-mkComparisonValueInt w v = mkComparisonValueWithWidth w (T.pack (showIntAtBase 2 intToDigit v ""))
+mkComparisonValueWord w v = mkComparisonValueWithWidth w (T.pack (showIntAtBase 2 intToDigit v ""))
 
 mkComparisonValue :: Text -> ComparisonValue
 mkComparisonValue t
