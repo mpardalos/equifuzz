@@ -25,7 +25,7 @@ module GenSystemC.Transformations (
 where
 
 import Control.Monad (guard, join, when, replicateM)
-import Control.Monad.Random.Strict (MonadRandom (getRandom), getRandomR, uniform, uniformMay)
+import Control.Monad.Random.Strict (MonadRandom, getRandomR, uniform, uniformMay)
 import Control.Monad.State.Strict (MonadState (get), modify')
 import Data.Maybe (catMaybes, isJust)
 import Data.Text (Text)
@@ -38,13 +38,11 @@ import Optics.State.Operators ((%=), (.=))
 -- sure to run its result through GenConfig.modOperations, and never use it
 -- directly
 
-import Data.List (intersect)
 import Data.Map qualified as Map
 import GenSystemC.Config (GenConfig (..), GenMods (..), TransformationFlags (..))
 import SystemC qualified as SC hiding (operations)
 import SystemC qualified as SCUnconfigured (operations)
-import Util (is, (<<$>>))
-import Data.Map (Map)
+import Util (is)
 
 data Transformation
   = CastWithAssignment SC.SCType

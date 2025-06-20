@@ -18,25 +18,22 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments.Types (
   Evaluation (..),
-  Experiment (..),
-  ExperimentId (..),
-  ExperimentResult,
   comparisonValueAsVerilog,
  )
+import Optics
 import Runners.Types (SSHConnectionTarget (..))
 import Shelly
 import SystemC qualified as SC
 import Util (bashExec)
-import Optics
 
 default (T.Text)
 
 createExperimentDir :: Text -> [(Text, Text)] -> Sh ()
-createExperimentDir path files = do
-  cmd "mkdir" "-p" path
+createExperimentDir experimentDir files = do
+  cmd "mkdir" "-p" experimentDir
 
   forM_ files $ \(filename, content) ->
-    writefile (path </> filename) content
+    writefile (experimentDir </> filename) content
 
 createRemoteExperimentDir :: SSHConnectionTarget -> Text -> [(Text, Text)] -> Sh ()
 createRemoteExperimentDir sshOpts remoteExperimentDir files = do
@@ -49,7 +46,7 @@ createRemoteExperimentDir sshOpts remoteExperimentDir files = do
   void $ scpUpload sshOpts [i|#{localExperimentDir}/*|] [i|#{remoteExperimentDir}/|]
 
 runSSHCommand :: SSHConnectionTarget -> Text -> Sh Text
-runSSHCommand sshOpts command = bashExec [i|#{ssh} #{sshString} '#{command}'|]
+runSSHCommand sshOpts commandStr = bashExec [i|#{ssh} #{sshString} '#{commandStr}'|]
  where
   sshString = sshOpts.username <> "@" <> sshOpts.host
   ssh :: Text = case sshOpts.password of
@@ -103,21 +100,21 @@ verilogImplForEvals typeWidth scFun evals =
 
   body :: Text
   body
-    | length inputDecls > 0 =
-      [__i|
+    | not (null inputDecls) =
+        [__i|
         always_comb begin case (#{concatInputs})
         #{cases}
         endcase end
           |]
-    | (evalHead:_) <- evals =
-      [i|assign out = #{comparisonValueAsVerilog (evalHead ^. #output)};|]
+    | (evalHead : _) <- evals =
+        [i|assign out = #{comparisonValueAsVerilog (evalHead ^. #output)};|]
     | otherwise =
-      [i|assign out = {#{outputWidth}{X}};|]
+        [i|assign out = {#{outputWidth}{X}};|]
 
   inputDecls :: [Text] =
-      [ [i|input wire [#{typeWidth t - 1}:0] #{name}|]
-      | (t, name) <- scFun.args
-      ]
+    [ [i|input wire [#{typeWidth t - 1}:0] #{name}|]
+    | (t, name) <- scFun.args
+    ]
 
   outputWidth = typeWidth scFun.returnType
   outputDecl :: Text = [i|output reg [#{outputWidth - 1}:0] out|]

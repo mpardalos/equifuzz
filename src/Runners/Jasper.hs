@@ -31,7 +31,7 @@ jasper =
     , parseOutput
     }
  where
-  makeFiles Experiment{experimentId, design, knownEvaluations} =
+  makeFiles Experiment{design, knownEvaluations} =
     [ (specFilename, wrappedProgram)
     , (implFilename, implProgram)
     , ("compare.tcl", compareScript)

@@ -21,7 +21,6 @@ import Runners.Types
 import Runners.Util (createExperimentDir, createRemoteExperimentDir, runSSHCommand)
 import Runners.VCF
 import Shelly (liftIO, shelly, (</>))
-import System.Process (readProcess)
 import Util (runBash)
 
 runECRemote :: SSHConnectionTarget -> Maybe Text -> EquivalenceCheckerConfig -> Experiment -> IO ExperimentResult

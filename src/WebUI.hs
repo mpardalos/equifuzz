@@ -58,7 +58,23 @@ import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Text.Printf (printf)
 import Util (diffTimeHMSFormat, foreverThread, modifyMVarPure_, mwhen, whenJust, whenM)
-import Web.Scotty (ActionM, Parsable (..), addHeader, get, header, html, middleware, next, param, params, raw, scotty, setHeader, status, stream)
+import Web.Scotty (
+  ActionM,
+  Parsable (..),
+  addHeader,
+  get,
+  header,
+  html,
+  middleware,
+  next,
+  pathParam,
+  queryParams,
+  raw,
+  scotty,
+  setHeader,
+  status,
+  stream,
+ )
 
 data ExperimentSequenceInfo = ExperimentSequenceInfo
   { sequenceId :: ExperimentSequenceId
@@ -151,8 +167,8 @@ scottyServer stateVar = scotty 8888 $ do
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/sse.js.gz")
 
   get "/experiments/:sequenceId/:experimentId" $ do
-    sequenceId <- coerce @UUIDParam @ExperimentSequenceId <$> param "sequenceId"
-    experimentId <- coerce @UUIDParam @ExperimentId <$> param "experimentId"
+    sequenceId <- coerce @UUIDParam @ExperimentSequenceId <$> pathParam "sequenceId"
+    experimentId <- coerce @UUIDParam @ExperimentId <$> pathParam "experimentId"
     state <- liftIO (readMVar stateVar)
     isHtmxRequest <- (Just "true" ==) <$> header "HX-Request"
 
@@ -178,10 +194,10 @@ scottyServer stateVar = scotty 8888 $ do
       pure [EventStreamEvent{event = "experiment-list", data_ = "update"}]
 
   get "/experiments" $ do
-    whenM (paramExists "toggle-updates") $
+    whenM (queryParamExists "toggle-updates") $
       liftIO (modifyMVarPure_ stateVar toggleLiveUpdates)
 
-    whenM (paramExists "prune-uninteresting") $
+    whenM (queryParamExists "prune-uninteresting") $
       liftIO (modifyMVarPure_ stateVar pruneUninterestingSequences)
 
     state <- liftIO (readMVar stateVar)
@@ -204,8 +220,8 @@ pruneUninterestingSequences state =
               || sequenceInfo.sequenceId `Map.member` state.interestingExperiments
         )
 
-paramExists :: T.Text -> ActionM Bool
-paramExists p = isJust . find ((== p) . fst) <$> params
+queryParamExists :: T.Text -> ActionM Bool
+queryParamExists p = isJust . find ((== p) . fst) <$> queryParams
 
 runWebUI :: TChan ExperimentProgress -> IO ()
 runWebUI progressChan = do
@@ -254,7 +270,7 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
   infoBoxNoTitle . table $
     [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)]
     , ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"]
-    , ["Comparison Value", H.text (T.pack $ show info.experiment.knownEvaluations) ]
+    , ["Comparison Value", H.text (T.pack $ show info.experiment.knownEvaluations)]
     , case info.result of
         Just result ->
           [ "Actual Result"

@@ -25,10 +25,8 @@ import GenSystemC (
   genSystemCConstant,
   generateFromProcess,
  )
-import Optics (view)
 import Shelly qualified as Sh
 import SystemC qualified as SC
-import GenSystemC.Config (GenMods(..))
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
@@ -178,7 +176,10 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = Sh.shel
           else ""
   void $ Sh.bash "rm" ["-r", tmpDir]
 
-  let [reportedWidth, reportedValue] = T.lines programOut
+  let (reportedWidth, reportedValue) =
+        case T.lines programOut of
+          [line1, line2] -> (line1, line2)
+          ls -> error ("Unexpected output line count from SystemC program: " ++ show (length ls))
 
   let width = fromRight (read . T.unpack $ reportedWidth) widthExprOrWidth
   let value = T.replace "." "" reportedValue
