@@ -12,7 +12,6 @@
 module Runners.Util where
 
 import Control.Monad (forM_, void)
-import Data.IORef (modifyIORef', newIORef, readIORef)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -22,31 +21,32 @@ import Experiments.Types (
  )
 import Optics
 import Runners.Types (SSHConnectionTarget (..))
-import Shelly
 import SystemC qualified as SC
-import Util (bashExec)
+import Util (runBash, mkdir_p)
+import qualified Data.Text.IO as TIO
+import Shelly ((</>))
 
 default (T.Text)
 
-createExperimentDir :: Text -> [(Text, Text)] -> Sh ()
+createExperimentDir :: Text -> [(Text, Text)] -> IO ()
 createExperimentDir experimentDir files = do
-  cmd "mkdir" "-p" experimentDir
+  mkdir_p experimentDir
 
   forM_ files $ \(filename, content) ->
-    writefile (experimentDir </> filename) content
+    TIO.writeFile (experimentDir </> filename) content
 
-createRemoteExperimentDir :: SSHConnectionTarget -> Text -> [(Text, Text)] -> Sh ()
+createRemoteExperimentDir :: SSHConnectionTarget -> Text -> [(Text, Text)] -> IO ()
 createRemoteExperimentDir sshOpts remoteExperimentDir files = do
-  localExperimentDir <- T.strip <$> cmd "mktemp" "-d"
+  localExperimentDir <- T.strip <$> runBash "mktemp -d"
 
   forM_ files $ \(filename, content) ->
-    writefile (localExperimentDir </> filename) content
+    TIO.writeFile (localExperimentDir </> filename) content
 
   void $ runSSHCommand sshOpts [i|mkdir -p #{remoteExperimentDir}/|]
   void $ scpUpload sshOpts [i|#{localExperimentDir}/*|] [i|#{remoteExperimentDir}/|]
 
-runSSHCommand :: SSHConnectionTarget -> Text -> Sh Text
-runSSHCommand sshOpts commandStr = bashExec [i|#{ssh} #{sshString} '#{commandStr}'|]
+runSSHCommand :: SSHConnectionTarget -> Text -> IO Text
+runSSHCommand sshOpts commandStr = runBash [i|#{ssh} #{sshString} '#{commandStr}'|]
  where
   sshString = sshOpts.username <> "@" <> sshOpts.host
   ssh :: Text = case sshOpts.password of
@@ -59,9 +59,9 @@ scpDownload ::
   Text ->
   -- | Local path
   Text ->
-  Sh Text
+  IO Text
 scpDownload sshOpts remote local =
-  bashExec [i|#{scp} #{sshString}:#{remote} #{local}|]
+  runBash [i|#{scp} #{sshString}:#{remote} #{local}|]
  where
   sshString = sshOpts.username <> "@" <> sshOpts.host
   scp :: Text = case sshOpts.password of
@@ -74,17 +74,17 @@ scpUpload ::
   Text ->
   -- | Remote path
   Text ->
-  Sh Text
+  IO Text
 scpUpload sshOpts local remote =
-  bashExec [i|#{scp} -r #{local} #{sshString}:#{remote}|]
+  runBash [i|#{scp} -r #{local} #{sshString}:#{remote}|]
  where
   sshString = sshOpts.username <> "@" <> sshOpts.host
   scp :: Text = case sshOpts.password of
     Nothing -> "scp -o PasswordAuthentication=no -o StrictHostKeychecking=no"
     Just pass -> [i|sshpass -p #{pass} scp -o StrictHostKeychecking=no|]
 
-validateSSH :: SSHConnectionTarget -> Sh Bool
-validateSSH sshOpts = silently $ do
+validateSSH :: SSHConnectionTarget -> IO Bool
+validateSSH sshOpts = do
   textOut <- runSSHCommand sshOpts "echo 'hello'"
   return (textOut == "hello\n")
 
@@ -129,15 +129,3 @@ verilogImplForEvals typeWidth scFun evals =
          in [i|  {#{concatInputVals}}: out = #{comparisonValueAsVerilog output};|]
       | Evaluation{inputs, output} <- evals
       ]
-
-capturingOutput :: Sh a -> Sh (a, Text)
-capturingOutput action = do
-  fullOutputRef <- liftIO $ newIORef ""
-  let addToOutput txt = modifyIORef' fullOutputRef (<> txt <> "\n")
-  result <-
-    print_commands_with (addToOutput . ("> " <>))
-      . log_stdout_with addToOutput
-      . log_stderr_with addToOutput
-      $ action
-  fullOutput <- liftIO $ readIORef fullOutputRef
-  return (result, fullOutput)

@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 
 {-# HLINT ignore "Use <$>" #-}
 
@@ -25,8 +26,9 @@ import GenSystemC (
   genSystemCConstant,
   generateFromProcess,
  )
-import Shelly qualified as Sh
 import SystemC qualified as SC
+import Util (runBash)
+import System.Process (readProcessWithExitCode)
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
@@ -80,7 +82,7 @@ comparisonValueOfType t = case SC.knownWidth t of
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
 simulateSystemCAt :: SC.FunctionDeclaration -> [ComparisonValue] -> IO (ComparisonValue, Bool, Text)
-simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = Sh.shelly . Sh.silently $ do
+simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = do
   let callArgs = T.intercalate ", " (map comparisonValueAsC inputs)
   let call = name <> "(" <> callArgs <> ")"
 
@@ -161,20 +163,19 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = Sh.shel
             }
             |]
 
-  tmpDir <- T.strip <$> Sh.run "mktemp" ["-d"]
+  tmpDir <- T.strip <$> runBash "mktemp -d"
   let cppPath = tmpDir <> "/main.cpp"
   let binPath = tmpDir <> "/main"
 
-  Sh.writefile (T.unpack cppPath) fullSource
-  _compileOutput <- Sh.bash "clang++" ["-fsanitize=undefined", "-I/usr/include/systemc", "-lsystemc", cppPath, "-o", binPath]
-  programOut <- T.strip <$> Sh.bash (T.unpack binPath) []
-  programStderr <- Sh.lastStderr
+  writeFile (T.unpack cppPath) fullSource
+  _compileOutput <- readProcessWithExitCode "clang++" ["-fsanitize=undefined", "-I/usr/include/systemc", "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
+  (_programExit, T.pack -> programOut, T.pack -> programStderr) <- readProcessWithExitCode (T.unpack binPath) [] ""
   let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStderr
       extraInfo =
         if hasUndefinedBehaviour
           then T.unlines ["stderr output:", "", programStderr]
           else ""
-  void $ Sh.bash "rm" ["-r", tmpDir]
+  void $ runBash ("rm -r " <> tmpDir)
 
   let (reportedWidth, reportedValue) =
         case T.lines programOut of

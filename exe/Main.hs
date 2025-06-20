@@ -32,7 +32,6 @@ import Text.Printf (printf)
 import Control.Monad (replicateM_, when, forM_)
 import Options.Applicative (ReadM)
 import Runners.Util (validateSSH)
-import qualified Shelly as Sh
 import Control.Exception (throwIO, try, SomeException)
 import ToolRestrictions (vcfMods, noMods, jasperMods, slecMods)
 import GenSystemC.Config (GenMods)
@@ -177,7 +176,7 @@ runnerOptionsToRunner
           AskPassword -> Just <$> askPassword
         let sshOpts = SSHConnectionTarget{username, host, password}
         putStrLn "Validating SSH connection..."
-        sshValid <- try @SomeException $ Sh.shelly $ validateSSH sshOpts
+        sshValid <- try @SomeException $ validateSSH sshOpts
         when (isn't (_Right % only True) sshValid) $
           throwIO (userError "Could not connect to ssh host. Please check the options you provided")
         putStrLn "SSH connection OK"

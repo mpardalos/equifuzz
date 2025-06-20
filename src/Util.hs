@@ -1,7 +1,7 @@
 module Util where
 
 import Control.Concurrent (MVar, forkFinally, modifyMVar_)
-import Control.Monad (void, when)
+import Control.Monad (when)
 import Control.Monad.Random (foldM_, forever)
 import Data.Maybe (isJust)
 import Data.Text (Text)
@@ -10,11 +10,9 @@ import Data.Time.Format (formatTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import GHC.Conc (labelThread)
 import Optics (Prism', preview)
-import Shelly (Sh)
-import Shelly qualified as Sh
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
-import System.Process (readProcess)
+import System.Process (readProcess, callProcess)
 import qualified Data.Text as T
 
 iterateM :: Monad m => Int -> (a -> m a) -> a -> m a
@@ -83,14 +81,11 @@ modifyMVarPure_ var f = modifyMVar_ var (pure . f)
 diffTimeHMSFormat :: NominalDiffTime -> String
 diffTimeHMSFormat = formatTime defaultTimeLocale "%h:%M:%S"
 
-bashExec :: Text -> Sh Text
-bashExec commands = Sh.run "bash" ["-c", commands]
+runBash :: Text -> IO Text
+runBash script = T.pack <$> readProcess "bash" ["-c", T.unpack script] ""
 
-bashExec_ :: Text -> Sh ()
-bashExec_ = void . bashExec
-
-runBash :: String -> IO Text
-runBash script = T.pack <$> readProcess "bash" ["-c", script] ""
+mkdir_p :: Text -> IO ()
+mkdir_p dir = callProcess "mkdir" ["-p", T.unpack dir]
 
 is :: a -> Prism' a b -> Bool
 is x p = isJust $ preview p x

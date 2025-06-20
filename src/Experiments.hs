@@ -15,28 +15,28 @@ import Experiments.Generators
 import Experiments.Types
 import Optics ((^.))
 import Shelly ((</>))
-import Shelly qualified as Sh
 import SystemC qualified as SC
-import Util (whenJust)
+import Util (whenJust, mkdir_p)
+import qualified Data.Text.IO as TIO
 
 -- | Save information about the experiment to the experiments/ directory
 saveExperiment :: Experiment -> ExperimentResult -> IO ()
-saveExperiment experiment result = Sh.shelly . Sh.silently $ do
-  let localExperimentDir = "experiments/" <> UUID.toString experiment.experimentId.uuid
+saveExperiment experiment result = do
+  let localExperimentDir = "experiments/" <> UUID.toText experiment.experimentId.uuid
 
-  Sh.mkdir_p localExperimentDir
-  Sh.writefile (localExperimentDir </> ("dut.cpp" :: Text)) (SC.genSource experiment.design)
-  Sh.writefile (localExperimentDir </> ("description.txt" :: Text)) experiment.longDescription
+  mkdir_p localExperimentDir
+  TIO.writeFile (localExperimentDir </> ("dut.cpp" :: Text)) (SC.genSource experiment.design)
+  TIO.writeFile (localExperimentDir </> ("description.txt" :: Text)) experiment.longDescription
 
-  Sh.writefile
+  TIO.writeFile
     (localExperimentDir </> ("full_output.txt" :: Text))
     result.fullOutput
 
   whenJust result.counterExample $
-    Sh.writefile
+    TIO.writeFile
       (localExperimentDir </> ("counter_example.txt" :: Text))
 
-  Sh.writefile
+  TIO.writeFile
     (localExperimentDir </> ("info.txt" :: Text))
     [__i|
         Proof Found     : #{result ^. #proofFound}
