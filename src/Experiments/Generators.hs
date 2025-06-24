@@ -53,6 +53,16 @@ generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} =
   let hasUB = or hasUBs
   let extraInfo = T.intercalate "-\n" extraInfos
 
+  -- let evaluationInputs =
+  --       zip design.args <$> inputss
+  -- let evaluationConditions :: [[SC.Expr]] =
+  --       [ [
+  --           SC.BinOp SC.CBool (SC.Variable t name) SC.Equals (SC.Constant _ _)
+  --           | ((t, name), value) <- pairs
+  --         ]
+  --         | pairs <- evaluationInputs
+  --       ]
+
   experimentId <- newExperimentId
   return
     Experiment

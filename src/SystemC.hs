@@ -61,6 +61,7 @@ data BinOp
   | BitwiseXorAssign
   | LeftShiftAssign
   | RightShiftAssign
+  | Equals
   deriving (Eq, Show, Generic, Data, Ord, Bounded, Enum)
 
 data UnaryOp
@@ -658,6 +659,7 @@ instance Pretty BinOp where
   pretty BitwiseXorAssign = "^="
   pretty LeftShiftAssign = "<<="
   pretty RightShiftAssign = ">>="
+  pretty Equals = "=="
 
 instance Source BinOp
 
