@@ -31,6 +31,7 @@ allTransformations =
 data GenMods = GenMods
   { operations :: OperationsMod
   , transformations :: TransformationFlags
+  , inputs :: Bool
   }
 
 data GenConfig = GenConfig

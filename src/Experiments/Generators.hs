@@ -23,19 +23,20 @@ import GenSystemC (
   GenConfig (..),
   GenerateProcess (..),
   Reducible,
-  genSystemCConstant,
+  genSystemC,
   generateFromProcess,
  )
 import SystemC qualified as SC
 import Util (runBash)
 import System.Process (readProcessWithExitCode)
+import Optics
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
 mkSystemCConstantExperiment :: GenConfig -> IO (Reducible (IO Experiment))
 mkSystemCConstantExperiment cfg =
   fmap (fmap (generateProcessToExperiment cfg)) $
-    evalRandIO (genSystemCConstant cfg)
+    evalRandIO (genSystemC cfg)
 
 generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
 generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} = do

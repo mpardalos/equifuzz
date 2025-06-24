@@ -12,7 +12,7 @@ import Optics
 import SystemC qualified as SC
 
 vcfMods :: GenMods
-vcfMods = GenMods{operations, transformations}
+vcfMods = GenMods{operations, transformations, inputs = True}
  where
   operations e = case e.annotation of
     SC.SCInt{} ->
@@ -40,7 +40,7 @@ vcfMods = GenMods{operations, transformations}
       }
 
 jasperMods :: GenMods
-jasperMods = GenMods{operations, transformations}
+jasperMods = GenMods{operations, transformations, inputs = True}
  where
   operations :: OperationsMod
   operations e =
@@ -139,7 +139,7 @@ jasperMods = GenMods{operations, transformations}
   transformations = allTransformations
 
 slecMods :: GenMods
-slecMods = GenMods{operations, transformations}
+slecMods = GenMods{operations, transformations, inputs = True}
  where
   operations :: OperationsMod
   operations e =
@@ -186,12 +186,12 @@ noLogic _expr =
     , #assignTo % #scLogic .~ False
     ]
 
-
 noMods :: GenMods
 noMods =
   GenMods
     { operations = const id
     , transformations = allTransformations
+    , inputs = True
     }
 
 composeAll :: Foldable t => t (c -> c) -> c -> c

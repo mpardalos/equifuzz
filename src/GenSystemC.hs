@@ -5,7 +5,6 @@
 module GenSystemC (
   -- * Generation
   genSystemC,
-  genSystemCConstant,
   generateFromProcess,
   GenerateProcess (..),
   Reducible (..),
@@ -45,19 +44,6 @@ import qualified Data.Text as T
 
 genSystemC :: GenConfig -> Rand StdGen (Reducible GenerateProcess)
 genSystemC cfg = do
-  seed <- seedExpr
-  transformations <- execWriterT . flip evalStateT (initBuildOutState seed, []) $
-    replicateM_ cfg.growSteps $ do
-      e <- use (_1 % #headExpr)
-      transformation <- zoom _2 (randomTransformationFor cfg e)
-      tell [transformation]
-      zoom _1 (applyTransformation cfg transformation)
-
-  return $ asReducible $ GenerateProcess seed transformations
-
--- FIXME: This will generate free variables. Stop it
-genSystemCConstant :: GenConfig -> Rand StdGen (Reducible GenerateProcess)
-genSystemCConstant cfg = do
   seed <- seedExpr
   transformations <- execWriterT . flip evalStateT (initBuildOutState seed, []) $
     replicateM_ cfg.growSteps $ do

@@ -43,6 +43,7 @@ import GenSystemC.Config (GenConfig (..), GenMods (..), TransformationFlags (..)
 import SystemC qualified as SC hiding (operations)
 import SystemC qualified as SCUnconfigured (operations)
 import Util (is)
+import Data.Data (Data)
 
 data Transformation
   = CastWithAssignment SC.SCType
@@ -53,7 +54,7 @@ data Transformation
   | BitSelect Int
   | ApplyMethod SC.SCMethod
   | ApplyUnaryOp SC.UnaryOp
-  deriving stock (Show, Generic)
+  deriving stock (Show, Generic, Data)
 
 type MonadBuild m = MonadState BuildOutState m
 
@@ -133,6 +134,11 @@ castAllowed cfg expr toType =
         SC.CBool -> flags.cBool
 
 applyTransformation :: MonadBuild m => GenConfig -> Transformation -> m ()
+applyTransformation cfg transformation
+  -- First, look for free vars in any expression which is explicitly in the
+  -- transformation. If there is some and inputs are disabled, skip the
+  -- transformation
+  | not cfg.mods.inputs && not (null (SC.freeVars transformation)) = pure ()
 applyTransformation cfg (CastWithAssignment varType) = do
   e <- use #headExpr
   varName <- newVar
@@ -331,12 +337,13 @@ randomTransformationFor cfg e
       return (ApplyUnaryOp <$> uniform [minBound :: SC.UnaryOp .. maxBound])
 
     someAtomicExpr :: SC.SCType -> m SC.Expr
-    someAtomicExpr t =
-      join . uniform $
-        [ someConstant t
-        , someExistingVar t
-        , someNewVar t
-        ]
+    someAtomicExpr t
+      | cfg.mods.inputs = join . uniform $
+          [ someConstant t
+          , someExistingVar t
+          , someNewVar t
+          ]
+      | otherwise = someConstant t
 
     someConstant :: SC.SCType -> m SC.Expr
     someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)
