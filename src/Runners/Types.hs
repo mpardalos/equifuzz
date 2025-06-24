@@ -29,4 +29,5 @@ data SSHConnectionTarget = SSHConnectionTarget
   , password :: Maybe Text
   }
 
+makeFieldLabelsNoPrefix ''EquivalenceCheckerConfig
 makeFieldLabelsNoPrefix ''SSHConnectionTarget

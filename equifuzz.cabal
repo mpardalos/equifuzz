@@ -62,6 +62,7 @@ library
         Util,
         WebUI,
         Orchestration,
+        Testing,
         Meta,
         Paths_equifuzz
     build-depends:

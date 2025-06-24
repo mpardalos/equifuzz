@@ -20,6 +20,7 @@ import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import Numeric (showIntAtBase)
 import Optics (makeFieldLabelsNoPrefix)
+import Prettyprinter (Pretty (..), (<+>))
 import SystemC qualified as SC
 
 -- | Identifies a sequence of experiments
@@ -74,6 +75,13 @@ data Evaluation = Evaluation
   , output :: ComparisonValue
   }
   deriving (Generic, Show, Eq, Ord)
+
+instance Pretty ComparisonValue where
+  pretty = pretty . comparisonValueAsVerilog
+
+instance Pretty Evaluation where
+  pretty Evaluation{inputs, output} =
+    pretty inputs <+> " -> " <+> pretty output
 
 data Experiment = Experiment
   { experimentId :: ExperimentId

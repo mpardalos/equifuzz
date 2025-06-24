@@ -4,6 +4,7 @@
 
 module GenSystemC (
   -- * Generation
+  genSystemC,
   genSystemCConstant,
   generateFromProcess,
   GenerateProcess (..),
