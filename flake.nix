@@ -41,6 +41,7 @@
           cabal-install
           haskell-language-server
           hlint
+          hoogle
           pkgs.clang 
           pkgs.systemc 
         ]);
