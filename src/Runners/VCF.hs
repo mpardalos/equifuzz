@@ -69,7 +69,7 @@ vcFormal =
            lemma out_equiv = spec.out(1) == impl.out(1)
          }
 
-         compose -nospec
+         compose
          solveNB proof
          proofwait
          listproof
