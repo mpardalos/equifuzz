@@ -50,6 +50,8 @@ data BinOp
   | Multiply
   | Divide
   | BitwiseOr
+  | LogicalOr
+  | LogicalAnd
   | Assign
   | PlusAssign
   | MinusAssign
@@ -69,18 +71,19 @@ data UnaryOp
   | PreDecrement
   | PostIncrement
   | PostDecrement
+  | LogicalNot
   deriving (Eq, Show, Generic, Data, Ord, Bounded, Enum)
 
 type ExprAnn = SCType
 
 data Expr
-  = Constant ExprAnn Int
+  = Constant ExprAnn Integer
   | BinOp ExprAnn Expr BinOp Expr
   | UnaryOp ExprAnn UnaryOp Expr
   | Conditional ExprAnn Expr Expr Expr
   | Variable ExprAnn Text
   | Cast ExprAnn SCType Expr
-  | Bitref ExprAnn Expr Int
+  | Bitref ExprAnn Expr Integer
   | MethodCall ExprAnn Expr Text [Expr]
   deriving (Generic, Eq, Ord, Show, Data)
 
@@ -108,6 +111,7 @@ data Statement
   | AssignmentDeclaration SCType VarName Expr
   | Declaration SCType VarName
   | Assignment VarName Expr
+  | If Expr Statement (Maybe Statement)
   | Block [Statement]
   deriving (Generic, Eq, Ord, Show, Data)
 
@@ -648,6 +652,8 @@ instance Pretty BinOp where
   pretty Multiply = "*"
   pretty Divide = "/"
   pretty BitwiseOr = "|"
+  pretty LogicalOr = "||"
+  pretty LogicalAnd = "&&"
   pretty Assign = "="
   pretty PlusAssign = "+="
   pretty MinusAssign = "-="
@@ -681,6 +687,7 @@ instance Pretty Expr where
       PreIncrement -> "++" <> pretty expr
       PostDecrement -> pretty expr <> "--"
       PreDecrement -> "--" <> pretty expr
+      LogicalNot -> "!" <> pretty expr
   pretty (Conditional _ cond tBranch fBranch) =
     "("
       <> ( align . vsep $
@@ -717,6 +724,15 @@ instance Pretty Statement where
     pretty name <+> "=" <+> pretty expr <> ";"
   pretty (Declaration t name) =
     pretty t <+> pretty name <> ";"
+  pretty (If cond ifT Nothing) =
+    "if (" <> pretty cond <> ") " <> pretty ifT
+  pretty (If cond ifT (Just ifF)) =
+    "if ("
+      <> pretty cond
+      <> ") "
+      <> pretty ifT
+      <> " else "
+      <> pretty ifF
   pretty (Block statements) =
     prettyBlock statements
 

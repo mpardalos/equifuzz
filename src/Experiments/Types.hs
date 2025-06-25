@@ -13,14 +13,16 @@ module Experiments.Types where
 
 import Data.Char (intToDigit)
 import Data.Data (Data)
+import Data.Function ((&))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID (UUID)
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
-import Numeric (showIntAtBase)
+import Numeric (readBin, showIntAtBase)
 import Optics (makeFieldLabelsNoPrefix)
 import Prettyprinter (Pretty (..), (<+>))
+import Safe (fromJustNote)
 import SystemC qualified as SC
 
 -- | Identifies a sequence of experiments
@@ -69,6 +71,23 @@ comparisonValueAsC (UnsafeComparisonValue t) = "0b" <> t
 comparisonValueAsVerilog :: ComparisonValue -> Text
 comparisonValueAsVerilog (UnsafeComparisonValue t) =
   T.pack (show (T.length t)) <> "'b" <> t
+
+readBinMay :: (Eq a, Num a) => String -> Maybe a
+readBinMay s =
+  case readBin s of
+    [(n, "")] -> Just n
+    _ -> Nothing
+
+comparisonValueAsSC :: SC.SCType -> ComparisonValue -> SC.Expr
+comparisonValueAsSC t val =
+  SC.Constant
+    t
+    ( val
+        & comparisonValueRaw
+        & T.unpack
+        & readBinMay
+        & fromJustNote "Invalid ComparisonValue"
+    )
 
 data Evaluation = Evaluation
   { inputs :: [ComparisonValue]

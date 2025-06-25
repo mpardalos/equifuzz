@@ -26,10 +26,10 @@ import GenSystemC (
   genSystemC,
   generateFromProcess,
  )
+import Optics
+import System.Process (readProcessWithExitCode)
 import SystemC qualified as SC
 import Util (runBash)
-import System.Process (readProcessWithExitCode)
-import Optics
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
@@ -38,30 +38,51 @@ mkSystemCConstantExperiment cfg =
   fmap (fmap (generateProcessToExperiment cfg)) $
     evalRandIO (genSystemC cfg)
 
+-- | Modify a function so that it returns zero on inputs not in the provided
+-- list of evaluations.  For inputs within the list of evaluations, it runs the
+-- same code as the original function.
+limitToEvaluations :: [Evaluation] -> SC.FunctionDeclaration -> SC.FunctionDeclaration
+limitToEvaluations evals decl =
+  let
+    goodInputs = map (view #inputs) evals
+    goodInputsLabelled = map (zip decl.args) goodInputs
+    inputChecks = map (map (\((t, name), value) -> SC.BinOp SC.CBool (SC.Variable t name) SC.Equals (comparisonValueAsSC t value))) goodInputsLabelled
+    evaluationConditions =
+      map
+        ( foldr
+            (\l r -> SC.BinOp SC.CBool l SC.LogicalAnd r)
+            (SC.Constant SC.CBool 1)
+        )
+        inputChecks
+    inputValidCondition =
+      foldr
+        (\l r -> SC.BinOp SC.CBool l SC.LogicalOr r)
+        (SC.Constant SC.CBool 0)
+        evaluationConditions
+    earlyReturn :: SC.Statement =
+      SC.If
+        (SC.UnaryOp SC.CBool SC.LogicalNot inputValidCondition)
+        (SC.Return (SC.Constant decl.returnType 0))
+        Nothing
+   in
+    decl{SC.body = earlyReturn : decl.body}
+
 generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
 generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} = do
-  let design = generateFromProcess cfg "dut" process
+  let rawDesign = generateFromProcess cfg "dut" process
 
   inputss <-
     replicateM cfg.evaluations $
-      mapM (comparisonValueOfType . fst) design.args
+      mapM (comparisonValueOfType . fst) rawDesign.args
 
   (outputs, hasUBs, extraInfos) <-
-    unzip3 <$> mapM (simulateSystemCAt design) inputss
+    unzip3 <$> mapM (simulateSystemCAt rawDesign) inputss
 
   let knownEvaluations = [Evaluation{..} | (inputs, output) <- zip inputss outputs]
   let hasUB = or hasUBs
   let extraInfo = T.intercalate "-\n" extraInfos
 
-  -- let evaluationInputs =
-  --       zip design.args <$> inputss
-  -- let evaluationConditions :: [[SC.Expr]] =
-  --       [ [
-  --           SC.BinOp SC.CBool (SC.Variable t name) SC.Equals (SC.Constant _ _)
-  --           | ((t, name), value) <- pairs
-  --         ]
-  --         | pairs <- evaluationInputs
-  --       ]
+  let design = limitToEvaluations knownEvaluations rawDesign
 
   experimentId <- newExperimentId
   return

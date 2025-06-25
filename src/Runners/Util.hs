@@ -15,16 +15,16 @@ import Control.Monad (forM_, void)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Experiments.Types (
   Evaluation (..),
   comparisonValueAsVerilog,
  )
 import Optics
 import Runners.Types (SSHConnectionTarget (..))
-import SystemC qualified as SC
-import Util (runBash, mkdir_p)
-import qualified Data.Text.IO as TIO
 import Shelly ((</>))
+import SystemC qualified as SC
+import Util (mkdir_p, runBash)
 
 default (T.Text)
 
@@ -102,9 +102,12 @@ verilogImplForEvals typeWidth scFun evals =
   body
     | not (null inputDecls) =
         [__i|
-        always_comb begin case (#{concatInputs})
-        #{cases}
-        endcase end
+        always_comb begin
+          out = 0;
+          case (#{concatInputs})
+            #{cases}
+          endcase
+        end
           |]
     | (evalHead : _) <- evals =
         [i|assign out = #{comparisonValueAsVerilog (evalHead ^. #output)};|]
@@ -123,9 +126,8 @@ verilogImplForEvals typeWidth scFun evals =
     "{" <> T.intercalate ", " [name | (_, name) <- scFun.args] <> "}"
 
   cases :: Text =
-    T.intercalate
-      "\n"
+    T.intercalate "\n    "
       [ let concatInputVals = T.intercalate ", " (map comparisonValueAsVerilog inputs)
-         in [i|  {#{concatInputVals}}: out = #{comparisonValueAsVerilog output};|]
+         in [i|{#{concatInputVals}}: out = #{comparisonValueAsVerilog output};|]
       | Evaluation{inputs, output} <- evals
       ]

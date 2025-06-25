@@ -168,7 +168,7 @@ applyTransformation cfg (Range bound1 bound2) = do
                   (resultType width)
                   e
                   "range"
-                  [SC.Constant SC.CInt hi, SC.Constant SC.CInt lo]
+                  [SC.Constant SC.CInt (fromIntegral hi), SC.Constant SC.CInt (fromIntegral lo)]
           _ -> e
 applyTransformation cfg (Arithmetic op e') =
   #headExpr %= \e ->
@@ -184,7 +184,7 @@ applyTransformation cfg (BitSelect idx) = do
   #headExpr %= \e ->
     let idxInBounds = maybe True (idx <) (SC.knownWidth e.annotation)
      in case (modOperations cfg e).bitSelect of
-          Just bitrefType | idxInBounds -> SC.Bitref bitrefType e idx
+          Just bitrefType | idxInBounds -> SC.Bitref bitrefType e (fromIntegral idx)
           _ -> e
 applyTransformation cfg (ApplyMethod method) = do
   #headExpr %= \e ->
