@@ -30,6 +30,7 @@ import Optics
 import System.Process (readProcessWithExitCode)
 import SystemC qualified as SC
 import Util (runBash)
+import System.Environment.Blank (getEnvDefault)
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
@@ -200,7 +201,10 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = do
   let binPath = tmpDir <> "/main"
 
   writeFile (T.unpack cppPath) fullSource
-  _compileOutput <- readProcessWithExitCode "clang++" ["-fsanitize=undefined", "-I/usr/include/systemc", "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
+  systemcHome <- getEnvDefault "SYSTEMC_HOME" "/usr"
+  let systemcIncludePath = systemcHome <> "/include"
+  let systemcLibraryPath = systemcHome <> "/lib"
+  _compileOutput <- readProcessWithExitCode "clang++" ["-fsanitize=undefined", "-I", systemcIncludePath, "-L", systemcLibraryPath, "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
   (_programExit, T.pack -> programOut, T.pack -> programStderr) <- readProcessWithExitCode (T.unpack binPath) [] ""
   let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStderr
       extraInfo =
