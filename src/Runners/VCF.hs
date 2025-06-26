@@ -15,7 +15,6 @@ import Data.Text qualified as T
 import Experiments.Types
 import Runners.Types (EquivalenceCheckerConfig (..))
 import SystemC qualified as SC
-import Runners.Util (verilogImplForEvals)
 
 -- | Run an experiment using VC Formal on a remote host
 vcFormal :: EquivalenceCheckerConfig
@@ -29,7 +28,7 @@ vcFormal =
  where
   makeFiles Experiment{..} =
     [ (scFilename, systemCProgram)
-    , (verilogFilename, verilogProgram)
+    , (verilogFilename, verilogDesign)
     , ("compare.tcl", compareScript)
     ]
    where
@@ -40,15 +39,12 @@ vcFormal =
     systemCProgram =
       [__i|
         #{SC.includeHeader}
-        #{SC.genSource design}
-        #{systemCHectorWrapper scTopName design}
+        #{SC.genSource scDesign}
+        #{systemCHectorWrapper scTopName scDesign}
         |]
 
     verilogFilename :: Text = "impl.sv"
     verilogTopName :: Text = "top"
-
-    verilogProgram :: Text
-    verilogProgram = verilogImplForEvals vcfTypeWidths design knownEvaluations
 
     compareScript :: Text
     compareScript =
@@ -139,27 +135,3 @@ systemCHectorWrapper wrapperName SC.FunctionDeclaration{returnType, args, name} 
 
   argList :: Text
   argList = T.intercalate ", " [argName | (_, argName) <- args]
-
-vcfTypeWidths :: SC.SCType -> Int
-vcfTypeWidths (SC.SCInt n) = n
-vcfTypeWidths (SC.SCUInt n) = n
-vcfTypeWidths (SC.SCBigInt n) = n
-vcfTypeWidths (SC.SCBigUInt n) = n
-vcfTypeWidths SC.SCFixed{w} = w
-vcfTypeWidths SC.SCUFixed{w} = w
-vcfTypeWidths SC.SCFxnumSubref{width} = width
-vcfTypeWidths SC.SCIntSubref{width} = width
-vcfTypeWidths SC.SCUIntSubref{width} = width
-vcfTypeWidths SC.SCSignedSubref{width} = width
-vcfTypeWidths SC.SCUnsignedSubref{width} = width
-vcfTypeWidths SC.SCIntBitref = 1
-vcfTypeWidths SC.SCUIntBitref = 1
-vcfTypeWidths SC.SCSignedBitref = 1
-vcfTypeWidths SC.SCUnsignedBitref = 1
-vcfTypeWidths SC.SCLogic = 1
-vcfTypeWidths SC.SCBV{width} = width
-vcfTypeWidths SC.SCLV{width} = width
-vcfTypeWidths SC.CUInt = 32
-vcfTypeWidths SC.CInt = 32
-vcfTypeWidths SC.CDouble = 64
-vcfTypeWidths SC.CBool = 1

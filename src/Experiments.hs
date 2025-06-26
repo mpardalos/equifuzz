@@ -25,7 +25,8 @@ saveExperiment experiment result = do
   let localExperimentDir = "experiments/" <> UUID.toText experiment.experimentId.uuid
 
   mkdir_p localExperimentDir
-  TIO.writeFile (localExperimentDir </> ("dut.cpp" :: Text)) (SC.genSource experiment.design)
+  TIO.writeFile (localExperimentDir </> ("spec.cpp" :: Text)) (SC.genSource experiment.scDesign)
+  TIO.writeFile (localExperimentDir </> ("impl.sv" :: Text)) experiment.verilogDesign
   TIO.writeFile (localExperimentDir </> ("description.txt" :: Text)) experiment.longDescription
 
   TIO.writeFile

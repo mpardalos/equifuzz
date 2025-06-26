@@ -285,7 +285,9 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
 
   infoBox "Description" (H.pre $ H.text ("\n" <> info.experiment.longDescription))
 
-  infoBox "Design" (H.pre $ H.text ("\n" <> SC.genSource info.experiment.design))
+  infoBox "SystemC" (H.pre $ H.text ("\n" <> SC.genSource info.experiment.scDesign))
+
+  infoBox "Verilog" (H.pre $ H.text ("\n" <> info.experiment.verilogDesign))
 
   whenJust (info ^? #result %? #counterExample % _Just) $ \counterExample ->
     infoBox

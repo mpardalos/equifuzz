@@ -83,14 +83,17 @@ generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} =
   let hasUB = or hasUBs
   let extraInfo = T.intercalate "-\n" extraInfos
 
-  let design = limitToEvaluations knownEvaluations rawDesign
+  let scDesign = limitToEvaluations knownEvaluations rawDesign
+
+  let verilogDesign = verilogImplForEvals scDesign knownEvaluations
 
   experimentId <- newExperimentId
   return
     Experiment
       { experimentId
       , expectedResult = not hasUB -- Expect a negative result for programs with UB
-      , design
+      , scDesign
+      , verilogDesign
       , size = length transformations
       , longDescription =
           T.unlines . concat $
@@ -226,3 +229,73 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = do
     , hasUndefinedBehaviour
     , extraInfo
     )
+
+verilogImplForEvals :: SC.FunctionDeclaration -> [Evaluation] -> Text
+verilogImplForEvals scFun evals =
+  [__i|
+      module top(#{decls});
+      #{body}
+      endmodule
+      |]
+ where
+  decls = T.intercalate ", " (inputDecls ++ [outputDecl])
+
+  body :: Text
+  body
+    | not (null inputDecls) =
+        [__i|
+        always_comb begin
+          out = 0;
+          case (#{concatInputs})
+            #{cases}
+          endcase
+        end
+          |]
+    | (evalHead : _) <- evals =
+        [i|assign out = #{comparisonValueAsVerilog (evalHead ^. #output)};|]
+    | otherwise =
+        [i|assign out = {#{outputWidth}{X}};|]
+
+  inputDecls :: [Text] =
+    [ [i|input wire [#{typeWidth t - 1}:0] #{name}|]
+    | (t, name) <- scFun.args
+    ]
+
+  outputWidth = typeWidth scFun.returnType
+  outputDecl :: Text = [i|output reg [#{outputWidth - 1}:0] out|]
+
+  concatInputs :: Text =
+    "{" <> T.intercalate ", " [name | (_, name) <- scFun.args] <> "}"
+
+  cases :: Text =
+    T.intercalate "\n    "
+      [ let concatInputVals = T.intercalate ", " (map comparisonValueAsVerilog inputs)
+         in [i|{#{concatInputVals}}: out = #{comparisonValueAsVerilog output};|]
+      | Evaluation{inputs, output} <- evals
+      ]
+
+-- TODO: Make this configurable. Differs per EC.
+
+typeWidth :: SC.SCType -> Int
+typeWidth (SC.SCInt n) = n
+typeWidth (SC.SCUInt n) = n
+typeWidth (SC.SCBigInt n) = n
+typeWidth (SC.SCBigUInt n) = n
+typeWidth SC.SCFixed{w} = w
+typeWidth SC.SCUFixed{w} = w
+typeWidth SC.SCFxnumSubref{width} = width
+typeWidth SC.SCIntSubref{width} = width
+typeWidth SC.SCUIntSubref{width} = width
+typeWidth SC.SCSignedSubref{width} = width
+typeWidth SC.SCUnsignedSubref{width} = width
+typeWidth SC.SCIntBitref = 1
+typeWidth SC.SCUIntBitref = 1
+typeWidth SC.SCSignedBitref = 1
+typeWidth SC.SCUnsignedBitref = 1
+typeWidth SC.SCLogic = 1
+typeWidth SC.SCBV{width} = width
+typeWidth SC.SCLV{width} = width
+typeWidth SC.CUInt = 32
+typeWidth SC.CInt = 32
+typeWidth SC.CDouble = 64
+typeWidth SC.CBool = 1

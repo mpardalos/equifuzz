@@ -106,7 +106,8 @@ data Experiment = Experiment
   { experimentId :: ExperimentId
   , expectedResult :: Bool
   -- ^ True if we expect the modules to be equivalent, False if we expect them not to be
-  , design :: SC.FunctionDeclaration
+  , scDesign :: SC.FunctionDeclaration
+  , verilogDesign :: Text
   , size :: Int
   -- ^ Used for ordering reductions of the same experiment. Will probably be
   -- the number of transformations used to generate it

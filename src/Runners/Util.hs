@@ -12,18 +12,12 @@
 module Runners.Util where
 
 import Control.Monad (forM_, void)
-import Data.String.Interpolate (i, __i)
+import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Experiments.Types (
-  Evaluation (..),
-  comparisonValueAsVerilog,
- )
-import Optics
 import Runners.Types (SSHConnectionTarget (..))
 import Shelly ((</>))
-import SystemC qualified as SC
 import Util (mkdir_p, runBash)
 
 default (T.Text)
@@ -87,47 +81,3 @@ validateSSH :: SSHConnectionTarget -> IO Bool
 validateSSH sshOpts = do
   textOut <- runSSHCommand sshOpts "echo 'hello'"
   return (textOut == "hello\n")
-
-verilogImplForEvals :: (SC.SCType -> Int) -> SC.FunctionDeclaration -> [Evaluation] -> Text
-verilogImplForEvals typeWidth scFun evals =
-  [__i|
-      module top(#{decls});
-      #{body}
-      endmodule
-      |]
- where
-  decls = T.intercalate ", " (inputDecls ++ [outputDecl])
-
-  body :: Text
-  body
-    | not (null inputDecls) =
-        [__i|
-        always_comb begin
-          out = 0;
-          case (#{concatInputs})
-            #{cases}
-          endcase
-        end
-          |]
-    | (evalHead : _) <- evals =
-        [i|assign out = #{comparisonValueAsVerilog (evalHead ^. #output)};|]
-    | otherwise =
-        [i|assign out = {#{outputWidth}{X}};|]
-
-  inputDecls :: [Text] =
-    [ [i|input wire [#{typeWidth t - 1}:0] #{name}|]
-    | (t, name) <- scFun.args
-    ]
-
-  outputWidth = typeWidth scFun.returnType
-  outputDecl :: Text = [i|output reg [#{outputWidth - 1}:0] out|]
-
-  concatInputs :: Text =
-    "{" <> T.intercalate ", " [name | (_, name) <- scFun.args] <> "}"
-
-  cases :: Text =
-    T.intercalate "\n    "
-      [ let concatInputVals = T.intercalate ", " (map comparisonValueAsVerilog inputs)
-         in [i|{#{concatInputVals}}: out = #{comparisonValueAsVerilog output};|]
-      | Evaluation{inputs, output} <- evals
-      ]
