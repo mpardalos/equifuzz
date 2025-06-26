@@ -30,7 +30,7 @@
               # Patch equifuzz to know where systemc and clang are here
               echo 'postInstall: Wrapping binary'
               wrapProgram $out/bin/equifuzz \
-                --prefix PATH : ${pkgs.clang}/bin \
+                --set EQUIFUZZ_CLANG ${pkgs.clang}/bin/clang++ \
                 --set SYSTEMC_HOME ${pkgs.systemc}
             '';
           }))
@@ -45,8 +45,12 @@
 
         shellModifiers = [
           ((t.flip hl.addBuildTools) (devTools ++ deps))
-          (hl.compose.overrideCabal
-            (drv: { shellHook = "export SYSTEMC_HOME=${pkgs.systemc}"; }))
+          (hl.compose.overrideCabal (drv: {
+            shellHook = ''
+              export SYSTEMC_HOME=${pkgs.systemc}
+              export EQUIFUZZ_CLANG=${pkgs.clang}/bin/clang++
+            '';
+          }))
         ];
 
         equifuzz = { returnShellEnv ? false }:

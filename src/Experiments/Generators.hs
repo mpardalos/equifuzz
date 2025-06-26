@@ -207,7 +207,8 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = do
   systemcHome <- getEnvDefault "SYSTEMC_HOME" "/usr"
   let systemcIncludePath = systemcHome <> "/include"
   let systemcLibraryPath = systemcHome <> "/lib"
-  _compileOutput <- readProcessWithExitCode "clang++" ["-fsanitize=undefined", "-I", systemcIncludePath, "-L", systemcLibraryPath, "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
+  clangPath <- getEnvDefault "EQUIFUZZ_CLANG" "clang++"
+  _compileOutput <- readProcessWithExitCode clangPath ["-fsanitize=undefined", "-I", systemcIncludePath, "-L", systemcLibraryPath, "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
   (_programExit, T.pack -> programOut, T.pack -> programStderr) <- readProcessWithExitCode (T.unpack binPath) [] ""
   let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStderr
       extraInfo =
