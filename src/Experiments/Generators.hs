@@ -15,6 +15,7 @@ import Control.Monad (replicateM)
 import Control.Monad.Random.Strict (MonadRandom (getRandom), evalRandIO)
 import Data.Either (fromRight)
 import Data.Functor
+import Data.Maybe (fromMaybe)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -27,10 +28,11 @@ import GenSystemC (
   generateFromProcess,
  )
 import Optics
+import Safe (foldr1May)
+import System.Environment.Blank (getEnvDefault)
 import System.Process (readProcessWithExitCode)
 import SystemC qualified as SC
 import Util (runBash)
-import System.Environment.Blank (getEnvDefault)
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
@@ -50,16 +52,14 @@ limitToEvaluations evals decl =
     inputChecks = map (map (\((t, name), value) -> SC.BinOp SC.CBool (SC.Variable t name) SC.Equals (comparisonValueAsSC t value))) goodInputsLabelled
     evaluationConditions =
       map
-        ( foldr
-            (\l r -> SC.BinOp SC.CBool l SC.LogicalAnd r)
-            (SC.Constant SC.CBool 1)
+        ( fromMaybe (SC.Constant SC.CBool 1)
+            . foldr1May (\l r -> SC.BinOp SC.CBool l SC.LogicalAnd r)
         )
         inputChecks
     inputValidCondition =
-      foldr
-        (\l r -> SC.BinOp SC.CBool l SC.LogicalOr r)
-        (SC.Constant SC.CBool 0)
-        evaluationConditions
+      fromMaybe (SC.Constant SC.CBool 0)
+        . foldr1May (\l r -> SC.BinOp SC.CBool l SC.LogicalOr r)
+        $ evaluationConditions
     earlyReturn :: SC.Statement =
       SC.If
         (SC.UnaryOp SC.CBool SC.LogicalNot inputValidCondition)
@@ -268,7 +268,8 @@ verilogImplForEvals scFun evals =
     "{" <> T.intercalate ", " [name | (_, name) <- scFun.args] <> "}"
 
   cases :: Text =
-    T.intercalate "\n    "
+    T.intercalate
+      "\n    "
       [ let concatInputVals = T.intercalate ", " (map comparisonValueAsVerilog inputs)
          in [i|{#{concatInputVals}}: out = #{comparisonValueAsVerilog output};|]
       | Evaluation{inputs, output} <- evals
