@@ -63,7 +63,7 @@ limitToEvaluations evals decl =
     earlyReturn :: SC.Statement =
       SC.If
         (SC.UnaryOp SC.CBool SC.LogicalNot inputValidCondition)
-        (SC.Return (SC.Constant decl.returnType 0))
+        (SC.Return (defaultValueSC decl.returnType))
         Nothing
    in
     decl{SC.body = earlyReturn : decl.body}
@@ -246,7 +246,7 @@ verilogImplForEvals scFun evals =
     | not (null inputDecls) =
         [__i|
         always_comb begin
-          out = 0;
+          out = #{defaultValueVerilog (scFun ^. #returnType)};
           case (#{concatInputs})
             #{cases}
           endcase
@@ -275,6 +275,13 @@ verilogImplForEvals scFun evals =
          in [i|{#{concatInputVals}}: out = #{comparisonValueAsVerilog output};|]
       | Evaluation{inputs, output} <- evals
       ]
+
+defaultValueVerilog :: SC.SCType -> Text
+defaultValueVerilog _ = "0" -- Don't worry about it. Works for any type/width
+
+defaultValueSC :: SC.SCType -> SC.Expr
+defaultValueSC SC.SCLogic = SC.Literal SC.SCLogic "sc_dt::sc_logic(0)"
+defaultValueSC t = SC.Literal t "0"
 
 -- TODO: Make this configurable. Differs per EC.
 
