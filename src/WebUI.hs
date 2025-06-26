@@ -48,6 +48,7 @@ import Network.Wai (StreamingBody)
 import Network.Wai.Middleware.Gzip (def, gzip)
 import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (.~), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
+import Prettyprinter (pretty)
 import Safe (headMay, tailSafe)
 import SystemC qualified as SC
 import Text.Blaze.Html.Renderer.Pretty qualified as H
@@ -270,7 +271,7 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
   infoBoxNoTitle . table $
     [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)]
     , ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"]
-    , ["Comparison Value", H.text (T.pack $ show info.experiment.knownEvaluations)]
+    , ["Comparison Value", H.text (T.pack . show . pretty $ info.experiment.knownEvaluations)]
     , case info.result of
         Just result ->
           [ "Actual Result"
