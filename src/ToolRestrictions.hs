@@ -15,6 +15,21 @@ vcfMods :: GenMods
 vcfMods = GenMods{operations, transformations, inputs = True}
  where
   operations e = case e.annotation of
+    SC.CDouble{} ->
+      composeAll
+        [ #constructorInto % #scUInt .~ False
+        ]
+    _ -> id
+
+  transformations =
+    allTransformations
+      { arithmetic = False
+      }
+
+oldVcfMods :: GenMods
+oldVcfMods = GenMods{operations, transformations, inputs = True}
+ where
+  operations e = case e.annotation of
     SC.SCInt{} ->
       composeAll
         [ #constructorInto % #scBigInt .~ False
