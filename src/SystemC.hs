@@ -77,7 +77,9 @@ data UnaryOp
 type ExprAnn = SCType
 
 data Expr
-  = Constant ExprAnn Integer
+  -- Some text, used as-is. Useful for hex/octal/binary constants
+  = Literal ExprAnn Text
+  | Constant ExprAnn Integer
   | BinOp ExprAnn Expr BinOp Expr
   | UnaryOp ExprAnn UnaryOp Expr
   | Conditional ExprAnn Expr Expr Expr
@@ -92,6 +94,7 @@ freeVars :: Data from => from -> [(SCType, Text)]
 freeVars e = [(t, name) | Variable t name <- universeBi e]
 
 instance HasField "annotation" Expr ExprAnn where
+  getField (Literal ann _) = ann
   getField (Constant ann _) = ann
   getField (BinOp ann _ _ _) = ann
   getField (UnaryOp ann _ _) = ann
@@ -676,6 +679,8 @@ annComment :: Doc a -> Doc a
 annComment ann = "/* " <> ann <> " */"
 
 instance Pretty Expr where
+  pretty (Literal _ txt) =
+    pretty txt
   pretty (Constant _ n)
     | n < 0 = parens (pretty n)
     | otherwise = pretty n

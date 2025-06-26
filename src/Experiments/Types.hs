@@ -13,7 +13,6 @@ module Experiments.Types where
 
 import Data.Char (intToDigit)
 import Data.Data (Data)
-import Data.Function ((&))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID (UUID)
@@ -22,7 +21,6 @@ import GHC.Generics (Generic)
 import Numeric (readBin, showIntAtBase)
 import Optics (makeFieldLabelsNoPrefix)
 import Prettyprinter (Pretty (..), (<+>))
-import Safe (fromJustNote)
 import SystemC qualified as SC
 
 -- | Identifies a sequence of experiments
@@ -79,15 +77,7 @@ readBinMay s =
     _ -> Nothing
 
 comparisonValueAsSC :: SC.SCType -> ComparisonValue -> SC.Expr
-comparisonValueAsSC t val =
-  SC.Constant
-    t
-    ( val
-        & comparisonValueRaw
-        & T.unpack
-        & readBinMay
-        & fromJustNote "Invalid ComparisonValue"
-    )
+comparisonValueAsSC t val = SC.Literal t (comparisonValueAsC val)
 
 data Evaluation = Evaluation
   { inputs :: [ComparisonValue]
