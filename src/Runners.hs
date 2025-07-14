@@ -31,7 +31,7 @@ runECRemote sshOpts mActivatePath EquivalenceCheckerConfig{..} experiment = do
   let runEC = case mActivatePath of
         Nothing -> runScript
         Just activatePath -> [i|source #{activatePath} && #{runScript}|]
-  fullOutput <- runSSHCommand sshOpts [i|cd #{remoteExperimentDir} && pwd && ls -ltrh && md5sum * && #{runEC}|]
+  fullOutput <- runSSHCommand sshOpts [i|cd #{remoteExperimentDir} && pwd && ls -ltrh && #{runEC}|]
   return (parseOutput experiment fullOutput)
 
 runECLocal :: EquivalenceCheckerConfig -> Experiment -> IO ExperimentResult
@@ -39,5 +39,5 @@ runECLocal EquivalenceCheckerConfig{..} experiment = do
   let baseDir = "equifuzz_" <> name <> "_experiment"
       experimentDir :: Text = T.pack (baseDir </> show experiment.experimentId.uuid)
   createExperimentDir experimentDir (makeFiles experiment)
-  fullOutput <- runBash [i|cd #{experimentDir} && pwd && ls -ltrh && md5sum * && #{runScript}|]
+  fullOutput <- runBash [i|cd #{experimentDir} && pwd && ls -ltrh && #{runScript}|]
   return (parseOutput experiment fullOutput)
