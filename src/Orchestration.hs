@@ -7,7 +7,7 @@ import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar, threadDelay)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
 import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
 import Control.Exception (SomeException, catch)
-import Control.Monad (forever, void, when)
+import Control.Monad (forever, replicateM_, void, when)
 import Control.Monad.State (execStateT, liftIO)
 import Data.IORef (IORef, modifyIORef, newIORef, readIORef)
 import Data.Map (Map)
@@ -59,24 +59,22 @@ startRunners config = do
 startOrchestratorThread :: OrchestrationConfig -> ExperimentRunner -> ProgressChan -> IO ()
 startOrchestratorThread config runner progressChan = do
   experimentSem <- atomically (newTSem . toInteger $ config.maxConcurrentExperiments)
-  experimentsLeftRef :: Maybe (IORef Int) <- newIORef `mapM` config.experimentCount
-
-  foreverThread "Orchestrator" $ do
-    whenJust experimentsLeftRef $ \ref -> do
-      n <- readIORef ref
-      if n > 0
-        then modifyIORef ref (subtract 1)
-        else do
-          when config.verbose (putStrLn "All required experiments started")
-          forever (threadDelay maxBound)
-    atomically (waitTSem experimentSem)
-    experimentReducible <- mkSystemCConstantExperiment config.genConfig
-    startRunReduceThread experimentSem progressChan runner experimentReducible
+  case config.experimentCount of
+    Nothing -> foreverThread "Orchestrator" $ do
+      experimentReducible <- mkSystemCConstantExperiment config.genConfig
+      startRunReduceThread experimentSem progressChan runner experimentReducible
+    Just n -> foreverThread "Orchestrator" $ do
+      replicateM_ n $ do
+        experimentReducible <- mkSystemCConstantExperiment config.genConfig
+        startRunReduceThread experimentSem progressChan runner experimentReducible
+      when config.verbose (putStrLn "All required experiments started")
+      forever (threadDelay maxBound)
 
 startRunReduceThread :: TSem -> ProgressChan -> ExperimentRunner -> Reducible (IO Experiment) -> IO ()
 startRunReduceThread experimentSem progressChan runner initialExperimentReducible = do
   sequenceId <- newExperimentSequenceId
 
+  atomically (waitTSem experimentSem)
   void $
     forkFinally
       (runReduceLoop sequenceId initialExperimentReducible)
