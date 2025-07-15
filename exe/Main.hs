@@ -50,13 +50,11 @@ main = do
       runWebUI progressChan
     Generate genOpts -> do
       replicateM_ genOpts.count $ do
-        Experiment {scDesign, verilogDesign, longDescription, knownEvaluations} <-
+        Experiment {scDesign, verilogDesign, knownEvaluations} <-
           mkSystemCConstantExperiment (generateOptionsToGenConfig genOpts) >>= view #value
         T.putStrLn (SC.genSource scDesign)
         putStrLn "---------"
         T.putStrLn verilogDesign
-        putStrLn "---------"
-        T.putStrLn longDescription
         putStrLn "---------"
         forM_ knownEvaluations $ \Evaluation{inputs, output} -> do
           T.putStr "\n*\t"

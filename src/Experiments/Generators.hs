@@ -1,8 +1,10 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -11,15 +13,20 @@
 
 module Experiments.Generators (mkSystemCConstantExperiment, generateProcessToExperiment) where
 
+import Control.Concurrent (MVar, newMVar, withMVar)
 import Control.Monad (replicateM)
 import Control.Monad.Random.Strict (MonadRandom (getRandom), evalRandIO)
 import Data.Either (fromRight)
 import Data.Functor
+import Data.Map (Map)
+import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Experiments.Types
+import GHC.Generics (Generic)
 import GenSystemC (
   GenConfig (..),
   GenerateProcess (..),
@@ -76,16 +83,35 @@ generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} =
     replicateM cfg.evaluations $
       mapM (comparisonValueOfType . fst) rawDesign.args
 
-  (outputs, hasUBs, extraInfos) <-
-    unzip3 <$> mapM (simulateSystemCAt rawDesign) inputss
+  simulationResults <- mapM (simulateSystemCAt rawDesign) inputss
 
-  let knownEvaluations = [Evaluation{..} | (inputs, output) <- zip inputss outputs]
-  let hasUB = or hasUBs
-  let extraInfo = T.intercalate "-\n" extraInfos
+  let knownEvaluations = [Evaluation{..} | (inputs, output) <- zip inputss (view #result <$> simulationResults)]
+  let hasUB = orOf (each % #hasUndefinedBehaviour) simulationResults
+  -- let extraInfo = T.intercalate "-\n" extraInfos
 
   let scDesign = limitToEvaluations knownEvaluations rawDesign
 
   let verilogDesign = verilogImplForEvals scDesign knownEvaluations
+
+  let evaluationInfos =
+        Map.unions
+          [ let label = "Evaluation " <> T.pack (show idx) <> " - "
+             in Map.mapKeys (label <>) extraInfos
+          | (idx, SystemCSimulationResult{extraInfos}) <- zip [1 ..] simulationResults
+          ]
+
+  let extraInfos =
+        [
+          ( "Transformations"
+          , T.unlines
+              ( T.pack ("Seed: " ++ show seed)
+                  : [ T.pack (show n) <> " " <> T.pack (show t)
+                    | (n, t) <- zip [0 :: Int ..] transformations
+                    ]
+              )
+          )
+        ]
+          <> evaluationInfos
 
   experimentId <- newExperimentId
   return
@@ -95,14 +121,7 @@ generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} =
       , scDesign
       , verilogDesign
       , size = length transformations
-      , longDescription =
-          T.unlines . concat $
-            [ [T.pack ("Seed: " ++ show seed)]
-            , [ T.pack (show n) <> " " <> T.pack (show t)
-              | (n, t) <- zip [0 :: Int ..] transformations
-              ]
-            , [extraInfo]
-            ]
+      , extraInfos
       , knownEvaluations
       }
 
@@ -111,13 +130,20 @@ comparisonValueOfType t = case SC.knownWidth t of
   Nothing -> mkComparisonValueWord 32 <$> getRandom
   Just w -> mkComparisonValueWord w <$> getRandom
 
+data SystemCSimulationResult = SystemCSimulationResult
+  { result :: ComparisonValue
+  , hasUndefinedBehaviour :: Bool
+  , extraInfos :: Map Text Text
+  }
+  deriving (Show, Generic)
+
 -- | Run the SystemC function and return its output represented as text of a
 -- Verilog-style constant. We use this output format because the normal
 -- (decimal) output makes the representation of the output non-obvious. E.g. -1
 -- as an sc_uint<8> or a sc_fixed<10,3> are represented completely differently.
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
-simulateSystemCAt :: SC.FunctionDeclaration -> [ComparisonValue] -> IO (ComparisonValue, Bool, Text)
+simulateSystemCAt :: SC.FunctionDeclaration -> [ComparisonValue] -> IO SystemCSimulationResult
 simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = do
   let callArgs = T.intercalate ", " (map comparisonValueAsC inputs)
   let call = name <> "(" <> callArgs <> ")"
@@ -208,13 +234,9 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = do
   let systemcIncludePath = systemcHome <> "/include"
   let systemcLibraryPath = systemcHome <> "/lib"
   clangPath <- getEnvDefault "EQUIFUZZ_CLANG" "clang++"
-  _compileOutput <- readProcessWithExitCode clangPath ["-fsanitize=undefined", "-I", systemcIncludePath, "-L", systemcLibraryPath, "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
-  (_programExit, T.pack -> programOut, T.pack -> programStderr) <- readProcessWithExitCode (T.unpack binPath) [] ""
+  (clangExitCode, clangStdOut, clangStdErr) <- readProcessWithExitCode clangPath ["-fsanitize=undefined", "-I", systemcIncludePath, "-L", systemcLibraryPath, "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
+  (programExitCode, T.pack -> programOut, T.pack -> programStderr) <- readProcessWithExitCode (T.unpack binPath) [] ""
   let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStderr
-      extraInfo =
-        if hasUndefinedBehaviour
-          then T.unlines ["stderr output:", "", programStderr]
-          else ""
   void $ runBash ("rm -r " <> tmpDir)
 
   let (reportedWidth, reportedValue) =
@@ -226,10 +248,21 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = do
   let value = T.replace "." "" reportedValue
 
   return
-    ( mkComparisonValueWithWidth width value
-    , hasUndefinedBehaviour
-    , extraInfo
-    )
+    SystemCSimulationResult
+      { result = mkComparisonValueWithWidth width value
+      , hasUndefinedBehaviour
+      , extraInfos =
+          [ ("Clang exit code", T.pack . show $ clangExitCode)
+          , ("Clang stdout", T.pack clangStdOut)
+          , ("Clang stderr", T.pack clangStdErr)
+          , ("Program exit code", T.pack . show $ programExitCode)
+          , ("Program stdout", programOut)
+          , ("Program stderr", programStderr)
+          , ("SystemC Home", T.pack systemcHome)
+          , ("Clang Path", T.pack clangPath)
+          , ("Simulation Source", T.pack fullSource)
+          ]
+      }
 
 verilogImplForEvals :: SC.FunctionDeclaration -> [Evaluation] -> Text
 verilogImplForEvals scFun evals =
@@ -308,3 +341,5 @@ typeWidth SC.CUInt = 32
 typeWidth SC.CInt = 32
 typeWidth SC.CDouble = 64
 typeWidth SC.CBool = 1
+
+makeFieldLabelsNoPrefix ''SystemCSimulationResult

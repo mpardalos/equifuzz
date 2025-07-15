@@ -27,7 +27,6 @@ saveExperiment experiment result = do
   mkdir_p localExperimentDir
   TIO.writeFile (localExperimentDir </> ("spec.cpp" :: Text)) (SC.genSource experiment.scDesign)
   TIO.writeFile (localExperimentDir </> ("impl.sv" :: Text)) experiment.verilogDesign
-  TIO.writeFile (localExperimentDir </> ("description.txt" :: Text)) experiment.longDescription
 
   TIO.writeFile
     (localExperimentDir </> ("full_output.txt" :: Text))

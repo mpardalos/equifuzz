@@ -22,6 +22,7 @@ import Numeric (readBin, showIntAtBase)
 import Optics (makeFieldLabelsNoPrefix)
 import Prettyprinter (Pretty (..), (<+>))
 import SystemC qualified as SC
+import Data.Map (Map)
 
 -- | Identifies a sequence of experiments
 newtype ExperimentSequenceId = ExperimentSequenceId {uuid :: UUID}
@@ -101,11 +102,10 @@ data Experiment = Experiment
   , size :: Int
   -- ^ Used for ordering reductions of the same experiment. Will probably be
   -- the number of transformations used to generate it
-  , longDescription :: Text
-  -- ^ Human-readable text describing the design/how it was generated
-  -- E.g. The series of transformations that generated it
   , knownEvaluations :: [Evaluation]
   -- ^ Input vectors and matching results at which the design will be evaluated
+  , extraInfos :: Map Text Text
+  -- ^ Extra information to be displayed along with the experiment
   }
   deriving (Generic, Show, Eq, Ord)
 

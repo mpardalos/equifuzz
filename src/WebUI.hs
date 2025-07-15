@@ -29,6 +29,7 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (isJust)
 import Data.String.Interpolate (i)
+import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
@@ -271,7 +272,6 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
   infoBoxNoTitle . table $
     [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)]
     , ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"]
-    , ["Comparison Value", H.text (T.pack . show . pretty $ info.experiment.knownEvaluations)]
     , case info.result of
         Just result ->
           [ "Actual Result"
@@ -282,8 +282,6 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
           ]
         _ -> []
     ]
-
-  infoBox "Description" (H.pre $ H.text ("\n" <> info.experiment.longDescription))
 
   infoBox "SystemC" (H.pre $ H.text ("\n" <> SC.genSource info.experiment.scDesign))
 
@@ -298,6 +296,9 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
     infoBox
       "Full output"
       (H.pre $ H.text ("\n" <> result.fullOutput))
+
+  forM_ (Map.toList info.experiment.extraInfos) $ \(label, content) ->
+    infoBox (H.text label) (H.pre $ H.text ("\n" <> content))
 
 experimentList :: WebUIState -> Html
 experimentList state = H.div
