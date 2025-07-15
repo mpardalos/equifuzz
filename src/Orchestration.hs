@@ -88,23 +88,32 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
       )
  where
   runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO Bool
-  runReduceLoop sequenceId experimentReducible = do
-    experiment <- experimentReducible.value
-    progress (ExperimentStarted sequenceId experiment)
-    result <-
-      runner experiment
-        `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
-    progress (ExperimentCompleted sequenceId result)
+  runReduceLoop sequenceId experimentReducible =
+    ( do
+        experiment <- experimentReducible.value
+        progress (ExperimentStarted sequenceId experiment)
+        result <-
+          runner experiment
+            `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
+        progress (ExperimentCompleted sequenceId result)
 
-    let isInteresting = result.proofFound /= Just experiment.expectedResult
+        let isInteresting = result.proofFound /= Just experiment.expectedResult
 
-    when (isInteresting && experimentReducible.size > 1) $
-      void $
-        foldMUntil_
-          (runReduceLoop sequenceId)
-          (selectReductions experimentReducible)
+        when (isInteresting && experimentReducible.size > 1) $
+          void $
+            foldMUntil_
+              (runReduceLoop sequenceId)
+              (selectReductions experimentReducible)
 
-    return isInteresting
+        return isInteresting
+    )
+      `catch` ( \(err :: SomeException) -> do
+                  printf "Experiment failed in sequence %s\n" (show sequenceId)
+                  printf "==============================\n"
+                  printf "%s\n" (show err)
+                  printf "==============================\n\n"
+                  return False
+              )
 
   endExperimentSequence :: ExperimentSequenceId -> IO ()
   endExperimentSequence sequenceId = do
