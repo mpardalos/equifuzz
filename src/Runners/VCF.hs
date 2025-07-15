@@ -15,6 +15,7 @@ import Data.Text qualified as T
 import Experiments.Types
 import Runners.Types (EquivalenceCheckerConfig (..))
 import SystemC qualified as SC
+import qualified Data.Map as Map
 
 -- | Run an experiment using VC Formal on a remote host
 vcFormal :: EquivalenceCheckerConfig
@@ -91,7 +92,7 @@ vcFormal =
           _ -> Nothing
 
         counterExample = "TODO"
-     in ExperimentResult{proofFound, counterExample = Just counterExample, fullOutput, experimentId}
+     in ExperimentResult{proofFound, counterExample = Just counterExample, fullOutput, experimentId, extraInfos = Map.empty}
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper

@@ -336,9 +336,24 @@ randomTransformationFor cfg e
       guard (e `is` #_Variable)
       return (ApplyUnaryOp <$> uniform [minBound :: SC.UnaryOp .. maxBound])
 
+    -- TODO: Some systemc types cannot be reliably constructed from literals on
+    -- all equivalence checkers, and hence we prevent them from appearing as
+    -- inputs (where they would need to be constructed from literals).  This
+    -- should, really, be a per-EC setting, but that then means that we need to
+    -- vary how literals are constructed in `limitToEvaluations` per-EC. That
+    -- function is in the "experiment generation" part of the code, and
+    -- therefore not easily configurable per-EC. So we stick to lowest common
+    -- denominator of all ECs here and also in `limitToEvaluations`.
+    typeAllowedAsInput :: SC.SCType -> Bool
+    typeAllowedAsInput (SC.SCBigInt n) = n <= 64
+    typeAllowedAsInput (SC.SCBigUInt n) = n <= 64
+    typeAllowedAsInput SC.SCFixed{} = False
+    typeAllowedAsInput SC.SCUFixed{} = False
+    typeAllowedAsInput _ = True
+
     someAtomicExpr :: SC.SCType -> m SC.Expr
     someAtomicExpr t
-      | cfg.mods.inputs = join . uniform $
+      | typeAllowedAsInput t && cfg.mods.inputs = join . uniform $
           [ someConstant t
           , someExistingVar t
           , someNewVar t

@@ -18,6 +18,7 @@ import Experiments.Types (Experiment (..), ExperimentResult (..))
 import Optics ((^.))
 import Runners.Types (EquivalenceCheckerConfig (..))
 import SystemC qualified as SC
+import qualified Data.Map as Map
 
 default (T.Text)
 
@@ -104,4 +105,4 @@ jasper =
           (True, False) -> Just True
           (False, True) -> Just False
           _ -> Nothing
-     in ExperimentResult{proofFound, counterExample = Nothing, fullOutput, experimentId}
+     in ExperimentResult{proofFound, counterExample = Nothing, fullOutput, experimentId, extraInfos = Map.empty}

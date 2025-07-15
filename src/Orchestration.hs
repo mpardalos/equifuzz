@@ -9,7 +9,6 @@ import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
 import Control.Exception (SomeException, catch)
 import Control.Monad (forever, replicateM_, void, when)
 import Control.Monad.State (execStateT, liftIO)
-import Data.IORef (IORef, modifyIORef, newIORef, readIORef)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
@@ -120,6 +119,7 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
       , proofFound = Nothing
       , counterExample = Nothing
       , fullOutput = "Runner crashed with exception:\n" <> T.pack (show err)
+      , extraInfos = Map.empty
       }
 
 selectReductions :: Reducible a -> [Reducible a]

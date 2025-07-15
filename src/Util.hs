@@ -9,10 +9,10 @@ import Data.Time (NominalDiffTime, defaultTimeLocale, getZonedTime, zonedTimeToL
 import Data.Time.Format (formatTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import GHC.Conc (labelThread)
-import Optics (Prism', preview)
+import Optics (Prism', preview, view, _2)
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
-import System.Process (readProcess, callProcess)
+import System.Process (readProcess, callProcess, readProcessWithExitCode)
 import qualified Data.Text as T
 
 iterateM :: Monad m => Int -> (a -> m a) -> a -> m a
@@ -82,7 +82,7 @@ diffTimeHMSFormat :: NominalDiffTime -> String
 diffTimeHMSFormat = formatTime defaultTimeLocale "%h:%M:%S"
 
 runBash :: Text -> IO Text
-runBash script = T.pack <$> readProcess "bash" ["-c", T.unpack script] ""
+runBash script = T.pack . view _2 <$> readProcessWithExitCode "bash" ["-c", T.unpack script] ""
 
 mkdir_p :: Text -> IO ()
 mkdir_p dir = callProcess "mkdir" ["-p", T.unpack dir]

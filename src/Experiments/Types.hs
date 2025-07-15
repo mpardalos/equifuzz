@@ -13,6 +13,7 @@ module Experiments.Types where
 
 import Data.Char (intToDigit)
 import Data.Data (Data)
+import Data.Map (Map)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.UUID (UUID)
@@ -22,7 +23,6 @@ import Numeric (readBin, showIntAtBase)
 import Optics (makeFieldLabelsNoPrefix)
 import Prettyprinter (Pretty (..), (<+>))
 import SystemC qualified as SC
-import Data.Map (Map)
 
 -- | Identifies a sequence of experiments
 newtype ExperimentSequenceId = ExperimentSequenceId {uuid :: UUID}
@@ -64,9 +64,6 @@ mkComparisonValueWithWidth w t
 comparisonValueRaw :: ComparisonValue -> Text
 comparisonValueRaw (UnsafeComparisonValue t) = t
 
-comparisonValueAsC :: ComparisonValue -> Text
-comparisonValueAsC (UnsafeComparisonValue t) = "0b" <> t
-
 comparisonValueAsVerilog :: ComparisonValue -> Text
 comparisonValueAsVerilog (UnsafeComparisonValue t) =
   T.pack (show (T.length t)) <> "'b" <> t
@@ -76,9 +73,6 @@ readBinMay s =
   case readBin s of
     [(n, "")] -> Just n
     _ -> Nothing
-
-comparisonValueAsSC :: SC.SCType -> ComparisonValue -> SC.Expr
-comparisonValueAsSC t val = SC.Literal t (comparisonValueAsC val)
 
 data Evaluation = Evaluation
   { inputs :: [ComparisonValue]
@@ -120,6 +114,7 @@ data ExperimentResult = ExperimentResult
   , proofFound :: Maybe Bool
   , counterExample :: Maybe Text
   , fullOutput :: Text
+  , extraInfos :: Map Text Text
   }
   deriving (Show, Generic, Eq)
 

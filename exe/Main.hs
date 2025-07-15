@@ -60,12 +60,12 @@ main = do
           T.putStr "\n*\t"
           T.putStr $ T.intercalate "\n\t" $
             [
-              name <> "=" <> comparisonValueAsC value
+              name <> "=" <> comparisonValueRaw value
               | ((_, name), value) <- zip scDesign.args inputs
             ]
           T.putStrLn ""
           T.putStr "\t-> "
-          T.putStr (comparisonValueAsC output)
+          T.putStr (comparisonValueRaw output)
     PrintVersion -> putStrLn versionName
 
 --------------------------- CLI Parser -----------------------------------------

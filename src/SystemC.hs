@@ -87,6 +87,7 @@ data Expr
   | Cast ExprAnn SCType Expr
   | Bitref ExprAnn Expr Integer
   | MethodCall ExprAnn Expr Text [Expr]
+  | FunctionCall ExprAnn Expr [Expr]
   deriving (Generic, Eq, Ord, Show, Data)
 
 -- | Extract all variables referenced by the expression
@@ -103,6 +104,7 @@ instance HasField "annotation" Expr ExprAnn where
   getField (Cast ann _ _) = ann
   getField (Bitref ann _ _) = ann
   getField (MethodCall ann _ _ _) = ann
+  getField (FunctionCall ann _ _) = ann
 
 instance LabelOptic "annotation" A_Getter Expr Expr ExprAnn ExprAnn where
   labelOptic = to (getField @"annotation")
@@ -710,6 +712,11 @@ instance Pretty Expr where
     pretty e
       <> "."
       <> pretty method
+      <> "("
+      <> hsep (punctuate ", " (map pretty args))
+      <> ")"
+  pretty (FunctionCall _ e args) =
+    pretty e
       <> "("
       <> hsep (punctuate ", " (map pretty args))
       <> ")"

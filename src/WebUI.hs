@@ -29,7 +29,6 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (isJust)
 import Data.String.Interpolate (i)
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
@@ -49,7 +48,6 @@ import Network.Wai (StreamingBody)
 import Network.Wai.Middleware.Gzip (def, gzip)
 import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (.~), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
-import Prettyprinter (pretty)
 import Safe (headMay, tailSafe)
 import SystemC qualified as SC
 import Text.Blaze.Html.Renderer.Pretty qualified as H
@@ -135,7 +133,10 @@ handleProgress stateVar progress = do
       -- FIXME: Report error if experiment still has active runs
       mExperiment <- use (#runningExperiments % at2 sequenceId result.experimentId)
       whenJust mExperiment $ \runningExperiment -> do
-        let completedExperiment = runningExperiment{result = Just result}
+        let completedExperiment =
+              runningExperiment
+                & #result .~ Just result
+                & #experiment % #extraInfos %~ Map.union result.extraInfos
         if isInteresting completedExperiment
           then #interestingExperiments % at2 sequenceId result.experimentId .= Just completedExperiment
           else #uninterestingExperiments % at2 sequenceId result.experimentId .= Just completedExperiment

@@ -56,7 +56,7 @@ limitToEvaluations evals decl =
   let
     goodInputs = map (view #inputs) evals
     goodInputsLabelled = map (zip decl.args) goodInputs
-    inputChecks = map (map (\((t, name), value) -> SC.BinOp SC.CBool (SC.Variable t name) SC.Equals (comparisonValueAsSC t value))) goodInputsLabelled
+    inputChecks = map (map (\((t, name), value) -> SC.BinOp SC.CBool (SC.Variable t name) SC.Equals (SC.Literal t (comparisonValueAsSC t value)))) goodInputsLabelled
     evaluationConditions =
       map
         ( fromMaybe (SC.Constant SC.CBool 1)
@@ -137,6 +137,23 @@ data SystemCSimulationResult = SystemCSimulationResult
   }
   deriving (Show, Generic)
 
+comparisonValueAsSC :: SC.SCType -> ComparisonValue -> Text
+comparisonValueAsSC t val =
+  case t of
+    SC.SCFixed{i} -> fxLiteralWithCast i
+    SC.SCUFixed{i} -> fxLiteralWithCast i
+    SC.CDouble -> literalWithMemCpy
+    _ -> literal
+ where
+  fxLiteralWithCast i =
+    let
+      rawLiteral = comparisonValueRaw val
+      fixedPointLiteral = T.take i rawLiteral <> "." <> T.drop i rawLiteral
+     in
+      SC.genSource t <> "(\"0b" <> fixedPointLiteral <> "\")"
+  literalWithMemCpy = "bit_cast<" <> SC.genSource t <> ">(" <> literal <> ")"
+  literal = "0b" <> comparisonValueRaw val
+
 -- | Run the SystemC function and return its output represented as text of a
 -- Verilog-style constant. We use this output format because the normal
 -- (decimal) output makes the representation of the output non-obvious. E.g. -1
@@ -144,8 +161,13 @@ data SystemCSimulationResult = SystemCSimulationResult
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
 simulateSystemCAt :: SC.FunctionDeclaration -> [ComparisonValue] -> IO SystemCSimulationResult
-simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = do
-  let callArgs = T.intercalate ", " (map comparisonValueAsC inputs)
+simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputs = do
+  let callArgs =
+        T.intercalate
+          ", "
+          [ comparisonValueAsSC t val
+          | ((t, _), val) <- zip args inputs
+          ]
   let call = name <> "(" <> callArgs <> ")"
 
   let widthExprOrWidth :: Either Text Int = case returnType of
@@ -215,6 +237,16 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name} inputs = do
             #{SC.includeHeader}
             \#include <iostream>
             \#include <bitset>
+            \#include <cstring>
+            \#include <cstdint>
+
+            template<typename T, typename U>
+            constexpr T bit_cast(U&& u) {
+                static_assert(sizeof(T) == sizeof(U), "Types must have same size");
+                T result;
+                std::memcpy(&result, &u, sizeof(T));
+                return result;
+            }
 
             #{SC.genSource decl}
 
