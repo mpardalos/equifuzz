@@ -10,7 +10,7 @@
 {-# HLINT ignore "Redundant <$>" #-}
 {-# HLINT ignore "Use ?~" #-}
 
-module WebUI (runWebUI) where
+module WebUI (runWebUI, ExperimentProgress(..)) where
 
 import Control.Applicative (asum)
 import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar, threadDelay)
@@ -37,7 +37,6 @@ import Data.UUID qualified as UUID
 import Experiments (
   Experiment (..),
   ExperimentId (..),
-  ExperimentProgress (..),
   ExperimentResult (..),
   ExperimentSequenceId (..),
  )
@@ -75,6 +74,12 @@ import Web.Scotty (
   status,
   stream,
  )
+
+data ExperimentProgress
+  = ExperimentStarted ExperimentSequenceId Experiment
+  | ExperimentCompleted ExperimentSequenceId ExperimentResult
+  | ExperimentSequenceCompleted ExperimentSequenceId
+  deriving (Show)
 
 data ExperimentSequenceInfo = ExperimentSequenceInfo
   { sequenceId :: ExperimentSequenceId

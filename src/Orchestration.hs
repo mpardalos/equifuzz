@@ -1,7 +1,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Orchestration (ProgressChan, OrchestrationConfig (..), startRunners) where
+module Orchestration (OrchestrationConfig (..), startRunners) where
 
 import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar, threadDelay)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
@@ -16,7 +16,6 @@ import Data.Text qualified as T
 import Experiments (
   Experiment (..),
   ExperimentId (uuid),
-  ExperimentProgress (..),
   ExperimentResult (..),
   ExperimentSequenceId (uuid),
   genSystemCConstantExperiment,
@@ -24,12 +23,13 @@ import Experiments (
   saveExperiment,
  )
 import GenSystemC (GenConfig)
-import Reduce (HasReductions (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
+import Reduce (HasReductions (..))
 import Runners (ExperimentRunner)
 import Text.Printf (printf)
 import Util (foldMUntil_, foreverThread, whenJust)
+import WebUI (ExperimentProgress (..))
 
 type ProgressChan = TChan ExperimentProgress
 

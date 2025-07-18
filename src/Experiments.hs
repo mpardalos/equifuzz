@@ -25,12 +25,11 @@ module Experiments (
   comparisonValueRaw,
   DesignSource (..),
   ExperimentResult (..),
-  ExperimentProgress (..),
   Evaluation (..),
 ) where
 
 import Control.Monad (replicateM)
-import Control.Monad.Random.Strict (MonadRandom (getRandom), evalRandIO)
+import Control.Monad.Random.Strict (MonadRandom (getRandom))
 import Data.Char (intToDigit)
 import Data.Data (Data)
 import Data.Either (fromRight)
@@ -145,12 +144,6 @@ data ExperimentResult = ExperimentResult
   , extraInfos :: Map Text Text
   }
   deriving (Show, Generic, Eq)
-
-data ExperimentProgress
-  = ExperimentStarted ExperimentSequenceId Experiment
-  | ExperimentCompleted ExperimentSequenceId ExperimentResult
-  | ExperimentSequenceCompleted ExperimentSequenceId
-  deriving (Show)
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
