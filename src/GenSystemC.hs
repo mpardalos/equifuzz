@@ -1,12 +1,9 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE LambdaCase #-}
-
 
 module GenSystemC (
   -- * Generation
@@ -23,31 +20,28 @@ module GenSystemC (
 )
 where
 
-import Control.Monad (replicateM_)
-import Control.Monad.Random.Strict (evalRandIO)
-import Control.Monad.State.Strict (evalStateT, execState)
+import Control.Monad (guard, join, replicateM, replicateM_, when)
+import Control.Monad.Random.Strict (MonadRandom, evalRandIO, getRandomR, uniform, uniformMay)
+import Control.Monad.State.Strict (MonadState (get), evalStateT, execState, modify')
 import Control.Monad.Writer.Strict (MonadWriter (tell), execWriterT)
 import Data.List (nub)
+import Data.Maybe (catMaybes, isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics (Zoom (zoom), use, (%), _1, _2)
-import SystemC qualified as SC
-import Control.Monad (guard, join, when, replicateM)
-import Control.Monad.Random.Strict (MonadRandom, getRandomR, uniform, uniformMay)
-import Control.Monad.State.Strict (MonadState (get), modify')
-import Data.Maybe (catMaybes, isJust)
 import Optics.State.Operators ((%=), (.=))
+import SystemC qualified as SC
 
 -- Import modOperations cfg as SCUnconfigured.operations, because we need to make
 -- sure to run its result through GenConfig.modOperations, and never use it
 -- directly
 
+import Data.Data (Data)
 import Data.Map qualified as Map
 import SystemC qualified as SCUnconfigured (operations)
+import Text.Show.Functions ()
 import Util (is)
-import Data.Data (Data)
-import Text.Show.Functions()
 
 type OperationsMod = SC.Expr -> SC.Operations -> SC.Operations
 
@@ -254,8 +248,9 @@ randomTransformationFor cfg e
   | null transformationOptions = error ("No transformations possible on this expression: " <> show e)
   | otherwise = join . uniform $ transformationOptions
  where
-    transformationOptions :: [m Transformation]
-    transformationOptions = catMaybes
+  transformationOptions :: [m Transformation]
+  transformationOptions =
+    catMaybes
       [ guard cfg.mods.transformations.castWithAssignment >> castWithAssignment
       , guard cfg.mods.transformations.functionalCast >> functionalCast
       , guard cfg.mods.transformations.range >> range
@@ -265,168 +260,169 @@ randomTransformationFor cfg e
       , guard cfg.mods.transformations.applyMethod >> applyMethod
       , guard cfg.mods.transformations.applyUnaryOp >> applyUnaryOp
       ]
-    castWithAssignment :: Maybe (m Transformation)
-    castWithAssignment = fmap CastWithAssignment <$> assignmentCastTargetType
+  castWithAssignment :: Maybe (m Transformation)
+  castWithAssignment = fmap CastWithAssignment <$> assignmentCastTargetType
 
-    functionalCast :: Maybe (m Transformation)
-    functionalCast = fmap FunctionalCast <$> functionalCastTargetType
+  functionalCast :: Maybe (m Transformation)
+  functionalCast = fmap FunctionalCast <$> functionalCastTargetType
 
-    someWidth :: m Int
-    someWidth = getRandomR (1, 64)
+  someWidth :: m Int
+  someWidth = getRandomR (1, 64)
 
-    someBigWidth :: m Int
-    someBigWidth = getRandomR (1, 512)
+  someBigWidth :: m Int
+  someBigWidth = getRandomR (1, 512)
 
-    someWI :: m (Int, Int)
-    someWI = do
-      w <- someWidth
-      i <- getRandomR (0, w)
-      return (w, i)
+  someWI :: m (Int, Int)
+  someWI = do
+    w <- someWidth
+    i <- getRandomR (0, w)
+    return (w, i)
 
-    assignmentCastTargetType :: Maybe (m SC.SCType)
-    assignmentCastTargetType =
-      let ts = (modOperations cfg e).assignTo
-          gens :: [m SC.SCType]
-          gens = catMaybes
+  assignmentCastTargetType :: Maybe (m SC.SCType)
+  assignmentCastTargetType =
+    let ts = (modOperations cfg e).assignTo
+        gens :: [m SC.SCType]
+        gens =
+          catMaybes
             [ guard ts.scInt >> Just (SC.SCInt <$> someWidth)
             , guard ts.scInt >> Just (SC.SCInt <$> someWidth)
             , guard ts.scUInt >> Just (SC.SCUInt <$> someWidth)
             , guard ts.scBigInt >> Just (SC.SCBigInt <$> someBigWidth)
             , guard ts.scBigUInt >> Just (SC.SCBigUInt <$> someBigWidth)
-            , guard ts.scFixed >> Just (uncurry SC.SCFixed <$> someWI )
-            , guard ts.scUFixed >> Just (uncurry SC.SCUFixed <$> someWI )
+            , guard ts.scFixed >> Just (uncurry SC.SCFixed <$> someWI)
+            , guard ts.scUFixed >> Just (uncurry SC.SCUFixed <$> someWI)
             , guard ts.scLogic >> Just (pure SC.SCLogic)
             , guard ts.scBV >> Just (SC.SCBV <$> someWidth)
             , guard ts.scLV >> Just (SC.SCLV <$> someWidth)
-            -- No subrefs or bitrefs because they cannot be constructed
-            , guard ts.cUInt >> Just (pure SC.CUInt)
+            , -- No subrefs or bitrefs because they cannot be constructed
+              guard ts.cUInt >> Just (pure SC.CUInt)
             , guard ts.cInt >> Just (pure SC.CInt)
             , guard ts.cDouble >> Just (pure SC.CDouble)
             , guard ts.cBool >> Just (pure SC.CBool)
             ]
+     in if null gens
+          then Nothing
+          else Just $ join (uniform gens)
 
-       in if null gens
-             then Nothing
-             else Just $ join (uniform gens)
-
-    functionalCastTargetType :: Maybe (m SC.SCType)
-    functionalCastTargetType =
-      let cs = (modOperations cfg e).constructorInto
-          gens :: [m SC.SCType]
-          gens = catMaybes
+  functionalCastTargetType :: Maybe (m SC.SCType)
+  functionalCastTargetType =
+    let cs = (modOperations cfg e).constructorInto
+        gens :: [m SC.SCType]
+        gens =
+          catMaybes
             [ guard cs.scInt >> Just (SC.SCInt <$> someWidth)
             , guard cs.scInt >> Just (SC.SCInt <$> someWidth)
             , guard cs.scUInt >> Just (SC.SCUInt <$> someWidth)
             , guard cs.scBigInt >> Just (SC.SCBigInt <$> someBigWidth)
             , guard cs.scBigUInt >> Just (SC.SCBigUInt <$> someBigWidth)
-            , guard cs.scFixed >> Just (uncurry SC.SCFixed <$> someWI )
-            , guard cs.scUFixed >> Just (uncurry SC.SCUFixed <$> someWI )
+            , guard cs.scFixed >> Just (uncurry SC.SCFixed <$> someWI)
+            , guard cs.scUFixed >> Just (uncurry SC.SCUFixed <$> someWI)
             , guard cs.scLogic >> Just (pure SC.SCLogic)
             , guard cs.scBV >> Just (SC.SCBV <$> someWidth)
             , guard cs.scLV >> Just (SC.SCLV <$> someWidth)
-            -- No subrefs or bitrefs because they cannot be constructed
-            , guard cs.cUInt >> Just (pure SC.CUInt)
+            , -- No subrefs or bitrefs because they cannot be constructed
+              guard cs.cUInt >> Just (pure SC.CUInt)
             , guard cs.cInt >> Just (pure SC.CInt)
             , guard cs.cDouble >> Just (pure SC.CDouble)
             , guard cs.cBool >> Just (pure SC.CBool)
             ]
+     in if null gens
+          then Nothing
+          else Just $ join (uniform gens)
 
-       in if null gens
-             then Nothing
-             else Just $ join (uniform gens)
+  range :: Maybe (m Transformation)
+  range = do
+    guard (isJust (modOperations cfg e).partSelect)
+    exprWidth <- SC.knownWidth e.annotation
+    return $ do
+      hi <- getRandomR (0, exprWidth - 1)
+      lo <- getRandomR (0, hi)
+      return (Range hi lo)
 
-    range :: Maybe (m Transformation)
-    range = do
-      guard (isJust (modOperations cfg e).partSelect)
-      exprWidth <- SC.knownWidth e.annotation
-      return $ do
-        hi <- getRandomR (0, exprWidth - 1)
-        lo <- getRandomR (0, hi)
-        return (Range hi lo)
+  arithmetic :: Maybe (m Transformation)
+  arithmetic = do
+    resultType <- (modOperations cfg e).arithmeticResult
+    return $ do
+      op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
+      constant <- someAtomicExpr resultType
+      return (Arithmetic op constant)
 
-    arithmetic :: Maybe (m Transformation)
-    arithmetic = do
-      resultType <- (modOperations cfg e).arithmeticResult
-      return $ do
-        op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
-        constant <- someAtomicExpr resultType
-        return (Arithmetic op constant)
+  useAsCondition :: Maybe (m Transformation)
+  useAsCondition = do
+    guard (SC.CBool `elem` (modOperations cfg e).implicitCasts)
+    return
+      ( UseAsCondition
+          <$> someAtomicExpr SC.CInt
+          <*> someAtomicExpr SC.CInt
+      )
 
-    useAsCondition :: Maybe (m Transformation)
-    useAsCondition = do
-      guard (SC.CBool `elem` (modOperations cfg e).implicitCasts)
-      return
-        ( UseAsCondition
-            <$> someAtomicExpr SC.CInt
-            <*> someAtomicExpr SC.CInt
-        )
+  bitSelect :: Maybe (m Transformation)
+  bitSelect = do
+    guard (isJust (modOperations cfg e).bitSelect)
+    width <- SC.knownWidth e.annotation
+    return (BitSelect <$> getRandomR (0, width - 1))
 
-    bitSelect :: Maybe (m Transformation)
-    bitSelect = do
-      guard (isJust (modOperations cfg e).bitSelect)
-      width <- SC.knownWidth e.annotation
-      return (BitSelect <$> getRandomR (0, width - 1))
+  applyMethod :: Maybe (m Transformation)
+  applyMethod = do
+    let options = ApplyMethod <$> Map.keys (modOperations cfg e).methods
+    guard (not . null $ options)
+    return (uniform options)
 
-    applyMethod :: Maybe (m Transformation)
-    applyMethod = do
-      let options = ApplyMethod <$> Map.keys (modOperations cfg e).methods
-      guard (not . null $ options)
-      return (uniform options)
+  applyUnaryOp :: Maybe (m Transformation)
+  applyUnaryOp = do
+    guard (modOperations cfg e).incrementDecrement
+    guard (e `is` #_Variable)
+    return (ApplyUnaryOp <$> uniform [minBound :: SC.UnaryOp .. maxBound])
 
-    applyUnaryOp :: Maybe (m Transformation)
-    applyUnaryOp = do
-      guard (modOperations cfg e).incrementDecrement
-      guard (e `is` #_Variable)
-      return (ApplyUnaryOp <$> uniform [minBound :: SC.UnaryOp .. maxBound])
+  -- TODO: Some systemc types cannot be reliably constructed from literals on
+  -- all equivalence checkers, and hence we prevent them from appearing as
+  -- inputs (where they would need to be constructed from literals).  This
+  -- should, really, be a per-EC setting, but that then means that we need to
+  -- vary how literals are constructed in `limitToEvaluations` per-EC. That
+  -- function is in the "experiment generation" part of the code, and
+  -- therefore not easily configurable per-EC. So we stick to lowest common
+  -- denominator of all ECs here and also in `limitToEvaluations`.
+  typeAllowedAsInput :: SC.SCType -> Bool
+  typeAllowedAsInput (SC.SCBigInt n) = n <= 64
+  typeAllowedAsInput (SC.SCBigUInt n) = n <= 64
+  typeAllowedAsInput SC.SCFixed{} = False
+  typeAllowedAsInput SC.SCUFixed{} = False
+  typeAllowedAsInput _ = True
 
-    -- TODO: Some systemc types cannot be reliably constructed from literals on
-    -- all equivalence checkers, and hence we prevent them from appearing as
-    -- inputs (where they would need to be constructed from literals).  This
-    -- should, really, be a per-EC setting, but that then means that we need to
-    -- vary how literals are constructed in `limitToEvaluations` per-EC. That
-    -- function is in the "experiment generation" part of the code, and
-    -- therefore not easily configurable per-EC. So we stick to lowest common
-    -- denominator of all ECs here and also in `limitToEvaluations`.
-    typeAllowedAsInput :: SC.SCType -> Bool
-    typeAllowedAsInput (SC.SCBigInt n) = n <= 64
-    typeAllowedAsInput (SC.SCBigUInt n) = n <= 64
-    typeAllowedAsInput SC.SCFixed{} = False
-    typeAllowedAsInput SC.SCUFixed{} = False
-    typeAllowedAsInput _ = True
-
-    someAtomicExpr :: SC.SCType -> m SC.Expr
-    someAtomicExpr t
-      | typeAllowedAsInput t && cfg.mods.inputs = join . uniform $
+  someAtomicExpr :: SC.SCType -> m SC.Expr
+  someAtomicExpr t
+    | typeAllowedAsInput t && cfg.mods.inputs =
+        join . uniform $
           [ someConstant t
           , someExistingVar t
           , someNewVar t
           ]
-      | otherwise = someConstant t
+    | otherwise = someConstant t
 
-    someConstant :: SC.SCType -> m SC.Expr
-    someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)
+  someConstant :: SC.SCType -> m SC.Expr
+  someConstant t = SC.Constant t <$> getRandomR (-1024, 1024)
 
-    someExistingVar :: SC.SCType -> m SC.Expr
-    someExistingVar t = do
-      existingVars <- get
-      uniformMay [n | (n, t') <- existingVars, t' == t] >>= \case
-        Just n -> return (SC.Variable t n)
-        Nothing -> someNewVar t
+  someExistingVar :: SC.SCType -> m SC.Expr
+  someExistingVar t = do
+    existingVars <- get
+    uniformMay [n | (n, t') <- existingVars, t' == t] >>= \case
+      Just n -> return (SC.Variable t n)
+      Nothing -> someNewVar t
 
-    someNewVar :: SC.SCType -> m SC.Expr
-    someNewVar t = do
-      existingVars <- get
-      name <- someVarName
-      if name `elem` map fst existingVars
-        -- Yes, maybe an infinite loop, but don't worry about it.
-        -- After enough tries we will get an actually fresh name
-        then someNewVar t
-        else do
-          modify' ((name, t) :)
-          return (SC.Variable t name)
+  someNewVar :: SC.SCType -> m SC.Expr
+  someNewVar t = do
+    existingVars <- get
+    name <- someVarName
+    if name `elem` map fst existingVars
+      -- Yes, maybe an infinite loop, but don't worry about it.
+      -- After enough tries we will get an actually fresh name
+      then someNewVar t
+      else do
+        modify' ((name, t) :)
+        return (SC.Variable t name)
 
-    someVarName :: m Text
-    someVarName = T.pack <$> replicateM 5 (uniform ['a'..'z'])
+  someVarName :: m Text
+  someVarName = T.pack <$> replicateM 5 (uniform ['a' .. 'z'])
 
 seedExpr :: MonadRandom m => m SC.Expr
 seedExpr = do
