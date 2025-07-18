@@ -45,8 +45,6 @@ library
         src
     exposed-modules:
         Experiments,
-        Experiments.Types,
-        Experiments.Generators,
         Runners,
         Runners.Types,
         Runners.Util,

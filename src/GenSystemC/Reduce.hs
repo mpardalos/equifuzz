@@ -6,12 +6,10 @@
 
 module GenSystemC.Reduce where
 
-import Data.List (subsequences, inits)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Set qualified as Set
-import Experiments (generateProcessToExperiment)
-import Experiments.Types (Experiment (..))
+import Experiments (Experiment (..), generateProcessToExperiment)
 import GenSystemC (GenerateProcess (..))
 
 class HasReductions a where

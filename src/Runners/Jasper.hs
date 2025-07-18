@@ -14,7 +14,7 @@ module Runners.Jasper (jasper) where
 import Data.String.Interpolate (__i)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Experiments.Types (Experiment (..), ExperimentResult (..))
+import Experiments
 import Optics ((^.))
 import Runners.Types (EquivalenceCheckerConfig (..))
 import SystemC qualified as SC

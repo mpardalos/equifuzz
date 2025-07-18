@@ -16,7 +16,7 @@ import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Experiments.Types (Experiment (..), ExperimentId (..), ExperimentResult)
+import Experiments
 import Optics ((%~), (&))
 import Runners.Jasper
 import Runners.SLEC

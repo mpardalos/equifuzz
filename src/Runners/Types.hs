@@ -11,7 +11,7 @@
 module Runners.Types where
 
 import Data.Text (Text)
-import Experiments.Types
+import Experiments
 import Optics (makeFieldLabelsNoPrefix)
 
 type ExperimentRunner = Experiment -> IO ExperimentResult
