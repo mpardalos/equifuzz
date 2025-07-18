@@ -230,9 +230,7 @@ generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, transforma
       }
 
 comparisonValueOfType :: MonadRandom m => SC.SCType -> m ComparisonValue
-comparisonValueOfType t = case SC.knownWidth t of
-  Nothing -> mkComparisonValueWord 32 <$> getRandom
-  Just w -> mkComparisonValueWord w <$> getRandom
+comparisonValueOfType t = mkComparisonValueWord (typeWidth t) <$> getRandom
 
 data SystemCSimulationResult = SystemCSimulationResult
   { result :: ComparisonValue
