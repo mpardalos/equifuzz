@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -77,8 +78,8 @@ data UnaryOp
 type ExprAnn = SCType
 
 data Expr
-  -- Some text, used as-is. Useful for hex/octal/binary constants
-  = Literal ExprAnn Text
+  = -- Some text, used as-is. Useful for hex/octal/binary constants
+    Literal ExprAnn Text
   | Constant ExprAnn Integer
   | BinOp ExprAnn Expr BinOp Expr
   | UnaryOp ExprAnn UnaryOp Expr
@@ -184,94 +185,39 @@ allReductions =
     , ReduceXNor
     ]
 
-data SCTypeFlags = SCTypeFlags
-  { scInt :: Bool
-  , scUInt :: Bool
-  , scBigInt :: Bool
-  , scBigUInt :: Bool
-  , scFixed :: Bool
-  , scUFixed :: Bool
-  , scFxnumSubref :: Bool
-  , scIntSubref :: Bool
-  , scUIntSubref :: Bool
-  , scSignedSubref :: Bool
-  , scUnsignedSubref :: Bool
-  , scIntBitref :: Bool
-  , scUIntBitref :: Bool
-  , scSignedBitref :: Bool
-  , scUnsignedBitref :: Bool
-  , scLogic :: Bool
-  , scBV :: Bool
-  , scLV :: Bool
-  , cUInt :: Bool
-  , cInt :: Bool
-  , cDouble :: Bool
-  , cBool :: Bool
-  }
-  deriving (Eq, Show, Ord, Generic)
+noTypes :: SCType -> Bool
+noTypes = const False
 
-noTypes :: SCTypeFlags
-noTypes =
-  SCTypeFlags
-    { scInt = False
-    , scUInt = False
-    , scBigInt = False
-    , scBigUInt = False
-    , scFixed = False
-    , scUFixed = False
-    , scFxnumSubref = False
-    , scIntSubref = False
-    , scUIntSubref = False
-    , scSignedSubref = False
-    , scUnsignedSubref = False
-    , scIntBitref = False
-    , scUIntBitref = False
-    , scSignedBitref = False
-    , scUnsignedBitref = False
-    , scLogic = False
-    , scBV = False
-    , scLV = False
-    , cUInt = False
-    , cInt = False
-    , cDouble = False
-    , cBool = False
-    }
+allNumericTypes :: SCType -> Bool
+allNumericTypes SCInt{} = True
+allNumericTypes SCUInt{} = True
+allNumericTypes SCBigInt{} = True
+allNumericTypes SCBigUInt{} = True
+allNumericTypes SCFixed{} = True
+allNumericTypes SCUFixed{} = True
+allNumericTypes SCFxnumSubref{} = True
+allNumericTypes SCIntSubref{} = True
+allNumericTypes SCUIntSubref{} = True
+allNumericTypes SCSignedSubref{} = True
+allNumericTypes SCUnsignedSubref{} = True
+allNumericTypes SCIntBitref{} = True
+allNumericTypes SCUIntBitref{} = True
+allNumericTypes SCSignedBitref{} = True
+allNumericTypes SCUnsignedBitref{} = True
+allNumericTypes SCLogic{} = False
+allNumericTypes SCBV{} = False
+allNumericTypes SCLV{} = False
+allNumericTypes CUInt{} = True
+allNumericTypes CInt{} = True
+allNumericTypes CDouble{} = True
+allNumericTypes CBool{} = True
 
-allNumericTypes :: SCTypeFlags
-allNumericTypes =
-  SCTypeFlags
-    { scInt = True
-    , scUInt = True
-    , scBigInt = True
-    , scBigUInt = True
-    , scFixed = True
-    , scUFixed = True
-    , scFxnumSubref = True
-    , scIntSubref = True
-    , scUIntSubref = True
-    , scSignedSubref = True
-    , scUnsignedSubref = True
-    , scIntBitref = True
-    , scUIntBitref = True
-    , scSignedBitref = True
-    , scUnsignedBitref = True
-    , scLogic = False
-    , scBV = False
-    , scLV = False
-    , cUInt = True
-    , cInt = True
-    , cDouble = True
-    , cBool = True
-    }
-
-allSCNumericTypes :: SCTypeFlags
-allSCNumericTypes =
-  allNumericTypes
-    { cUInt = False
-    , cInt = False
-    , cDouble = False
-    , cBool = False
-    }
+allSCNumericTypes :: SCType -> Bool
+allSCNumericTypes CUInt = False
+allSCNumericTypes CInt = False
+allSCNumericTypes CDouble = False
+allSCNumericTypes CBool = False
+allSCNumericTypes t = allNumericTypes t
 
 -- | Possible operations on a SystemC type
 data Operations = Operations
@@ -285,9 +231,9 @@ data Operations = Operations
   -- ^ Methods that can be called on this type
   , implicitCasts :: [SCType]
   -- ^ Implicit cast operators (e.g. @operator int() const@)
-  , constructorInto :: SCTypeFlags
+  , constructorInto :: SCType -> Bool
   -- ^ Types that can be constructed from this
-  , assignTo :: SCTypeFlags
+  , assignTo :: SCType -> Bool
   -- ^ Types to which values of this type can be assigned
   , arithmeticResult :: Maybe SCType
   -- ^ Result of arithmetic with constants, if that is allowed
@@ -547,7 +493,7 @@ operations e =
           Operations
             { bitSelect = Nothing
             , partSelect = Nothing
-            , implicitCasts = [CBool]
+            , implicitCasts = []
             , methods =
                 [(Reverse, thisType)]
                   <> allReductions
@@ -605,8 +551,12 @@ operations e =
             , implicitCasts = []
             , methods = []
             , incrementDecrement = False
-            , constructorInto = allNumericTypes{scLogic = True}
-            , assignTo = allNumericTypes{scLogic = True}
+            , constructorInto = \case
+                SCLogic{} -> True
+                t -> allNumericTypes t
+            , assignTo = \case
+                SCLogic{} -> True
+                t -> allNumericTypes t
             , arithmeticResult = Nothing
             }
 
@@ -797,5 +747,4 @@ instance Pretty TranslationUnit where
 
 instance Source TranslationUnit
 
-makeFieldLabelsNoPrefix ''SCTypeFlags
-makeFieldLabelsNoPrefix ''Operations
+makeFieldLabelsNoPrefix 'Operations

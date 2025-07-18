@@ -13,7 +13,7 @@ module GenSystemC (
 
   -- ** Configuration
   GenMods,
-  Transformation(..),
+  Transformation (..),
   GenConfig (..),
 )
 where
@@ -85,17 +85,27 @@ newVar = do
   return ("x" <> T.pack (show varIdx))
 
 transformationAllowed :: SC.Expr -> Transformation -> Bool
+transformationAllowed e (CastWithAssignment t) =
+  (SC.operations e).assignTo t
+transformationAllowed e (FunctionalCast t) =
+  (SC.operations e).constructorInto t
 transformationAllowed e (Range bound1 bound2) =
   let hi = max bound1 bound2
       lo = min bound1 bound2
-   in lo >= 0 && maybe True (hi <) (SC.knownWidth e.annotation)
-transformationAllowed e (BitSelect idx) =
-  maybe True (idx <) (SC.knownWidth e.annotation)
+   in isJust (SC.operations e).partSelect
+        && lo >= 0
+        && maybe True (hi <) (SC.knownWidth e.annotation)
+transformationAllowed e (Arithmetic _ _) =
+  isJust (SC.operations e).arithmeticResult
 transformationAllowed e UseAsCondition{} =
   SC.CBool `elem` (SC.operations e).implicitCasts
+transformationAllowed e (BitSelect idx) =
+  isJust (SC.operations e).bitSelect
+    && maybe True (idx <) (SC.knownWidth e.annotation)
+transformationAllowed e (ApplyMethod m) =
+  m `elem` Map.keys (SC.operations e).methods
 transformationAllowed e (ApplyUnaryOp _) =
   (e `is` #_Variable) && (SC.operations e).incrementDecrement
-transformationAllowed _ _ = True
 
 applyTransformation :: MonadBuild m => GenConfig -> Transformation -> m ()
 applyTransformation cfg transformation = do
