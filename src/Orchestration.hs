@@ -19,7 +19,7 @@ import Experiments (
   ExperimentProgress (..),
   ExperimentResult (..),
   ExperimentSequenceId (uuid),
-  mkSystemCConstantExperiment,
+  genSystemCConstantExperiment,
   newExperimentSequenceId,
   saveExperiment,
  )
@@ -61,11 +61,11 @@ startOrchestratorThread config runner progressChan = do
   experimentSem <- atomically (newTSem . toInteger $ config.maxConcurrentExperiments)
   case config.experimentCount of
     Nothing -> foreverThread "Orchestrator" $ do
-      experimentReducible <- mkSystemCConstantExperiment config.genConfig
+      experimentReducible <- genSystemCConstantExperiment config.genConfig
       startRunReduceThread experimentSem progressChan runner experimentReducible
     Just n -> foreverThread "Orchestrator" $ do
       replicateM_ n $ do
-        experimentReducible <- mkSystemCConstantExperiment config.genConfig
+        experimentReducible <- genSystemCConstantExperiment config.genConfig
         startRunReduceThread experimentSem progressChan runner experimentReducible
       when config.verbose (putStrLn "All required experiments started")
       forever (threadDelay maxBound)

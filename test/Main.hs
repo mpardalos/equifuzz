@@ -9,7 +9,7 @@ import Control.Monad (forM_, replicateM_)
 import Data.List (intercalate)
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Experiments (mkSystemCConstantExperiment)
+import Experiments (genSystemCConstantExperiment)
 import GHC.Conc (atomically, numCapabilities)
 import GenSystemC (GenConfig (..), Reducible (..))
 import System.Console.ANSI (hClearLine, hSetCursorColumn)
@@ -70,7 +70,7 @@ main = do
   count <- atomically $ newTSem (fromIntegral capabilities)
   forConcurrently_ [1 :: Int .. totalExperiments] $ \_experimentIdx -> do
     atomically $ waitTSem count
-    reducible <- mkSystemCConstantExperiment genConfig
+    reducible <- genSystemCConstantExperiment genConfig
     _experiment <- evaluate =<< reducible.value
     runCompleted
     forM_ (zip [1 :: Int ..] reductions) $ \(_reductionIdx, bounds) -> do

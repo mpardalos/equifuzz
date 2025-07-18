@@ -6,21 +6,21 @@ module Testing (
   writeExperimentFor,
   module ToolRestrictions,
   module Runners,
-  Experiment(..),
+  Experiment (..),
 )
 where
 
+import Data.Text qualified as T
 import Experiments
 import GenSystemC (
   GenConfig (..),
-  genSystemC,
-  generateFromProcess,
+  genSystemCProcess,
+  generateProcessToSystemC,
  )
 import Runners
 import SystemC qualified as SC
 import Text.Printf (printf)
 import ToolRestrictions
-import qualified Data.Text as T
 
 defConfig :: GenConfig
 defConfig =
@@ -31,17 +31,17 @@ defConfig =
     }
 
 jasperConfig, vcfConfig, slecConfig :: GenConfig
-jasperConfig = defConfig { mods = jasperMods }
-vcfConfig = defConfig { mods = vcfMods }
-slecConfig = defConfig { mods = slecMods }
+jasperConfig = defConfig{mods = jasperMods}
+vcfConfig = defConfig{mods = vcfMods}
+slecConfig = defConfig{mods = slecMods}
 
 someSystemC :: IO SC.FunctionDeclaration
 someSystemC = do
-  process <- genSystemC defConfig
-  return (generateFromProcess defConfig "top" process)
+  process <- genSystemCProcess defConfig
+  return (generateProcessToSystemC defConfig "top" process)
 
 someExperimentWith :: GenConfig -> IO Experiment
-someExperimentWith = mkSystemCConstantExperiment
+someExperimentWith = genSystemCConstantExperiment
 
 someExperiment :: IO Experiment
 someExperiment = someExperimentWith defConfig

@@ -13,20 +13,20 @@
 {-# HLINT ignore "Use <$>" #-}
 
 module Experiments (
-  Experiment(..),
-  mkSystemCConstantExperiment,
+  Experiment (..),
+  genSystemCConstantExperiment,
   generateProcessToExperiment,
   saveExperiment,
-  ExperimentId(..),
+  ExperimentId (..),
   newExperimentId,
-  ExperimentSequenceId(..),
+  ExperimentSequenceId (..),
   newExperimentSequenceId,
   ComparisonValue (..),
   comparisonValueRaw,
   DesignSource (..),
   ExperimentResult (..),
   ExperimentProgress (..),
-  Evaluation(..),
+  Evaluation (..),
 ) where
 
 import Control.Monad (replicateM)
@@ -46,7 +46,7 @@ import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
-import GenSystemC (GenConfig (..), GenerateProcess (..), genSystemC, generateFromProcess)
+import GenSystemC (GenConfig (..), GenerateProcess (..), genSystemCProcess, generateProcessToSystemC)
 import Numeric (showIntAtBase)
 import Optics
 import Prettyprinter (Pretty (..), (<+>))
@@ -154,9 +154,9 @@ data ExperimentProgress
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
-mkSystemCConstantExperiment :: GenConfig -> IO Experiment
-mkSystemCConstantExperiment cfg =
-  generateProcessToExperiment cfg =<< genSystemC cfg
+genSystemCConstantExperiment :: GenConfig -> IO Experiment
+genSystemCConstantExperiment cfg =
+  generateProcessToExperiment cfg =<< genSystemCProcess cfg
 
 -- | Modify a function so that it returns zero on inputs not in the provided
 -- list of evaluations.  For inputs within the list of evaluations, it runs the
@@ -187,7 +187,7 @@ limitToEvaluations evals decl =
 
 generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
 generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, transformations} = do
-  let rawDesign = generateFromProcess cfg "dut" generateProcess
+  let rawDesign = generateProcessToSystemC cfg "dut" generateProcess
 
   inputss <-
     replicateM cfg.evaluations $

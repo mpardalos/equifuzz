@@ -50,7 +50,7 @@ main = do
     Generate genOpts -> do
       replicateM_ genOpts.count $ do
         Experiment {scDesign, verilogDesign, knownEvaluations} <-
-          mkSystemCConstantExperiment (generateOptionsToGenConfig genOpts)
+          genSystemCConstantExperiment (generateOptionsToGenConfig genOpts)
         T.putStrLn (SC.genSource scDesign)
         putStrLn "---------"
         T.putStrLn verilogDesign

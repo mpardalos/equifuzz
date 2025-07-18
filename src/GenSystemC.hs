@@ -11,8 +11,8 @@
 
 module GenSystemC (
   -- * Generation
-  genSystemC,
-  generateFromProcess,
+  genSystemCProcess,
+  generateProcessToSystemC,
   GenerateProcess (..),
 
   -- ** Configuration
@@ -439,8 +439,8 @@ seedExpr = do
 modOperations :: GenConfig -> SC.Expr -> SC.Operations
 modOperations cfg e = cfg.mods.operations e (SCUnconfigured.operations e)
 
-genSystemC :: GenConfig -> IO GenerateProcess
-genSystemC cfg = evalRandIO $ do
+genSystemCProcess :: GenConfig -> IO GenerateProcess
+genSystemCProcess cfg = evalRandIO $ do
   seed <- seedExpr
   transformations <- execWriterT . flip evalStateT (initBuildOutState seed, []) $
     replicateM_ cfg.growSteps $ do
@@ -451,11 +451,11 @@ genSystemC cfg = evalRandIO $ do
 
   return $ GenerateProcess cfg seed transformations
 
-generateFromProcess :: GenConfig -> Text -> GenerateProcess -> SC.FunctionDeclaration
-generateFromProcess cfg name GenerateProcess{seed, transformations} =
+generateProcessToSystemC :: GenConfig -> Text -> GenerateProcess -> SC.FunctionDeclaration
+generateProcessToSystemC cfg name GenerateProcess{seed, transformations} =
   let finalState = (`execState` initBuildOutState seed) $ do
         mapM_ (applyTransformation cfg) transformations
-        -- This is only used here, in generateFromProcess. We want this to
+        -- This is only used here, in generateProcessToSystemC. We want this to
         -- \*not* be in the GenerateProcess, so that it is dynamically added in
         -- the reduced experiments, depending on what the reduction has left as the final expression.
         finalizeIfNeeded
