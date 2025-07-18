@@ -10,7 +10,6 @@ module Testing (
 )
 where
 
-import Control.Monad.Random.Strict (evalRandIO)
 import Experiments
 import GenSystemC (
   GenConfig (..),
@@ -38,7 +37,7 @@ slecConfig = defConfig { mods = slecMods }
 
 someSystemC :: IO SC.FunctionDeclaration
 someSystemC = do
-  process <- evalRandIO (genSystemC defConfig)
+  process <- genSystemC defConfig
   return (generateFromProcess defConfig "top" process)
 
 someExperimentWith :: GenConfig -> IO Experiment

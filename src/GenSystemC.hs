@@ -25,7 +25,7 @@ module GenSystemC (
 where
 
 import Control.Monad (replicateM_)
-import Control.Monad.Random.Strict (Rand, StdGen)
+import Control.Monad.Random.Strict (evalRandIO)
 import Control.Monad.State.Strict (evalStateT, execState)
 import Control.Monad.Writer.Strict (MonadWriter (tell), execWriterT)
 import Data.List (nub)
@@ -439,8 +439,8 @@ seedExpr = do
 modOperations :: GenConfig -> SC.Expr -> SC.Operations
 modOperations cfg e = cfg.mods.operations e (SCUnconfigured.operations e)
 
-genSystemC :: GenConfig -> Rand StdGen GenerateProcess
-genSystemC cfg = do
+genSystemC :: GenConfig -> IO GenerateProcess
+genSystemC cfg = evalRandIO $ do
   seed <- seedExpr
   transformations <- execWriterT . flip evalStateT (initBuildOutState seed, []) $
     replicateM_ cfg.growSteps $ do

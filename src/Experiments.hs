@@ -156,7 +156,7 @@ data ExperimentProgress
 -- icarus verilog (`iverilog`) available locally
 mkSystemCConstantExperiment :: GenConfig -> IO Experiment
 mkSystemCConstantExperiment cfg =
-  generateProcessToExperiment cfg =<< evalRandIO (genSystemC cfg)
+  generateProcessToExperiment cfg =<< genSystemC cfg
 
 -- | Modify a function so that it returns zero on inputs not in the provided
 -- list of evaluations.  For inputs within the list of evaluations, it runs the
