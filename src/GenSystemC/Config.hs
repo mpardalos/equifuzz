@@ -1,6 +1,7 @@
 module GenSystemC.Config where
 
 import SystemC qualified as SC
+import Text.Show.Functions()
 
 type OperationsMod = SC.Expr -> SC.Operations -> SC.Operations
 
@@ -14,6 +15,7 @@ data TransformationFlags = TransformationFlags
   , applyMethod :: Bool
   , applyUnaryOp :: Bool
   }
+  deriving (Show)
 
 allTransformations :: TransformationFlags
 allTransformations =
@@ -33,9 +35,11 @@ data GenMods = GenMods
   , transformations :: TransformationFlags
   , inputs :: Bool
   }
+  deriving (Show)
 
 data GenConfig = GenConfig
   { growSteps :: Int
   , mods :: GenMods
   , evaluations :: Int
   }
+  deriving (Show)

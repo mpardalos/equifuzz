@@ -6,22 +6,43 @@
 
 module GenSystemC.Reduce where
 
+import Data.List (subsequences, inits)
 import Data.Map (Map)
-import GHC.Generics (Generic)
-import Optics (makeFieldLabelsNoPrefix)
-
-data Reducible a = Reducible
-  { value :: a
-  , size :: Int
-  , reductions :: Map (Int, Int) (Reducible a)
-  }
-  deriving (Functor, Generic)
+import Data.Map qualified as Map
+import Data.Set qualified as Set
+import Experiments (generateProcessToExperiment)
+import Experiments.Types (Experiment (..))
+import GenSystemC (GenerateProcess (..))
 
 class HasReductions a where
-  mkReductions :: a -> Map (Int, Int) (Reducible a)
+  type Reduced a
+  type Reduced a = a
+  mkReductions :: a -> Map Int [Reduced a]
   getSize :: a -> Int
 
-asReducible :: HasReductions a => a -> Reducible a
-asReducible value = Reducible{value, size = getSize value, reductions = mkReductions value}
+splitN :: Int -> [a] -> [[a]]
+splitN 0 [] = [[]]
+splitN _ [] = []
+splitN n xs = take n xs : splitN n (drop n xs)
 
-makeFieldLabelsNoPrefix ''Reducible
+instance HasReductions GenerateProcess where
+  mkReductions (GenerateProcess cfg seed transformations) =
+    let
+      removeTransformations =
+        Map.fromSet
+          ( \size ->
+              [ GenerateProcess cfg seed reduced
+              | reduced <- splitN size transformations
+              ]
+          )
+          (Set.fromList [0 .. length transformations - 1])
+     in
+      removeTransformations
+
+  getSize GenerateProcess{transformations} = length transformations
+
+instance HasReductions Experiment where
+  type Reduced Experiment = IO Experiment
+  getSize Experiment{generateProcess} = getSize generateProcess
+  mkReductions Experiment{generateProcess} =
+    map (generateProcessToExperiment generateProcess.cfg) <$> mkReductions generateProcess

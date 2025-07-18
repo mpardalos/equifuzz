@@ -80,13 +80,16 @@ data ExperimentSequenceInfo = ExperimentSequenceInfo
   { sequenceId :: ExperimentSequenceId
   , experiments :: Map ExperimentId ExperimentInfo
   }
-  deriving (Generic, Eq, Show)
+  deriving (Generic, Show)
+
+instance Eq ExperimentSequenceInfo where
+  l == r = l.sequenceId == r.sequenceId && (Map.keys l.experiments == Map.keys r.experiments)
 
 data ExperimentInfo = ExperimentInfo
   { experiment :: Experiment
   , result :: Maybe ExperimentResult
   }
-  deriving (Generic, Eq, Show)
+  deriving (Generic, Show)
 
 data WebUIState = WebUIState
   { runningExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo

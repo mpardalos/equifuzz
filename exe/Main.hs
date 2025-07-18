@@ -20,7 +20,7 @@ import WebUI (runWebUI)
 import Control.Monad.Random (setStdGen, mkStdGen)
 #endif
 import Meta (versionName)
-import Optics (view, isn't, _Right, (%), only)
+import Optics (isn't, _Right, (%), only)
 import Control.Monad.Random (getStdRandom)
 import System.Random (uniformR)
 import Data.Functor ((<&>))
@@ -51,7 +51,7 @@ main = do
     Generate genOpts -> do
       replicateM_ genOpts.count $ do
         Experiment {scDesign, verilogDesign, knownEvaluations} <-
-          mkSystemCConstantExperiment (generateOptionsToGenConfig genOpts) >>= view #value
+          mkSystemCConstantExperiment (generateOptionsToGenConfig genOpts)
         T.putStrLn (SC.genSource scDesign)
         putStrLn "---------"
         T.putStrLn verilogDesign

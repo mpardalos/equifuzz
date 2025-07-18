@@ -54,7 +54,7 @@ data Transformation
   | BitSelect Int
   | ApplyMethod SC.SCMethod
   | ApplyUnaryOp SC.UnaryOp
-  deriving stock (Show, Generic, Data)
+  deriving stock (Show, Generic, Data, Eq, Ord)
 
 type MonadBuild m = MonadState BuildOutState m
 

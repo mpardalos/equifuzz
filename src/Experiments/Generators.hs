@@ -13,7 +13,6 @@
 
 module Experiments.Generators (mkSystemCConstantExperiment, generateProcessToExperiment) where
 
-import Control.Concurrent (MVar, newMVar, withMVar)
 import Control.Monad (replicateM)
 import Control.Monad.Random.Strict (MonadRandom (getRandom), evalRandIO)
 import Data.Either (fromRight)
@@ -24,13 +23,11 @@ import Data.Maybe (fromMaybe)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Text.IO qualified as TIO
 import Experiments.Types
 import GHC.Generics (Generic)
 import GenSystemC (
   GenConfig (..),
   GenerateProcess (..),
-  Reducible,
   genSystemC,
   generateFromProcess,
  )
@@ -43,10 +40,9 @@ import Util (runBash)
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally
-mkSystemCConstantExperiment :: GenConfig -> IO (Reducible (IO Experiment))
+mkSystemCConstantExperiment :: GenConfig -> IO Experiment
 mkSystemCConstantExperiment cfg =
-  fmap (fmap (generateProcessToExperiment cfg)) $
-    evalRandIO (genSystemC cfg)
+  generateProcessToExperiment cfg =<< evalRandIO (genSystemC cfg)
 
 -- | Modify a function so that it returns zero on inputs not in the provided
 -- list of evaluations.  For inputs within the list of evaluations, it runs the
@@ -76,8 +72,8 @@ limitToEvaluations evals decl =
     decl{SC.body = earlyReturn : decl.body}
 
 generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
-generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} = do
-  let rawDesign = generateFromProcess cfg "dut" process
+generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, transformations} = do
+  let rawDesign = generateFromProcess cfg "dut" generateProcess
 
   inputss <-
     replicateM cfg.evaluations $
@@ -119,6 +115,7 @@ generateProcessToExperiment cfg process@GenerateProcess{seed, transformations} =
       { experimentId
       , expectedResult = not hasUB -- Expect a negative result for programs with UB
       , scDesign
+      , generateProcess
       , verilogDesign
       , size = length transformations
       , extraInfos
@@ -143,7 +140,7 @@ comparisonValueAsSC t val =
     SC.SCFixed{i} -> fxLiteralWithCast i
     SC.SCUFixed{i} -> fxLiteralWithCast i
     SC.CDouble -> literalWithMemCpy
-    _ -> literal
+    _ -> literalWithCast
  where
   fxLiteralWithCast i =
     let
@@ -153,6 +150,7 @@ comparisonValueAsSC t val =
       SC.genSource t <> "(\"0b" <> fixedPointLiteral <> "\")"
   literalWithMemCpy = "bit_cast<" <> SC.genSource t <> ">(" <> literal <> ")"
   literal = "0b" <> comparisonValueRaw val
+  literalWithCast = SC.genSource t <> "(" <> literal <> ")"
 
 -- | Run the SystemC function and return its output represented as text of a
 -- Verilog-style constant. We use this output format because the normal
@@ -266,8 +264,11 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputs = d
   let systemcIncludePath = systemcHome <> "/include"
   let systemcLibraryPath = systemcHome <> "/lib"
   clangPath <- getEnvDefault "EQUIFUZZ_CLANG" "clang++"
-  (clangExitCode, clangStdOut, clangStdErr) <- readProcessWithExitCode clangPath ["-fsanitize=undefined", "-I", systemcIncludePath, "-L", systemcLibraryPath, "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
-  (programExitCode, T.pack -> programOut, T.pack -> programStderr) <- readProcessWithExitCode (T.unpack binPath) [] ""
+  (clangExitCode, clangStdOut, clangStdErr) <-
+    readProcessWithExitCode clangPath ["-fsanitize=undefined", "-I", systemcIncludePath, "-L", systemcLibraryPath, "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
+
+  (programExitCode, T.pack -> programOut, T.pack -> programStderr) <-
+    readProcessWithExitCode (T.unpack binPath) [] ""
   let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStderr
   void $ runBash ("rm -r " <> tmpDir)
 

@@ -23,6 +23,7 @@ import Numeric (readBin, showIntAtBase)
 import Optics (makeFieldLabelsNoPrefix)
 import Prettyprinter (Pretty (..), (<+>))
 import SystemC qualified as SC
+import GenSystemC (GenerateProcess)
 
 -- | Identifies a sequence of experiments
 newtype ExperimentSequenceId = ExperimentSequenceId {uuid :: UUID}
@@ -94,6 +95,7 @@ data Experiment = Experiment
   , scDesign :: SC.FunctionDeclaration
   , verilogDesign :: Text
   , size :: Int
+  , generateProcess :: GenerateProcess
   -- ^ Used for ordering reductions of the same experiment. Will probably be
   -- the number of transformations used to generate it
   , knownEvaluations :: [Evaluation]
@@ -101,7 +103,7 @@ data Experiment = Experiment
   , extraInfos :: Map Text Text
   -- ^ Extra information to be displayed along with the experiment
   }
-  deriving (Generic, Show, Eq, Ord)
+  deriving (Generic, Show)
 
 data DesignSource = DesignSource
   { topName :: Text

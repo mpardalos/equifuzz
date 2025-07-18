@@ -14,7 +14,6 @@ import Control.Monad.Random.Strict (evalRandIO)
 import Experiments
 import GenSystemC (
   GenConfig (..),
-  Reducible (..),
   genSystemC,
   generateFromProcess,
  )
@@ -41,12 +40,10 @@ slecConfig = defConfig { mods = slecMods }
 someSystemC :: IO SC.FunctionDeclaration
 someSystemC = do
   process <- evalRandIO (genSystemC defConfig)
-  return (generateFromProcess defConfig "top" process.value)
+  return (generateFromProcess defConfig "top" process)
 
 someExperimentWith :: GenConfig -> IO Experiment
-someExperimentWith cfg = do
-  reducible <- mkSystemCConstantExperiment cfg
-  reducible.value
+someExperimentWith = mkSystemCConstantExperiment
 
 someExperiment :: IO Experiment
 someExperiment = someExperimentWith defConfig

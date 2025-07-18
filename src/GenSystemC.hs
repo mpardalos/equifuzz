@@ -7,7 +7,6 @@ module GenSystemC (
   genSystemC,
   generateFromProcess,
   GenerateProcess (..),
-  Reducible (..),
 
   -- ** Configuration
   OperationsMod,
@@ -19,15 +18,11 @@ import Control.Monad (replicateM_)
 import Control.Monad.Random.Strict (Rand, StdGen)
 import Control.Monad.State.Strict (evalStateT, execState)
 import Control.Monad.Writer.Strict (MonadWriter (tell), execWriterT)
-import Data.Map qualified as Map
-import Data.Set qualified as Set
+import Data.List (nub)
 import Data.Text (Text)
+import Data.Text qualified as T
+import GHC.Generics (Generic)
 import GenSystemC.Config (GenConfig (..), OperationsMod)
-import GenSystemC.Reduce (
-  HasReductions (..),
-  Reducible (..),
-  asReducible,
- )
 import GenSystemC.Transformations (
   BuildOutState (headExpr, statements),
   MonadBuild,
@@ -37,12 +32,10 @@ import GenSystemC.Transformations (
   randomTransformationFor,
   seedExpr,
  )
-import Optics (use, (%), _1, _2, Zoom (zoom))
+import Optics (Zoom (zoom), use, (%), _1, _2)
 import SystemC qualified as SC
-import Data.List (nub)
-import qualified Data.Text as T
 
-genSystemC :: GenConfig -> Rand StdGen (Reducible GenerateProcess)
+genSystemC :: GenConfig -> Rand StdGen GenerateProcess
 genSystemC cfg = do
   seed <- seedExpr
   transformations <- execWriterT . flip evalStateT (initBuildOutState seed, []) $
@@ -52,7 +45,7 @@ genSystemC cfg = do
       tell [transformation]
       zoom _1 (applyTransformation cfg transformation)
 
-  return $ asReducible $ GenerateProcess seed transformations
+  return $ GenerateProcess cfg seed transformations
 
 generateFromProcess :: GenConfig -> Text -> GenerateProcess -> SC.FunctionDeclaration
 generateFromProcess cfg name GenerateProcess{seed, transformations} =
@@ -99,26 +92,8 @@ generateFromProcess cfg name GenerateProcess{seed, transformations} =
       SC.SCUnsignedBitref -> applyTransformation cfg (FunctionalCast SC.CBool)
 
 data GenerateProcess = GenerateProcess
-  { seed :: SC.Expr
+  { cfg :: GenConfig
+  , seed :: SC.Expr
   , transformations :: [Transformation]
   }
-
-instance HasReductions GenerateProcess where
-  mkReductions (GenerateProcess seed transformations) =
-    Map.fromSet
-      ( \(start, end) ->
-          let reducedGenerateProcess = GenerateProcess seed (take start transformations <> drop (end + 1) transformations)
-           in Reducible
-                { value = reducedGenerateProcess
-                , size = length reducedGenerateProcess.transformations
-                , reductions = mkReductions reducedGenerateProcess
-                }
-      )
-      ( Set.fromList
-          [ (a, b)
-          | a <- [0 .. length transformations - 1]
-          , b <- [a .. length transformations - 1]
-          ]
-      )
-
-  getSize GenerateProcess{transformations} = length transformations
+  deriving (Generic, Show)

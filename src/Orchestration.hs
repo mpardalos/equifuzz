@@ -23,7 +23,8 @@ import Experiments (
   newExperimentSequenceId,
   saveExperiment,
  )
-import GenSystemC (GenConfig, Reducible (..))
+import GenSystemC (GenConfig)
+import GenSystemC.Reduce (HasReductions (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
 import Runners (ExperimentRunner)
@@ -69,14 +70,14 @@ startOrchestratorThread config runner progressChan = do
       when config.verbose (putStrLn "All required experiments started")
       forever (threadDelay maxBound)
 
-startRunReduceThread :: TSem -> ProgressChan -> ExperimentRunner -> Reducible (IO Experiment) -> IO ()
-startRunReduceThread experimentSem progressChan runner initialExperimentReducible = do
+startRunReduceThread :: TSem -> ProgressChan -> ExperimentRunner -> Experiment -> IO ()
+startRunReduceThread experimentSem progressChan runner initialExperiment = do
   sequenceId <- newExperimentSequenceId
 
   atomically (waitTSem experimentSem)
   void $
     forkFinally
-      (runReduceLoop sequenceId initialExperimentReducible)
+      (runReduceLoop sequenceId initialExperiment)
       ( \case
           Right _ -> endExperimentSequence sequenceId
           Left err -> do
@@ -87,10 +88,9 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
             endExperimentSequence sequenceId
       )
  where
-  runReduceLoop :: ExperimentSequenceId -> Reducible (IO Experiment) -> IO Bool
-  runReduceLoop sequenceId experimentReducible =
+  runReduceLoop :: ExperimentSequenceId -> Experiment -> IO Bool
+  runReduceLoop sequenceId experiment =
     ( do
-        experiment <- experimentReducible.value
         progress (ExperimentStarted sequenceId experiment)
         result <-
           runner experiment
@@ -99,11 +99,11 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
 
         let isInteresting = result.proofFound /= Just experiment.expectedResult
 
-        when (isInteresting && experimentReducible.size > 1) $
+        when (isInteresting && getSize experiment > 1) $
           void $
             foldMUntil_
-              (runReduceLoop sequenceId)
-              (selectReductions experimentReducible)
+              (\genExperiment -> genExperiment >>= runReduceLoop sequenceId)
+              (selectReductions experiment)
 
         return isInteresting
     )
@@ -131,17 +131,16 @@ startRunReduceThread experimentSem progressChan runner initialExperimentReducibl
       , extraInfos = Map.empty
       }
 
-selectReductions :: Reducible a -> [Reducible a]
-selectReductions Reducible{reductions, size} =
-  mapMaybe (reductions Map.!?) $
-    [ (start, end)
-    | chunks <- [2 .. size]
-    , let chunkSize = size `div` chunks
-    , chunkSize > 1
-    , start <- [0, chunkSize .. size - chunkSize]
-    , let end = start + chunkSize - 1
-    ]
-      <> [(n, n) | n <- [0 .. size - 1]]
+selectReductions :: HasReductions a => a -> [Reduced a]
+selectReductions x =
+  let size = getSize x
+   in concat $
+        mapMaybe (mkReductions x Map.!?) $
+          [ size - size `div` 2
+          , size - size `div` 3
+          , size - 2
+          , size - 1
+          ]
 
 startLoggerThread :: ProgressChan -> IO ()
 startLoggerThread progressChan =
