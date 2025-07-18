@@ -24,7 +24,7 @@ import Experiments (
   saveExperiment,
  )
 import GenSystemC (GenConfig)
-import GenSystemC.Reduce (HasReductions (..))
+import Reduce (HasReductions (..))
 import Optics (at, use)
 import Optics.State.Operators ((.=))
 import Runners (ExperimentRunner)

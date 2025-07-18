@@ -2,7 +2,7 @@
 module ToolRestrictions where
 
 import Data.Map qualified as Map
-import GenSystemC.Config (
+import GenSystemC (
   GenMods (..),
   OperationsMod,
   TransformationFlags (..),

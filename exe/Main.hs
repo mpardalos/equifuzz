@@ -34,7 +34,7 @@ import Options.Applicative (ReadM)
 import Runners.Util (validateSSH)
 import Control.Exception (throwIO, try, SomeException)
 import ToolRestrictions (vcfMods, noMods, jasperMods, slecMods)
-import GenSystemC.Config (GenMods)
+import GenSystemC (GenMods)
 import qualified Data.Text as T
 
 main :: IO ()

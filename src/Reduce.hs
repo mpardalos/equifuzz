@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module GenSystemC.Reduce where
+module Reduce where
 
 import Data.Map (Map)
 import Data.Map qualified as Map
