@@ -1,5 +1,4 @@
 {-# LANGUAGE ApplicativeDo #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
@@ -16,9 +15,6 @@ import GenSystemC (GenConfig (..))
 import Options.Applicative qualified as Opt
 import Orchestration
 import WebUI (runWebUI)
-#ifdef EVALUATION_VERSION
-import Control.Monad.Random (setStdGen, mkStdGen)
-#endif
 import Meta (versionName)
 import Optics (isn't, _Right, (%), only)
 import Control.Monad.Random (getStdRandom)
@@ -38,10 +34,6 @@ import qualified Data.Text as T
 
 main :: IO ()
 main = do
-#ifdef EVALUATION_VERSION
-  -- We set a fixed seed for the evaluation version
-  setStdGen (mkStdGen 120)
-#endif
   parseArgs >>= \case
     Web webOpts -> do
       config <- webOptionsToOrchestrationConfig webOpts
@@ -265,7 +257,7 @@ commandParser =
     generateOpts :: Opt.Parser GenerateOptions
     generateOpts = do
       count <-
-        Opt.option (Opt.auto >>= validateCount) . mconcat $
+        Opt.option Opt.auto . mconcat $
           [ Opt.long "count",
             Opt.metavar "COUNT",
             Opt.help "How many examples to generate",
@@ -276,15 +268,6 @@ commandParser =
       evaluations <- evaluationsFlag
       genSteps <- genStepsFlag
       return GenerateOptions {count, genSteps, evaluations}
-
-    validateCount :: Int -> ReadM Int
-#ifdef EVALUATION_VERSION
-    validateCount n
-      | n > 100 = Opt.readerError "Cannot generate more than 100 examples in evaluation version"
-      | otherwise = pure n
-#else
-    validateCount = pure
-#endif
 
     evaluationsFlag :: Opt.Parser Int
     evaluationsFlag =
@@ -298,9 +281,6 @@ commandParser =
 
     genStepsFlag :: Opt.Parser Int
     genStepsFlag =
-#ifdef EVALUATION_VERSION
-      pure 20
-#else
       Opt.option Opt.auto . mconcat $
         [ Opt.long "gen-steps",
           Opt.metavar "COUNT",
@@ -308,7 +288,6 @@ commandParser =
           Opt.value 30,
           Opt.showDefault
         ]
-#endif
 
     sshOpts = Opt.optional $ do
       host <-
