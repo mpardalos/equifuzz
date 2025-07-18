@@ -20,7 +20,6 @@ import Experiments
 import GenSystemC (GenConfig (..), GenMods)
 import Meta (versionName)
 import Optics (isn't, only, (%), _Right)
-import Options.Applicative (ReadM)
 import Options.Applicative qualified as Opt
 import Orchestration
 import Runners
@@ -103,7 +102,7 @@ generateOptionsToGenConfig :: GenerateOptions -> GenConfig
 generateOptionsToGenConfig GenerateOptions{genSteps, evaluations} =
   GenConfig
     { growSteps = genSteps
-    , mods = noMods
+    , transformationAllowed = noMods
     , evaluations
     }
 
@@ -122,7 +121,7 @@ webOptionsToOrchestrationConfig
     let genConfig =
           GenConfig
             { growSteps = genSteps
-            , mods = runnerOptionsToGenMods runnerOptions
+            , transformationAllowed = runnerOptionsToGenMods runnerOptions
             , evaluations
             }
     return

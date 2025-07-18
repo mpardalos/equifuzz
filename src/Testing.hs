@@ -26,14 +26,14 @@ defConfig :: GenConfig
 defConfig =
   GenConfig
     { growSteps = 5
-    , mods = noMods
+    , transformationAllowed = \_ _ -> True
     , evaluations = 3
     }
 
 jasperConfig, vcfConfig, slecConfig :: GenConfig
-jasperConfig = defConfig{mods = jasperMods}
-vcfConfig = defConfig{mods = vcfMods}
-slecConfig = defConfig{mods = slecMods}
+jasperConfig = defConfig{transformationAllowed = jasperMods}
+vcfConfig = defConfig{transformationAllowed = vcfMods}
+slecConfig = defConfig{transformationAllowed = slecMods}
 
 someSystemC :: IO SC.FunctionDeclaration
 someSystemC = do

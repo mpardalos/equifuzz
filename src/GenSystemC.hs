@@ -12,11 +12,9 @@ module GenSystemC (
   GenerateProcess (..),
 
   -- ** Configuration
-  OperationsMod,
+  GenMods,
+  Transformation(..),
   GenConfig (..),
-  GenMods (..),
-  TransformationFlags (..),
-  allTransformations,
 )
 where
 
@@ -39,47 +37,15 @@ import SystemC qualified as SC
 
 import Data.Data (Data)
 import Data.Map qualified as Map
-import SystemC qualified as SCUnconfigured (operations)
+import Debug.Trace (traceM)
 import Text.Show.Functions ()
 import Util (is)
 
-type OperationsMod = SC.Expr -> SC.Operations -> SC.Operations
-
-data TransformationFlags = TransformationFlags
-  { castWithAssignment :: Bool
-  , functionalCast :: Bool
-  , range :: Bool
-  , arithmetic :: Bool
-  , useAsCondition :: Bool
-  , bitSelect :: Bool
-  , applyMethod :: Bool
-  , applyUnaryOp :: Bool
-  }
-  deriving (Show)
-
-allTransformations :: TransformationFlags
-allTransformations =
-  TransformationFlags
-    { castWithAssignment = True
-    , functionalCast = True
-    , range = True
-    , arithmetic = True
-    , useAsCondition = True
-    , bitSelect = True
-    , applyMethod = True
-    , applyUnaryOp = True
-    }
-
-data GenMods = GenMods
-  { operations :: OperationsMod
-  , transformations :: TransformationFlags
-  , inputs :: Bool
-  }
-  deriving (Show)
+type GenMods = SC.Expr -> Transformation -> Bool
 
 data GenConfig = GenConfig
   { growSteps :: Int
-  , mods :: GenMods
+  , transformationAllowed :: GenMods
   , evaluations :: Int
   }
   deriving (Show)
@@ -118,123 +84,77 @@ newVar = do
   #nextVarIdx %= (+ 1)
   return ("x" <> T.pack (show varIdx))
 
-assignAllowed :: GenConfig -> SC.Expr -> SC.SCType -> Bool
-assignAllowed cfg expr toType =
-  let flags = (modOperations cfg expr).assignTo
-   in case toType of
-        SC.SCInt{} -> flags.scInt
-        SC.SCUInt{} -> flags.scUInt
-        SC.SCBigInt{} -> flags.scBigInt
-        SC.SCBigUInt{} -> flags.scBigUInt
-        SC.SCFixed{} -> flags.scFixed
-        SC.SCUFixed{} -> flags.scUFixed
-        SC.SCFxnumSubref{} -> flags.scFxnumSubref
-        SC.SCIntSubref{} -> flags.scIntSubref
-        SC.SCUIntSubref{} -> flags.scUIntSubref
-        SC.SCSignedSubref{} -> flags.scSignedSubref
-        SC.SCUnsignedSubref{} -> flags.scUnsignedSubref
-        SC.SCIntBitref -> flags.scIntBitref
-        SC.SCUIntBitref -> flags.scUIntBitref
-        SC.SCSignedBitref -> flags.scSignedBitref
-        SC.SCUnsignedBitref -> flags.scUnsignedBitref
-        SC.SCLogic -> flags.scLogic
-        SC.SCBV{} -> flags.scBV
-        SC.SCLV{} -> flags.scLV
-        SC.CUInt -> flags.cUInt
-        SC.CInt -> flags.cInt
-        SC.CDouble -> flags.cDouble
-        SC.CBool -> flags.cBool
-
-castAllowed :: GenConfig -> SC.Expr -> SC.SCType -> Bool
-castAllowed cfg expr toType =
-  let flags = (modOperations cfg expr).constructorInto
-   in case toType of
-        SC.SCInt{} -> flags.scInt
-        SC.SCUInt{} -> flags.scUInt
-        SC.SCBigInt{} -> flags.scBigInt
-        SC.SCBigUInt{} -> flags.scBigUInt
-        SC.SCFixed{} -> flags.scFixed
-        SC.SCUFixed{} -> flags.scUFixed
-        SC.SCFxnumSubref{} -> flags.scFxnumSubref
-        SC.SCIntSubref{} -> flags.scIntSubref
-        SC.SCUIntSubref{} -> flags.scUIntSubref
-        SC.SCSignedSubref{} -> flags.scSignedSubref
-        SC.SCUnsignedSubref{} -> flags.scUnsignedSubref
-        SC.SCIntBitref -> flags.scIntBitref
-        SC.SCUIntBitref -> flags.scUIntBitref
-        SC.SCSignedBitref -> flags.scSignedBitref
-        SC.SCUnsignedBitref -> flags.scUnsignedBitref
-        SC.SCLogic -> flags.scLogic
-        SC.SCBV{} -> flags.scBV
-        SC.SCLV{} -> flags.scLV
-        SC.CUInt -> flags.cUInt
-        SC.CInt -> flags.cInt
-        SC.CDouble -> flags.cDouble
-        SC.CBool -> flags.cBool
+transformationAllowed :: SC.Expr -> Transformation -> Bool
+transformationAllowed e (Range bound1 bound2) =
+  let hi = max bound1 bound2
+      lo = min bound1 bound2
+   in lo >= 0 && maybe True (hi <) (SC.knownWidth e.annotation)
+transformationAllowed e (BitSelect idx) =
+  maybe True (idx <) (SC.knownWidth e.annotation)
+transformationAllowed e UseAsCondition{} =
+  SC.CBool `elem` (SC.operations e).implicitCasts
+transformationAllowed e (ApplyUnaryOp _) =
+  (e `is` #_Variable) && (SC.operations e).incrementDecrement
+transformationAllowed _ _ = True
 
 applyTransformation :: MonadBuild m => GenConfig -> Transformation -> m ()
-applyTransformation cfg transformation
+applyTransformation cfg transformation = do
   -- First, look for free vars in any expression which is explicitly in the
   -- transformation. If there is some and inputs are disabled, skip the
   -- transformation
-  | not cfg.mods.inputs && not (null (SC.freeVars transformation)) = pure ()
-applyTransformation cfg (CastWithAssignment varType) = do
+  e <- use #headExpr
+  when
+    ( transformationAllowed e transformation
+        && cfg.transformationAllowed e transformation
+    )
+    $ applyTransformationUnchecked transformation
+
+applyTransformationUnchecked :: MonadBuild m => Transformation -> m ()
+applyTransformationUnchecked (CastWithAssignment varType) = do
   e <- use #headExpr
   varName <- newVar
-  when (assignAllowed cfg e varType) $ do
-    #statements
-      %= ( ++
-            [ SC.Declaration varType varName
-            , SC.Assignment varName e
-            ]
-         )
-    #headExpr .= SC.Variable varType varName
-applyTransformation cfg (FunctionalCast castType) =
-  #headExpr %= \e ->
-    if castAllowed cfg e castType
-      then SC.Cast castType castType e
-      else e
-applyTransformation cfg (Range bound1 bound2) = do
+  #statements
+    %= ( ++
+          [ SC.Declaration varType varName
+          , SC.Assignment varName e
+          ]
+       )
+  #headExpr .= SC.Variable varType varName
+applyTransformationUnchecked (FunctionalCast castType) =
+  #headExpr %= \e -> SC.Cast castType castType e
+applyTransformationUnchecked (Range bound1 bound2) = do
   #headExpr %= \e ->
     let hi = max bound1 bound2
         lo = min bound1 bound2
         width = hi - lo + 1
-        rangeInBounds = lo >= 0 && maybe True (hi <) (SC.knownWidth e.annotation)
-     in case (modOperations cfg e).partSelect of
-          Just resultType
-            | rangeInBounds ->
-                SC.MethodCall
-                  (resultType width)
-                  e
-                  "range"
-                  [SC.Constant SC.CInt (fromIntegral hi), SC.Constant SC.CInt (fromIntegral lo)]
+     in case (SC.operations e).partSelect of
+          Just resultType ->
+            SC.MethodCall
+              (resultType width)
+              e
+              "range"
+              [SC.Constant SC.CInt (fromIntegral hi), SC.Constant SC.CInt (fromIntegral lo)]
           _ -> e
-applyTransformation cfg (Arithmetic op e') =
+applyTransformationUnchecked (Arithmetic op e') =
   #headExpr %= \e ->
-    case (modOperations cfg e).arithmeticResult of
+    case (SC.operations e).arithmeticResult of
       Just resultType -> SC.BinOp resultType e op e'
       Nothing -> e
-applyTransformation cfg (UseAsCondition tExpr fExpr) = do
+applyTransformationUnchecked (UseAsCondition tExpr fExpr) = do
   #headExpr %= \e ->
-    if SC.CBool `elem` (modOperations cfg e).implicitCasts
-      then SC.Conditional tExpr.annotation e tExpr fExpr
-      else e
-applyTransformation cfg (BitSelect idx) = do
+    SC.Conditional tExpr.annotation e tExpr fExpr
+applyTransformationUnchecked (BitSelect idx) = do
   #headExpr %= \e ->
-    let idxInBounds = maybe True (idx <) (SC.knownWidth e.annotation)
-     in case (modOperations cfg e).bitSelect of
-          Just bitrefType | idxInBounds -> SC.Bitref bitrefType e (fromIntegral idx)
-          _ -> e
-applyTransformation cfg (ApplyMethod method) = do
+    case (SC.operations e).bitSelect of
+      Just bitrefType -> SC.Bitref bitrefType e (fromIntegral idx)
+      _ -> e
+applyTransformationUnchecked (ApplyMethod method) = do
   #headExpr %= \e ->
-    case Map.lookup method (modOperations cfg e).methods of
+    case Map.lookup method (SC.operations e).methods of
       Just sig -> SC.MethodCall sig e (SC.methodName method) []
       Nothing -> e
-applyTransformation cfg (ApplyUnaryOp op) = do
-  #headExpr %= \e ->
-    if (e `is` #_Variable) && (modOperations cfg e).incrementDecrement
-      then SC.UnaryOp e.annotation op e
-      else e
+applyTransformationUnchecked (ApplyUnaryOp op) = do
+  #headExpr %= \e -> SC.UnaryOp e.annotation op e
 
 randomTransformationFor ::
   forall m.
@@ -244,27 +164,37 @@ randomTransformationFor ::
   GenConfig ->
   SC.Expr ->
   m Transformation
-randomTransformationFor cfg e
-  | null transformationOptions = error ("No transformations possible on this expression: " <> show e)
-  | otherwise = join . uniform $ transformationOptions
+randomTransformationFor cfg e = go 0
  where
+  go :: Int -> m Transformation
+  go n = do
+    when (n > 20) $
+      traceM ("Tried " ++ show n ++ " times to generate an allowed transformation. Check the tool restrictions")
+    when (n > 1000) $
+      error ("Tried " ++ show n ++ " times to generate an allowed transformation. Something is definitely wrong. Bye.")
+    t <- join . uniform $ transformationOptions
+    if transformationAllowed e t && cfg.transformationAllowed e t
+      then return t
+      else go (n + 1)
+
   transformationOptions :: [m Transformation]
   transformationOptions =
     catMaybes
-      [ guard cfg.mods.transformations.castWithAssignment >> castWithAssignment
-      , guard cfg.mods.transformations.functionalCast >> functionalCast
-      , guard cfg.mods.transformations.range >> range
-      , guard cfg.mods.transformations.arithmetic >> arithmetic
-      , guard cfg.mods.transformations.useAsCondition >> useAsCondition
-      , guard cfg.mods.transformations.bitSelect >> bitSelect
-      , guard cfg.mods.transformations.applyMethod >> applyMethod
-      , guard cfg.mods.transformations.applyUnaryOp >> applyUnaryOp
+      [ Just castWithAssignment
+      , Just functionalCast
+      , range
+      , arithmetic
+      , Just useAsCondition
+      , bitSelect
+      , applyMethod
+      , applyUnaryOp
       ]
-  castWithAssignment :: Maybe (m Transformation)
-  castWithAssignment = fmap CastWithAssignment <$> assignmentCastTargetType
 
-  functionalCast :: Maybe (m Transformation)
-  functionalCast = fmap FunctionalCast <$> functionalCastTargetType
+  castWithAssignment :: m Transformation
+  castWithAssignment = CastWithAssignment <$> castTargetType
+
+  functionalCast :: m Transformation
+  functionalCast = FunctionalCast <$> castTargetType
 
   someWidth :: m Int
   someWidth = getRandomR (1, 64)
@@ -278,61 +208,28 @@ randomTransformationFor cfg e
     i <- getRandomR (0, w)
     return (w, i)
 
-  assignmentCastTargetType :: Maybe (m SC.SCType)
-  assignmentCastTargetType =
-    let ts = (modOperations cfg e).assignTo
-        gens :: [m SC.SCType]
-        gens =
-          catMaybes
-            [ guard ts.scInt >> Just (SC.SCInt <$> someWidth)
-            , guard ts.scInt >> Just (SC.SCInt <$> someWidth)
-            , guard ts.scUInt >> Just (SC.SCUInt <$> someWidth)
-            , guard ts.scBigInt >> Just (SC.SCBigInt <$> someBigWidth)
-            , guard ts.scBigUInt >> Just (SC.SCBigUInt <$> someBigWidth)
-            , guard ts.scFixed >> Just (uncurry SC.SCFixed <$> someWI)
-            , guard ts.scUFixed >> Just (uncurry SC.SCUFixed <$> someWI)
-            , guard ts.scLogic >> Just (pure SC.SCLogic)
-            , guard ts.scBV >> Just (SC.SCBV <$> someWidth)
-            , guard ts.scLV >> Just (SC.SCLV <$> someWidth)
-            , -- No subrefs or bitrefs because they cannot be constructed
-              guard ts.cUInt >> Just (pure SC.CUInt)
-            , guard ts.cInt >> Just (pure SC.CInt)
-            , guard ts.cDouble >> Just (pure SC.CDouble)
-            , guard ts.cBool >> Just (pure SC.CBool)
-            ]
-     in if null gens
-          then Nothing
-          else Just $ join (uniform gens)
-
-  functionalCastTargetType :: Maybe (m SC.SCType)
-  functionalCastTargetType =
-    let cs = (modOperations cfg e).constructorInto
-        gens :: [m SC.SCType]
-        gens =
-          catMaybes
-            [ guard cs.scInt >> Just (SC.SCInt <$> someWidth)
-            , guard cs.scInt >> Just (SC.SCInt <$> someWidth)
-            , guard cs.scUInt >> Just (SC.SCUInt <$> someWidth)
-            , guard cs.scBigInt >> Just (SC.SCBigInt <$> someBigWidth)
-            , guard cs.scBigUInt >> Just (SC.SCBigUInt <$> someBigWidth)
-            , guard cs.scFixed >> Just (uncurry SC.SCFixed <$> someWI)
-            , guard cs.scUFixed >> Just (uncurry SC.SCUFixed <$> someWI)
-            , guard cs.scLogic >> Just (pure SC.SCLogic)
-            , guard cs.scBV >> Just (SC.SCBV <$> someWidth)
-            , guard cs.scLV >> Just (SC.SCLV <$> someWidth)
-            , -- No subrefs or bitrefs because they cannot be constructed
-              guard cs.cUInt >> Just (pure SC.CUInt)
-            , guard cs.cInt >> Just (pure SC.CInt)
-            , guard cs.cDouble >> Just (pure SC.CDouble)
-            , guard cs.cBool >> Just (pure SC.CBool)
-            ]
-     in if null gens
-          then Nothing
-          else Just $ join (uniform gens)
+  castTargetType :: m SC.SCType
+  castTargetType =
+    join . uniform $
+      [ SC.SCInt <$> someWidth
+      , SC.SCInt <$> someWidth
+      , SC.SCUInt <$> someWidth
+      , SC.SCBigInt <$> someBigWidth
+      , SC.SCBigUInt <$> someBigWidth
+      , uncurry SC.SCFixed <$> someWI
+      , uncurry SC.SCUFixed <$> someWI
+      , pure SC.SCLogic
+      , SC.SCBV <$> someWidth
+      , SC.SCLV <$> someWidth
+      , -- No subrefs or bitrefs because they cannot be constructed
+        pure SC.CUInt
+      , pure SC.CInt
+      , pure SC.CDouble
+      , pure SC.CBool
+      ]
 
   range :: Maybe (m Transformation)
   range = do
-    guard (isJust (modOperations cfg e).partSelect)
     exprWidth <- SC.knownWidth e.annotation
     return $ do
       hi <- getRandomR (0, exprWidth - 1)
@@ -341,36 +238,33 @@ randomTransformationFor cfg e
 
   arithmetic :: Maybe (m Transformation)
   arithmetic = do
-    resultType <- (modOperations cfg e).arithmeticResult
+    resultType <- (SC.operations e).arithmeticResult
     return $ do
       op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
       constant <- someAtomicExpr resultType
       return (Arithmetic op constant)
 
-  useAsCondition :: Maybe (m Transformation)
-  useAsCondition = do
-    guard (SC.CBool `elem` (modOperations cfg e).implicitCasts)
-    return
-      ( UseAsCondition
-          <$> someAtomicExpr SC.CInt
-          <*> someAtomicExpr SC.CInt
-      )
+  useAsCondition :: m Transformation
+  useAsCondition =
+    UseAsCondition
+      <$> someAtomicExpr SC.CInt
+      <*> someAtomicExpr SC.CInt
 
   bitSelect :: Maybe (m Transformation)
   bitSelect = do
-    guard (isJust (modOperations cfg e).bitSelect)
+    guard (isJust (SC.operations e).bitSelect)
     width <- SC.knownWidth e.annotation
     return (BitSelect <$> getRandomR (0, width - 1))
 
   applyMethod :: Maybe (m Transformation)
   applyMethod = do
-    let options = ApplyMethod <$> Map.keys (modOperations cfg e).methods
+    let options = ApplyMethod <$> Map.keys (SC.operations e).methods
     guard (not . null $ options)
     return (uniform options)
 
   applyUnaryOp :: Maybe (m Transformation)
   applyUnaryOp = do
-    guard (modOperations cfg e).incrementDecrement
+    guard (SC.operations e).incrementDecrement
     guard (e `is` #_Variable)
     return (ApplyUnaryOp <$> uniform [minBound :: SC.UnaryOp .. maxBound])
 
@@ -391,7 +285,7 @@ randomTransformationFor cfg e
 
   someAtomicExpr :: SC.SCType -> m SC.Expr
   someAtomicExpr t
-    | typeAllowedAsInput t && cfg.mods.inputs =
+    | typeAllowedAsInput t =
         join . uniform $
           [ someConstant t
           , someExistingVar t
@@ -428,9 +322,6 @@ seedExpr :: MonadRandom m => m SC.Expr
 seedExpr = do
   value <- getRandomR (-128, 128)
   return (SC.Constant SC.CInt value)
-
-modOperations :: GenConfig -> SC.Expr -> SC.Operations
-modOperations cfg e = cfg.mods.operations e (SCUnconfigured.operations e)
 
 genSystemCProcess :: GenConfig -> IO GenerateProcess
 genSystemCProcess cfg = evalRandIO $ do

@@ -1,213 +1,89 @@
 {-# HLINT ignore "Use const" #-}
 module ToolRestrictions where
 
-import Data.Map qualified as Map
-import GenSystemC (
-  GenMods (..),
-  OperationsMod,
-  TransformationFlags (..),
-  allTransformations,
- )
-import Optics
+import GenSystemC (GenMods, Transformation (..))
 import SystemC qualified as SC
 
 vcfMods :: GenMods
-vcfMods = GenMods{operations, transformations, inputs = True}
- where
-  operations e = case e.annotation of
-    SC.CDouble{} ->
-      composeAll
-        [ #constructorInto % #scUInt .~ False
-        ]
-    _ -> id
-
-  transformations =
-    allTransformations
-      { arithmetic = False
-      }
+vcfMods e t =
+  case (e.annotation, t) of
+    (SC.CDouble, FunctionalCast SC.SCUInt{}) -> False
+    (_, Arithmetic _ _) -> False
+    (_, _) -> True
 
 oldVcfMods :: GenMods
-oldVcfMods = GenMods{operations, transformations, inputs = True}
- where
-  operations e = case e.annotation of
-    SC.SCInt{} ->
-      composeAll
-        [ #constructorInto % #scBigInt .~ False
-        , #constructorInto % #scBigUInt .~ False
-        ]
-    SC.SCUInt{} ->
-      composeAll
-        [ #constructorInto % #scBigInt .~ False
-        , #constructorInto % #scBigUInt .~ False
-        ]
-    SC.CDouble{} ->
-      composeAll
-        [ #constructorInto % #cInt .~ False
-        , #constructorInto % #cUInt .~ False
-        , #assignTo % #cInt .~ False
-        , #assignTo % #cUInt .~ False
-        ]
-    _ -> id
-
-  transformations =
-    allTransformations
-      { arithmetic = False
-      }
+oldVcfMods e t =
+  case (e.annotation, t) of
+    (SC.SCInt{}, FunctionalCast SC.SCBigInt{}) -> False
+    (SC.SCInt{}, FunctionalCast SC.SCBigUInt{}) -> False
+    (SC.SCUInt{}, FunctionalCast SC.SCBigInt{}) -> False
+    (SC.SCUInt{}, FunctionalCast SC.SCBigUInt{}) -> False
+    (SC.CDouble, FunctionalCast SC.CInt) -> False
+    (SC.CDouble, FunctionalCast SC.CUInt) -> False
+    (SC.CDouble, CastWithAssignment SC.CInt) -> False
+    (SC.CDouble, CastWithAssignment SC.CUInt) -> False
+    (_, Arithmetic _ _) -> False
+    (_, _) -> True
 
 jasperMods :: GenMods
-jasperMods = GenMods{operations, transformations, inputs = True}
- where
-  operations :: OperationsMod
-  operations e =
-    composeAll
-      [ noFixed e
-      , noLogic e
-      , failingBigIntReductions e
-      , missingSubrefReductions e
-      , ambiguousAssignments e
-      , noSingleBitSelections e
-      , noBoolToDouble e
-      ]
-
-  failingBigIntReductions e = case e.annotation of
-    SC.SCBigInt{} -> #methods %~ Map.delete SC.ReduceXor . Map.delete SC.ReduceXNor
-    SC.SCBigUInt{} -> #methods %~ Map.delete SC.ReduceXor . Map.delete SC.ReduceXNor
-    _ -> id
-
-  missingSubrefReductions e = case e.annotation of
-    SC.SCIntSubref{} -> #methods .~ Map.empty
-    SC.SCUIntSubref{} -> #methods .~ Map.empty
-    SC.SCSignedSubref{} -> #methods .~ Map.empty
-    SC.SCUnsignedSubref{} -> #methods .~ Map.empty
-    _ -> id
-
-  ambiguousAssignments :: OperationsMod
-  ambiguousAssignments e = case e.annotation of
-    SC.SCIntSubref{} ->
-      composeAll
-        [ #assignTo % #scUInt .~ False
-        , #assignTo % #scInt .~ False
-        ]
-    SC.SCUIntSubref{} ->
-      composeAll
-        [ #assignTo % #scUInt .~ False
-        , #assignTo % #scInt .~ False
-        ]
-    SC.SCIntBitref{} ->
-      composeAll
-        [ #assignTo % #scUInt .~ False
-        , #assignTo % #scInt .~ False
-        ]
-    SC.SCUIntBitref{} ->
-      composeAll
-        [ #assignTo % #scUInt .~ False
-        , #assignTo % #scInt .~ False
-        ]
-    _ -> id
-
-  -- Trying to prevent undefined behaviour in programs like this:
-  --     sc_dt::sc_uint<18>(sc_dt::sc_int<1>(-1)[0]);
-  -- FIXME: We should detect when the experiment has undefined behaviour and
-  -- be able to mark that in the UI
-  noSingleBitSelections :: OperationsMod
-  noSingleBitSelections e = case e.annotation of
-    SC.SCInt w
-      | w <= 1 ->
-          composeAll
-            [ #partSelect .~ Nothing
-            , #bitSelect .~ Nothing
-            ]
-    SC.SCUInt w
-      | w <= 1 ->
-          composeAll
-            [ #partSelect .~ Nothing
-            , #bitSelect .~ Nothing
-            ]
-    SC.SCBigInt w
-      | w <= 1 ->
-          composeAll
-            [ #partSelect .~ Nothing
-            , #bitSelect .~ Nothing
-            ]
-    SC.SCBigUInt w
-      | w <= 1 ->
-          composeAll
-            [ #partSelect .~ Nothing
-            , #bitSelect .~ Nothing
-            ]
-    _ -> id
-
-  -- Try to avoid bug triggered by this code:
-  --   double dut() {
-  --       int x0 = 1;
-  --       return double(bool(x0));
-  --   }
-  noBoolToDouble :: OperationsMod
-  noBoolToDouble e = case e.annotation of
-    SC.CBool ->
-      composeAll
-        [ #constructorInto % #cDouble .~ False
-        , #assignTo % #cDouble .~ False
-        ]
-    _ -> id
-
-  transformations = allTransformations
+jasperMods e t =
+  case (e.annotation, t) of
+    (_, FunctionalCast SC.SCFixed{}) -> False
+    (_, CastWithAssignment SC.SCFixed{}) -> False
+    (_, FunctionalCast SC.SCUFixed{}) -> False
+    (_, CastWithAssignment SC.SCUFixed{}) -> False
+    (SC.SCBigInt{}, ApplyMethod SC.ReduceXor) -> False
+    (SC.SCBigInt{}, ApplyMethod SC.ReduceXNor) -> False
+    (SC.SCBigUInt{}, ApplyMethod SC.ReduceXor) -> False
+    (SC.SCBigUInt{}, ApplyMethod SC.ReduceXNor) -> False
+    (SC.SCIntSubref{}, ApplyMethod _) -> False
+    (SC.SCUIntSubref{}, ApplyMethod _) -> False
+    (SC.SCSignedSubref{}, ApplyMethod _) -> False
+    (SC.SCUnsignedSubref{}, ApplyMethod _) -> False
+    (SC.SCIntSubref{}, CastWithAssignment SC.SCUInt{}) -> False
+    (SC.SCIntSubref{}, CastWithAssignment SC.SCInt{}) -> False
+    (SC.SCUIntSubref{}, CastWithAssignment SC.SCUInt{}) -> False
+    (SC.SCUIntSubref{}, CastWithAssignment SC.SCInt{}) -> False
+    (SC.SCIntBitref{}, CastWithAssignment SC.SCUInt{}) -> False
+    (SC.SCUIntBitref{}, CastWithAssignment SC.SCUInt{}) -> False
+    -- Trying to prevent undefined behaviour in programs like this:
+    --     sc_dt::sc_uint<18>(sc_dt::sc_int<1>(-1)[0]);
+    -- FIXME: We should detect when the experiment has undefined behaviour and
+    -- be able to mark that in the UI
+    (SC.SCInt w, Range{}) | w <= 1 -> False
+    (SC.SCInt w, BitSelect{}) | w <= 1 -> False
+    (SC.SCUInt w, Range{}) | w <= 1 -> False
+    (SC.SCUInt w, BitSelect{}) | w <= 1 -> False
+    (SC.SCBigInt w, Range{}) | w <= 1 -> False
+    (SC.SCBigInt w, BitSelect{}) | w <= 1 -> False
+    (SC.SCBigUInt w, Range{}) | w <= 1 -> False
+    (SC.SCBigUInt w, BitSelect{}) | w <= 1 -> False
+    -- Try to avoid bug triggered by this code:
+    --   double dut() {
+    --       int x0 = 1;
+    --       return double(bool(x0));
+    --   }
+    (SC.CBool, FunctionalCast SC.CDouble) -> False
+    (SC.CBool, CastWithAssignment SC.CDouble) -> False
+    (_, _) -> True
 
 slecMods :: GenMods
-slecMods = GenMods{operations, transformations, inputs = True}
- where
-  operations :: OperationsMod
-  operations e =
-    composeAll
-      [ failingCasts e
-      , noFixed e -- The assignment operator on sc_(u)fixed is broken
-      ]
-
-  failingCasts e = case e.annotation of
-    SC.SCUInt{} ->
-      composeAll
-        [ #constructorInto % #cDouble .~ False
-        ]
-    SC.CDouble{} ->
-      composeAll
-        [ #constructorInto % #scUInt .~ False
-        , #constructorInto % #scInt .~ False
-        , #constructorInto % #scBigUInt .~ False
-        , #constructorInto % #scBigInt .~ False
-        , #assignTo % #scBigUInt .~ False
-        , #assignTo % #scBigInt .~ False
-        , #assignTo % #scInt .~ False
-        , #assignTo % #scUInt .~ False
-        ]
-    _otherType -> id
-
-  transformations = allTransformations
-
-noFixed :: OperationsMod
-noFixed _expr =
-  composeAll
-    [ #constructorInto % #scFixed .~ False
-    , #constructorInto % #scUFixed .~ False
-    , #assignTo % #scFixed .~ False
-    , #assignTo % #scUFixed .~ False
-    ]
-
-noLogic :: OperationsMod
-noLogic _expr =
-  composeAll
-    [ #constructorInto % #scLogic .~ False
-    , #constructorInto % #scLogic .~ False
-    , #assignTo % #scLogic .~ False
-    , #assignTo % #scLogic .~ False
-    ]
+slecMods e t =
+  case (e.annotation, t) of
+    (_, FunctionalCast SC.SCFixed{}) -> False
+    (_, CastWithAssignment SC.SCFixed{}) -> False
+    (_, FunctionalCast SC.SCUFixed{}) -> False
+    (_, CastWithAssignment SC.SCUFixed{}) -> False
+    (SC.SCUInt{}, FunctionalCast SC.CDouble) -> False
+    (SC.CDouble, FunctionalCast SC.SCUInt{}) -> False
+    (SC.CDouble, FunctionalCast SC.SCInt{}) -> False
+    (SC.CDouble, FunctionalCast SC.SCBigUInt{}) -> False
+    (SC.CDouble, FunctionalCast SC.SCBigInt{}) -> False
+    (SC.CDouble, CastWithAssignment SC.SCBigUInt{}) -> False
+    (SC.CDouble, CastWithAssignment SC.SCBigInt{}) -> False
+    (SC.CDouble, CastWithAssignment SC.SCInt{}) -> False
+    (SC.CDouble, CastWithAssignment SC.SCUInt{}) -> False
+    (_, _) -> True
 
 noMods :: GenMods
-noMods =
-  GenMods
-    { operations = const id
-    , transformations = allTransformations
-    , inputs = True
-    }
-
-composeAll :: Foldable t => t (c -> c) -> c -> c
-composeAll = foldl (.) id
+noMods _ _ = True
