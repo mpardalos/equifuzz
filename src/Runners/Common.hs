@@ -1,26 +1,41 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE ExtendedDefaultRules #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -fno-warn-type-defaults #-}
 
-module Runners.Util where
+module Runners.Common where
 
 import Control.Monad (forM_, void)
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Runners.Types (SSHConnectionTarget (..))
+import Experiments
+import Optics (makeFieldLabelsNoPrefix)
 import Shelly ((</>))
 import Util (mkdir_p, runBash)
 
-default (T.Text)
+default (Text)
+
+type ExperimentRunner = Experiment -> IO ExperimentResult
+
+data EquivalenceCheckerConfig = EquivalenceCheckerConfig
+  { name :: Text
+  , makeFiles :: Experiment -> [(Text, Text)]
+  , runScript :: Text
+  , parseOutput :: Experiment -> Text -> ExperimentResult
+  }
+
+data SSHConnectionTarget = SSHConnectionTarget
+  { host :: Text
+  , username :: Text
+  , password :: Maybe Text
+  }
 
 createExperimentDir :: Text -> [(Text, Text)] -> IO ()
 createExperimentDir experimentDir files = do
@@ -81,3 +96,6 @@ validateSSH :: SSHConnectionTarget -> IO Bool
 validateSSH sshOpts = do
   textOut <- runSSHCommand sshOpts "echo 'hello'"
   return (textOut == "hello\n")
+
+makeFieldLabelsNoPrefix ''EquivalenceCheckerConfig
+makeFieldLabelsNoPrefix ''SSHConnectionTarget

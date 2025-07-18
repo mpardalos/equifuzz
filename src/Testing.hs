@@ -18,7 +18,6 @@ import GenSystemC (
   generateFromProcess,
  )
 import Runners
-import Runners.Util (createExperimentDir)
 import SystemC qualified as SC
 import Text.Printf (printf)
 import ToolRestrictions

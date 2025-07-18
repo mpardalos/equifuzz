@@ -9,13 +9,13 @@
 module Runners.VCF (vcFormal) where
 
 import Data.Function ((&))
+import Data.Map qualified as Map
 import Data.String.Interpolate (__i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments
-import Runners.Types (EquivalenceCheckerConfig (..))
+import Runners.Common (EquivalenceCheckerConfig (..))
 import SystemC qualified as SC
-import qualified Data.Map as Map
 
 -- | Run an experiment using VC Formal on a remote host
 vcFormal :: EquivalenceCheckerConfig

@@ -46,8 +46,7 @@ library
     exposed-modules:
         Experiments,
         Runners,
-        Runners.Types,
-        Runners.Util,
+        Runners.Common,
         Runners.VCF,
         Runners.Jasper,
         Runners.SLEC,

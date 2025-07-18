@@ -11,14 +11,14 @@
 
 module Runners.Jasper (jasper) where
 
+import Data.Map qualified as Map
 import Data.String.Interpolate (__i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments
 import Optics ((^.))
-import Runners.Types (EquivalenceCheckerConfig (..))
+import Runners.Common (EquivalenceCheckerConfig (..))
 import SystemC qualified as SC
-import qualified Data.Map as Map
 
 default (T.Text)
 
