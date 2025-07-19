@@ -12,7 +12,7 @@ import GHC.Conc (labelThread)
 import Optics (Prism', preview, view, _2)
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
-import System.Process (readProcess, callProcess, readProcessWithExitCode)
+import System.Process (callProcess, readProcessWithExitCode)
 import qualified Data.Text as T
 
 iterateM :: Monad m => Int -> (a -> m a) -> a -> m a
