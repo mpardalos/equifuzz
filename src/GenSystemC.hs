@@ -37,6 +37,8 @@ import SystemC qualified as SC
 
 import Data.Data (Data)
 import Data.Map qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Debug.Trace (traceM)
 import Text.Show.Functions ()
 import Util (is)
@@ -84,28 +86,31 @@ newVar = do
   #nextVarIdx %= (+ 1)
   return ("x" <> T.pack (show varIdx))
 
+-- TODO: Also check if any of these operations are allowed through implicit casts
 transformationAllowed :: SC.Expr -> Transformation -> Bool
 transformationAllowed e (CastWithAssignment t) =
-  (SC.operations e).assignTo t
+  (SC.operations t).assignFrom e.annotation
 transformationAllowed e (FunctionalCast t) =
-  (SC.operations e).constructorInto t
+  (SC.operations t).constructFrom e.annotation
 transformationAllowed e (Range bound1 bound2) =
   let hi = max bound1 bound2
       lo = min bound1 bound2
-   in isJust (SC.operations e).partSelect
+   in isJust (SC.operations e.annotation).partSelect
         && lo >= 0
         && maybe True (hi <) (SC.knownWidth e.annotation)
 transformationAllowed e (Arithmetic _ _) =
-  isJust (SC.operations e).arithmeticResult
+  let literalTypes :: [SC.SCType] = [SC.CInt, SC.CUInt]
+   in any (`elem` literalTypes) (e.annotation : (SC.operations e.annotation).implicitCasts)
 transformationAllowed e UseAsCondition{} =
-  SC.CBool `elem` (SC.operations e).implicitCasts
+  any (`elem` (SC.operations e.annotation).implicitCasts) [SC.CBool, SC.CInt, SC.CUInt, SC.CDouble]
 transformationAllowed e (BitSelect idx) =
-  isJust (SC.operations e).bitSelect
+  isJust (SC.operations e.annotation).bitSelect
     && maybe True (idx <) (SC.knownWidth e.annotation)
 transformationAllowed e (ApplyMethod m) =
-  m `elem` Map.keys (SC.operations e).methods
-transformationAllowed e (ApplyUnaryOp _) =
-  (e `is` #_Variable) && (SC.operations e).incrementDecrement
+  m `elem` Map.keys (SC.operations e.annotation).methods
+transformationAllowed e (ApplyUnaryOp op) =
+  (e `is` #_Variable) -- Shouldn't be necessary, only for inc/dec
+    && op `elem` (SC.operations e.annotation).unaryOperators
 
 applyTransformation :: MonadBuild m => GenConfig -> Transformation -> m ()
 applyTransformation cfg transformation = do
@@ -118,6 +123,15 @@ applyTransformation cfg transformation = do
         && cfg.transformationAllowed e transformation
     )
     $ applyTransformationUnchecked transformation
+
+arithmeticWithConstantType :: SC.SCType -> Maybe SC.SCType
+arithmeticWithConstantType baseType =
+  let arithmeticTypes :: Set SC.SCType = Set.fromList [SC.CInt, SC.CUInt]
+      allowedTypes = Set.fromList (baseType : (SC.operations baseType).implicitCasts)
+      possibleTypes = Set.intersection arithmeticTypes allowedTypes
+   in case Set.toList possibleTypes of
+        [resultType] -> Just resultType
+        _ -> Nothing -- Either no types allowed, or too many (ambiguous)
 
 applyTransformationUnchecked :: MonadBuild m => Transformation -> m ()
 applyTransformationUnchecked (CastWithAssignment varType) = do
@@ -137,7 +151,7 @@ applyTransformationUnchecked (Range bound1 bound2) = do
     let hi = max bound1 bound2
         lo = min bound1 bound2
         width = hi - lo + 1
-     in case (SC.operations e).partSelect of
+     in case (SC.operations e.annotation).partSelect of
           Just resultType ->
             SC.MethodCall
               (resultType width)
@@ -145,22 +159,22 @@ applyTransformationUnchecked (Range bound1 bound2) = do
               "range"
               [SC.Constant SC.CInt (fromIntegral hi), SC.Constant SC.CInt (fromIntegral lo)]
           _ -> e
-applyTransformationUnchecked (Arithmetic op e') =
-  #headExpr %= \e ->
-    case (SC.operations e).arithmeticResult of
-      Just resultType -> SC.BinOp resultType e op e'
-      Nothing -> e
+applyTransformationUnchecked (Arithmetic op e') = do
+  e <- use #headExpr
+  case arithmeticWithConstantType e.annotation of
+    Just t -> #headExpr .= SC.BinOp t e op e'
+    Nothing -> pure ()
 applyTransformationUnchecked (UseAsCondition tExpr fExpr) = do
   #headExpr %= \e ->
     SC.Conditional tExpr.annotation e tExpr fExpr
 applyTransformationUnchecked (BitSelect idx) = do
   #headExpr %= \e ->
-    case (SC.operations e).bitSelect of
+    case (SC.operations e.annotation).bitSelect of
       Just bitrefType -> SC.Bitref bitrefType e (fromIntegral idx)
       _ -> e
 applyTransformationUnchecked (ApplyMethod method) = do
   #headExpr %= \e ->
-    case Map.lookup method (SC.operations e).methods of
+    case Map.lookup method (SC.operations e.annotation).methods of
       Just sig -> SC.MethodCall sig e (SC.methodName method) []
       Nothing -> e
 applyTransformationUnchecked (ApplyUnaryOp op) = do
@@ -248,7 +262,7 @@ randomTransformationFor cfg e = go 0
 
   arithmetic :: Maybe (m Transformation)
   arithmetic = do
-    resultType <- (SC.operations e).arithmeticResult
+    resultType <- arithmeticWithConstantType e.annotation
     return $ do
       op <- uniform [SC.Plus, SC.Minus, SC.Multiply]
       constant <- someAtomicExpr resultType
@@ -262,21 +276,21 @@ randomTransformationFor cfg e = go 0
 
   bitSelect :: Maybe (m Transformation)
   bitSelect = do
-    guard (isJust (SC.operations e).bitSelect)
+    guard (isJust (SC.operations e.annotation).bitSelect)
     width <- SC.knownWidth e.annotation
     return (BitSelect <$> getRandomR (0, width - 1))
 
   applyMethod :: Maybe (m Transformation)
   applyMethod = do
-    let options = ApplyMethod <$> Map.keys (SC.operations e).methods
+    let options = ApplyMethod <$> Map.keys (SC.operations e.annotation).methods
     guard (not . null $ options)
     return (uniform options)
 
   applyUnaryOp :: Maybe (m Transformation)
   applyUnaryOp = do
-    guard (SC.operations e).incrementDecrement
-    guard (e `is` #_Variable)
-    return (ApplyUnaryOp <$> uniform [minBound :: SC.UnaryOp .. maxBound])
+    guard (e `is` #_Variable) -- Shouldn't be necessary
+    guard (not . null $ (SC.operations e.annotation).unaryOperators)
+    return (ApplyUnaryOp <$> uniform (SC.operations e.annotation).unaryOperators)
 
   -- TODO: Some systemc types cannot be reliably constructed from literals on
   -- all equivalence checkers, and hence we prevent them from appearing as
@@ -384,6 +398,7 @@ generateProcessToSystemC cfg name GenerateProcess{seed, transformations} =
       SC.SCUIntSubref{width} -> applyTransformation cfg (FunctionalCast (SC.SCUInt width))
       SC.SCSignedSubref{width} -> applyTransformation cfg (FunctionalCast (SC.SCBigInt width))
       SC.SCUnsignedSubref{width} -> applyTransformation cfg (FunctionalCast (SC.SCBigUInt width))
+      SC.SCFxnumBitref -> applyTransformation cfg (FunctionalCast SC.CBool)
       SC.SCIntBitref -> applyTransformation cfg (FunctionalCast SC.CBool)
       SC.SCUIntBitref -> applyTransformation cfg (FunctionalCast SC.CBool)
       SC.SCSignedBitref -> applyTransformation cfg (FunctionalCast SC.CBool)

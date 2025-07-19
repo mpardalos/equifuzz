@@ -55,6 +55,8 @@ import System.Environment.Blank (getEnvDefault)
 import System.Process (readProcessWithExitCode)
 import SystemC qualified as SC
 import Util (mkdir_p, runBash, whenJust)
+import GHC.IO.Exception (ExitCode(ExitSuccess))
+import Control.Monad (when)
 
 -- | Identifies a sequence of experiments
 newtype ExperimentSequenceId = ExperimentSequenceId {uuid :: UUID}
@@ -283,6 +285,7 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputs = d
         SC.SCLogic -> Right 1
         SC.SCBV n -> Right n
         SC.SCLV n -> Right n
+        SC.SCFxnumBitref -> Right 1
         SC.SCFxnumSubref{} -> Left [i|#{call}.length()|]
         SC.SCIntSubref{} -> Left [i|#{call}.length()|]
         SC.SCUIntSubref{} -> Left [i|#{call}.length()|]
@@ -323,6 +326,7 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputs = d
         SC.SCUIntSubref{} -> scToString
         SC.SCSignedSubref{} -> scToString
         SC.SCUnsignedSubref{} -> scToString
+        SC.SCFxnumBitref{} -> boolToString
         SC.SCIntBitref -> boolToString
         SC.SCUIntBitref -> boolToString
         SC.SCSignedBitref -> boolToString
@@ -371,6 +375,9 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputs = d
   clangPath <- getEnvDefault "EQUIFUZZ_CLANG" "clang++"
   (clangExitCode, clangStdOut, clangStdErr) <-
     readProcessWithExitCode clangPath ["-fsanitize=undefined", "-I", systemcIncludePath, "-L", systemcLibraryPath, "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
+
+  when (clangExitCode /= ExitSuccess) $ do
+    error ("Failed compiling experiment. Clang output:\n" ++ clangStdOut ++ "\n" ++ clangStdErr ++ "\n-----\nProgram:\n" ++ fullSource ++ "\n---\n")
 
   (programExitCode, T.pack -> programOut, T.pack -> programStderr) <-
     readProcessWithExitCode (T.unpack binPath) [] ""
@@ -468,6 +475,7 @@ typeWidth SC.SCIntSubref{width} = width
 typeWidth SC.SCUIntSubref{width} = width
 typeWidth SC.SCSignedSubref{width} = width
 typeWidth SC.SCUnsignedSubref{width} = width
+typeWidth SC.SCFxnumBitref = 1
 typeWidth SC.SCIntBitref = 1
 typeWidth SC.SCUIntBitref = 1
 typeWidth SC.SCSignedBitref = 1

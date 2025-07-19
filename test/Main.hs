@@ -1,38 +1,42 @@
 module Main where
 
 import Control.Concurrent (getNumCapabilities)
-import Control.Concurrent.Async (forConcurrently, forConcurrently_)
-import Control.Concurrent.MVar (MVar, modifyMVar, modifyMVar_, newMVar, putMVar, readMVar, takeMVar)
+import Control.Concurrent.Async (forConcurrently_)
+import Control.Concurrent.MVar (MVar, modifyMVar_, newMVar, putMVar, readMVar, takeMVar)
 import Control.Concurrent.STM.TSem
-import Control.Exception (SomeException, bracket_, evaluate)
+import Control.Exception (bracket_, evaluate)
 import Control.Monad (forM_, replicateM_)
-import Data.List (intercalate)
-import Data.Map (Map)
 import Data.Map qualified as Map
 import Experiments (genSystemCConstantExperiment)
-import GHC.Conc (atomically, numCapabilities)
-import GenSystemC (GenConfig (..), Reducible (..))
-import System.Console.ANSI (hClearLine, hSetCursorColumn)
-import System.IO (hFlush, hPutStr, hPutStrLn, stderr)
+import GHC.Conc (atomically)
+import GenSystemC (GenConfig (..))
+import System.IO (hPutStr, hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf (printf)
 import ToolRestrictions (noMods)
+import Reduce (HasReductions(mkReductions))
+import Control.Monad.Random (evalRandIO, uniform, join, void)
 
 genConfig :: GenConfig
 genConfig =
   GenConfig
     { growSteps = 30
-    , mods = noMods
+    , transformationAllowed = noMods
+    , evaluations = 3
     }
 
 totalExperiments :: Int
 totalExperiments = 10
 
-reductions :: [(Int, Int)]
-reductions = [(0, 10), (10, 20), (20, 29), (10, 12), (5, 25)]
+reductionSizes :: [Int]
+reductionSizes = [2, 5, 10]
+
+-- | How many reductions to try at each reduction size
+reductionCount :: Int
+reductionCount = 2
 
 totalRuns :: Int
-totalRuns = totalExperiments * (1 + length reductions)
+totalRuns = totalExperiments * (1 + reductionCount * length reductionSizes)
 
 ioLock :: MVar ()
 {-# NOINLINE ioLock #-}
@@ -70,12 +74,14 @@ main = do
   count <- atomically $ newTSem (fromIntegral capabilities)
   forConcurrently_ [1 :: Int .. totalExperiments] $ \_experimentIdx -> do
     atomically $ waitTSem count
-    reducible <- genSystemCConstantExperiment genConfig
-    _experiment <- evaluate =<< reducible.value
+    experiment <- genSystemCConstantExperiment genConfig
     runCompleted
-    forM_ (zip [1 :: Int ..] reductions) $ \(_reductionIdx, bounds) -> do
-      reducible' <- evaluate (reducible.reductions Map.! bounds)
-      _experiment <- evaluate =<< reducible'.value
-      runCompleted
+    let reductions = mkReductions experiment
+    forM_ reductionSizes $ \reductionSize -> do
+      let reducedCandidates = reductions Map.! reductionSize
+      replicateM_ reductionCount $ do
+        reducedExperiment <- join $ evalRandIO (uniform reducedCandidates)
+        void $ evaluate reducedExperiment
+        runCompleted
     atomically $ signalTSem count
   hPutStrLn stderr ""
