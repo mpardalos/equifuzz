@@ -1,21 +1,21 @@
 module Main where
 
 import Control.Concurrent (getNumCapabilities)
-import Control.Concurrent.Async (forConcurrently_)
+import Control.Concurrent.Async (forConcurrently_, replicateConcurrently_)
 import Control.Concurrent.MVar (MVar, modifyMVar_, newMVar, putMVar, readMVar, takeMVar)
 import Control.Concurrent.STM.TSem
 import Control.Exception (bracket_, evaluate)
-import Control.Monad (forM_, replicateM_)
+import Control.Monad (forM_, forever, replicateM_)
+import Control.Monad.Random (evalRandIO, join, uniform, void)
 import Data.Map qualified as Map
 import Experiments (genSystemCConstantExperiment)
 import GHC.Conc (atomically)
 import GenSystemC (GenConfig (..))
+import Reduce (HasReductions (mkReductions))
 import System.IO (hPutStr, hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf (printf)
 import ToolRestrictions (noMods)
-import Reduce (HasReductions(mkReductions))
-import Control.Monad.Random (evalRandIO, uniform, join, void)
 
 genConfig :: GenConfig
 genConfig =
@@ -57,8 +57,8 @@ progressBar totalSegments complete total =
    in
     replicate fullSegments '=' <> replicate emptySegments ' '
 
-runCompleted :: IO ()
-runCompleted = do
+runCompletedProgress :: IO ()
+runCompletedProgress = do
   modifyMVar_ runsCompleteVar (return . (1 +))
   runsComplete <- readMVar runsCompleteVar
   withIOLock $ do
@@ -68,20 +68,45 @@ runCompleted = do
     hPutStr stderr "]"
     hPutStr stderr (printf "[%3d/%-3d]" runsComplete totalRuns)
 
-main :: IO ()
-main = do
+runCompletedUnbounded :: IO ()
+runCompletedUnbounded = do
+  modifyMVar_ runsCompleteVar (return . (1 +))
+  runsComplete <- readMVar runsCompleteVar
+  withIOLock $ do
+    hPutStr stderr "\r"
+    hPutStr stderr (printf "%d Runs completed" runsComplete)
+
+runForever :: IO ()
+runForever = do
   capabilities <- getNumCapabilities
-  count <- atomically $ newTSem (fromIntegral capabilities)
-  forConcurrently_ [1 :: Int .. totalExperiments] $ \_experimentIdx -> do
-    atomically $ waitTSem count
+  forConcurrently_ [1 .. capabilities] $ \_ -> forever $ do
     experiment <- genSystemCConstantExperiment genConfig
-    runCompleted
+    runCompletedUnbounded
     let reductions = mkReductions experiment
     forM_ reductionSizes $ \reductionSize -> do
       let reducedCandidates = reductions Map.! reductionSize
       replicateM_ reductionCount $ do
         reducedExperiment <- join $ evalRandIO (uniform reducedCandidates)
         void $ evaluate reducedExperiment
-        runCompleted
+        runCompletedUnbounded
+
+runLimited :: IO ()
+runLimited = do
+  capabilities <- getNumCapabilities
+  count <- atomically $ newTSem (fromIntegral capabilities)
+  forConcurrently_ [1 :: Int .. totalExperiments] $ \_experimentIdx -> do
+    atomically $ waitTSem count
+    experiment <- genSystemCConstantExperiment genConfig
+    runCompletedProgress
+    let reductions = mkReductions experiment
+    forM_ reductionSizes $ \reductionSize -> do
+      let reducedCandidates = reductions Map.! reductionSize
+      replicateM_ reductionCount $ do
+        reducedExperiment <- join $ evalRandIO (uniform reducedCandidates)
+        void $ evaluate reducedExperiment
+        runCompletedProgress
     atomically $ signalTSem count
   hPutStrLn stderr ""
+
+main :: IO ()
+main = runForever
