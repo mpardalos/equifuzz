@@ -306,7 +306,7 @@ isLValue (BinOp _ _ op _) =
 isLValue _ = False
 
 allUnaryOperators :: [UnaryOp]
-allUnaryOperators = [minBound..maxBound]
+allUnaryOperators = [minBound .. maxBound]
 
 -- | Get all possible operations for a SystemC expression
 operations :: SCType -> Operations
@@ -346,7 +346,7 @@ operations t =
         , methods = lengthMethod
         , -- Missing operator! and operator~
           unaryOperators = []
-          , constructFrom = noTypes
+        , constructFrom = noTypes
         , assignFrom = \case
             -- Only if it is an lvalue
             CBool -> True
