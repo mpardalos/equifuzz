@@ -32,10 +32,8 @@ import Control.Monad (forM, replicateM, when)
 import Control.Monad.Random.Strict (MonadRandom (getRandom))
 import Data.Char (intToDigit)
 import Data.Data (Data)
-import Data.Either (fromRight)
 import Data.Functor
 import Data.Map (Map)
-import Data.Map qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
@@ -55,9 +53,7 @@ import Shelly ((</>))
 import System.Environment.Blank (getEnvDefault)
 import System.Process (readProcessWithExitCode)
 import SystemC qualified as SC
-import Util (mkdir_p, runBash, whenJust, chunksOf)
-import Data.Text.IO (hPutStrLn)
-import System.IO (stderr)
+import Util (chunksOf, mkdir_p, runBash, whenJust)
 
 -- | Identifies a sequence of experiments
 newtype ExperimentSequenceId = ExperimentSequenceId {uuid :: UUID}
@@ -189,41 +185,33 @@ generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, transforma
     replicateM cfg.evaluations $
       mapM (comparisonValueOfType . fst) rawDesign.args
 
-  simulationResults <- simulateSystemCAt rawDesign inputss
+  simulationResult <- simulateSystemCAt rawDesign inputss
 
-  let knownEvaluations = [Evaluation{..} | (inputs, output) <- zip inputss (view #result <$> simulationResults)]
-  let hasUB = orOf (each % #hasUndefinedBehaviour) simulationResults
-  -- let extraInfo = T.intercalate "-\n" extraInfos
+  let knownEvaluations = [Evaluation{..} | (inputs, output) <- zip inputss simulationResult.results]
 
   let scDesign = limitToEvaluations knownEvaluations rawDesign
 
   let verilogDesign = verilogImplForEvals scDesign knownEvaluations
 
-  let evaluationInfos =
-        Map.unions
-          [ let label = "Evaluation " <> T.pack (show idx) <> " - "
-             in Map.mapKeys (label <>) extraInfos
-          | (idx, SystemCSimulationResult{extraInfos}) <- zip [1 :: Int ..] simulationResults
-          ]
-
   let extraInfos =
-        [
-          ( "Transformations"
-          , T.unlines
-              ( T.pack ("Seed: " ++ show seed)
-                  : [ T.pack (show n) <> " " <> T.pack (show t)
-                    | (n, t) <- zip [0 :: Int ..] transformations
-                    ]
-              )
-          )
-        ]
-          <> evaluationInfos
+        simulationResult.extraInfos
+          <> [
+               ( "Transformations"
+               , T.unlines
+                  ( T.pack ("Seed: " ++ show seed)
+                      : [ T.pack (show n) <> " " <> T.pack (show t)
+                        | (n, t) <- zip [0 :: Int ..] transformations
+                        ]
+                  )
+               )
+             ]
 
   experimentId <- newExperimentId
   return
     Experiment
       { experimentId
-      , expectedResult = not hasUB -- Expect a negative result for programs with UB
+      , -- Expect a negative result for programs with UB
+        expectedResult = not simulationResult.hasUndefinedBehaviour
       , scDesign
       , generateProcess
       , verilogDesign
@@ -236,7 +224,7 @@ comparisonValueOfType :: MonadRandom m => SC.SCType -> m ComparisonValue
 comparisonValueOfType t = mkComparisonValueWord (typeWidth t) <$> getRandom
 
 data SystemCSimulationResult = SystemCSimulationResult
-  { result :: ComparisonValue
+  { results :: [ComparisonValue]
   , hasUndefinedBehaviour :: Bool
   , extraInfos :: Map Text Text
   }
@@ -266,7 +254,7 @@ comparisonValueAsSC t val =
 -- as an sc_uint<8> or a sc_fixed<10,3> are represented completely differently.
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
-simulateSystemCAt :: SC.FunctionDeclaration -> [[ComparisonValue]] -> IO [SystemCSimulationResult]
+simulateSystemCAt :: SC.FunctionDeclaration -> [[ComparisonValue]] -> IO SystemCSimulationResult
 simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputss = do
   let simulateAtValues values =
         let
@@ -303,10 +291,10 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputss = 
 
           scToString :: Text = [i|std::cout << #{call}.to_string(sc_dt::SC_BIN, false) << std::endl;|]
           scPrintToString :: Text = [i|#{call}.print(); std::cout << std::endl;|]
-          boolToString :: Text = [i| std::cout << (#{call} ? "1" : "0") << std::endl;|]
-          bitsetToString :: Text = [i| std::cout << std::bitset<32>(#{call}) << std::endl;|]
+          boolToString :: Text = [i|std::cout << (#{call} ? "1" : "0") << std::endl;|]
+          bitsetToString :: Text = [i|std::cout << std::bitset<32>(#{call}) << std::endl;|]
           doubleToString :: Text =
-            [i|
+            [__i|
             auto value = #{call};
             std::cout << std::bitset<64>(*reinterpret_cast<unsigned long*>(&value)) << std::endl;
             |]
@@ -390,31 +378,33 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputss = 
   let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStderr
   void $ runBash ("rm -r " <> tmpDir)
 
-  forM (chunksOf 3 (T.lines programOut)) $ \segment -> do
+  results <- forM (chunksOf 3 (T.lines programOut)) $ \segment -> do
     let (reportedWidth, reportedValue) =
           case segment of
-            [line1, line2] -> (line1, line2)
+            [line1, line2, _separator] -> (line1, line2)
             _ -> error ("Unexpected output line count from SystemC program: " ++ show (length (T.lines programOut)))
 
     let width = readNote "Parse width of SystemC value" . T.unpack $ reportedWidth
     let value = T.replace "." "" reportedValue
 
-    return
-      SystemCSimulationResult
-        { result = mkComparisonValueWithWidth width value
-        , hasUndefinedBehaviour
-        , extraInfos =
-            [ ("Clang exit code", T.pack . show $ clangExitCode)
-            , ("Clang stdout", T.pack clangStdOut)
-            , ("Clang stderr", T.pack clangStdErr)
-            , ("Program exit code", T.pack . show $ programExitCode)
-            , ("Program stdout", programOut)
-            , ("Program stderr", programStderr)
-            , ("SystemC Home", T.pack systemcHome)
-            , ("Clang Path", T.pack clangPath)
-            , ("Simulation Source", T.pack fullSource)
-            ]
-        }
+    return (mkComparisonValueWithWidth width value)
+
+  return
+    SystemCSimulationResult
+      { results
+      , hasUndefinedBehaviour
+      , extraInfos =
+          [ ("Clang exit code", T.pack . show $ clangExitCode)
+          , ("Clang stdout", T.pack clangStdOut)
+          , ("Clang stderr", T.pack clangStdErr)
+          , ("Simulation exit code", T.pack . show $ programExitCode)
+          , ("Simulation stdout", programOut)
+          , ("Simulation stderr", programStderr)
+          , ("SystemC Home", T.pack systemcHome)
+          , ("Clang Path", T.pack clangPath)
+          , ("Simulation Source", T.pack fullSource)
+          ]
+      }
 
 verilogImplForEvals :: SC.FunctionDeclaration -> [Evaluation] -> Text
 verilogImplForEvals scFun evals =
