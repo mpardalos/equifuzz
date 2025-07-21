@@ -8,7 +8,7 @@ import Control.Exception (bracket_, evaluate)
 import Control.Monad (forM_, forever, replicateM_)
 import Control.Monad.Random (evalRandIO, join, uniform, void)
 import Data.Map qualified as Map
-import Experiments (genSystemCConstantExperiment)
+import Experiments (Experiment (..), genSystemCConstantExperiment)
 import GHC.Conc (atomically)
 import GenSystemC (GenConfig (..))
 import Reduce (HasReductions (mkReductions))
@@ -79,15 +79,16 @@ runCompletedUnbounded = do
 runForever :: IO ()
 runForever = do
   capabilities <- getNumCapabilities
-  forConcurrently_ [1 .. capabilities] $ \_ -> forever $ do
+  replicateConcurrently_ capabilities $ forever $ do
     experiment <- genSystemCConstantExperiment genConfig
+    void $ evaluate experiment.verilogDesign
     runCompletedUnbounded
     let reductions = mkReductions experiment
     forM_ reductionSizes $ \reductionSize -> do
       let reducedCandidates = reductions Map.! reductionSize
       replicateM_ reductionCount $ do
         reducedExperiment <- join $ evalRandIO (uniform reducedCandidates)
-        void $ evaluate reducedExperiment
+        void $ evaluate reducedExperiment.verilogDesign
         runCompletedUnbounded
 
 runLimited :: IO ()
