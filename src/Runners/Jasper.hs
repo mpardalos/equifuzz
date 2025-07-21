@@ -12,7 +12,7 @@
 module Runners.Jasper (jasper) where
 
 import Data.Map qualified as Map
-import Data.String.Interpolate (__i)
+import Data.String.Interpolate (__i'L)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments
@@ -42,24 +42,22 @@ jasper =
 
     wrappedProgram :: Text
     wrappedProgram =
-      [__i|
-              \#include <systemc.h>
-              \#include <jasperc.h>
+      [__i'L|\#include <systemc.h>
+             \#include <jasperc.h>
 
-              #{SC.genSource scDesign}
+             #{SC.genSource scDesign}
 
-              int main() {
-                  #{declareInputs}
+             int main() {
+                 #{declareInputs}
 
-                  #{registerInputs}
+                 #{registerInputs}
 
-                  #{outType} out = #{scDesign ^. #name}(#{inputNames});
+                 #{outType} out = #{scDesign ^. #name}(#{inputNames});
 
-                  JASPER_OUTPUT(out);
+                 JASPER_OUTPUT(out);
 
-                  return 0;
-              }
-              |]
+                 return 0;
+             }|] <> "\n" -- Jasper warns if there is no trailing newline
 
     outType :: Text
     outType = SC.genSource scDesign.returnType
@@ -83,17 +81,16 @@ jasper =
 
     compareScript :: Text
     compareScript =
-      [__i|
-            check_c2rtl -set_dynamic_pruning -spec; check_c2rtl -compile -spec #{specFilename}
-            check_c2rtl -analyze -imp -sv #{implFilename} ;
-            check_c2rtl -elaborate -imp -top top
-            check_c2rtl -setup
-            clock -clear; clock -none
-            reset -none;
-            check_c2rtl -generate_verification
-            check_c2rtl -interface -task <embedded>
-            prove -all
-              |]
+      [__i'L|check_c2rtl -set_dynamic_pruning -spec; check_c2rtl -compile -spec #{specFilename}
+             check_c2rtl -analyze -imp -sv #{implFilename} ;
+             check_c2rtl -elaborate -imp -top top
+             check_c2rtl -setup
+             clock -clear; clock -none
+             reset -none;
+             check_c2rtl -generate_verification
+             check_c2rtl -interface -task <embedded>
+             prove -all
+             |]
 
   parseOutput Experiment{experimentId} fullOutput =
     let proofSuccessful =
