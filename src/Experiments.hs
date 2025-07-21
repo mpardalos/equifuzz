@@ -28,7 +28,7 @@ module Experiments (
   Evaluation (..),
 ) where
 
-import Control.Monad (replicateM)
+import Control.Monad (forM, replicateM, when)
 import Control.Monad.Random.Strict (MonadRandom (getRandom))
 import Data.Char (intToDigit)
 import Data.Data (Data)
@@ -45,18 +45,19 @@ import Data.UUID (UUID)
 import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
+import GHC.IO.Exception (ExitCode (ExitSuccess))
 import GenSystemC (GenConfig (..), GenerateProcess (..), genSystemCProcess, generateProcessToSystemC)
 import Numeric (showIntAtBase)
 import Optics
 import Prettyprinter (Pretty (..), (<+>))
-import Safe (foldr1May)
+import Safe (foldr1May, readNote)
 import Shelly ((</>))
 import System.Environment.Blank (getEnvDefault)
 import System.Process (readProcessWithExitCode)
 import SystemC qualified as SC
-import Util (mkdir_p, runBash, whenJust)
-import GHC.IO.Exception (ExitCode(ExitSuccess))
-import Control.Monad (when)
+import Util (mkdir_p, runBash, whenJust, chunksOf)
+import Data.Text.IO (hPutStrLn)
+import System.IO (stderr)
 
 -- | Identifies a sequence of experiments
 newtype ExperimentSequenceId = ExperimentSequenceId {uuid :: UUID}
@@ -188,7 +189,7 @@ generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, transforma
     replicateM cfg.evaluations $
       mapM (comparisonValueOfType . fst) rawDesign.args
 
-  simulationResults <- mapM (simulateSystemCAt rawDesign) inputss
+  simulationResults <- simulateSystemCAt rawDesign inputss
 
   let knownEvaluations = [Evaluation{..} | (inputs, output) <- zip inputss (view #result <$> simulationResults)]
   let hasUB = orOf (each % #hasUndefinedBehaviour) simulationResults
@@ -265,79 +266,85 @@ comparisonValueAsSC t val =
 -- as an sc_uint<8> or a sc_fixed<10,3> are represented completely differently.
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
-simulateSystemCAt :: SC.FunctionDeclaration -> [ComparisonValue] -> IO SystemCSimulationResult
-simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputs = do
-  let callArgs =
-        T.intercalate
-          ", "
-          [ comparisonValueAsSC t val
-          | ((t, _), val) <- zip args inputs
-          ]
-  let call = name <> "(" <> callArgs <> ")"
+simulateSystemCAt :: SC.FunctionDeclaration -> [[ComparisonValue]] -> IO [SystemCSimulationResult]
+simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputss = do
+  let simulateAtValues values =
+        let
+          call =
+            name
+              <> "("
+              <> T.intercalate ", " [comparisonValueAsSC t val | ((t, _), val) <- zip args values]
+              <> ")"
 
-  let widthExprOrWidth :: Either Text Int = case returnType of
-        SC.SCInt n -> Right n
-        SC.SCUInt n -> Right n
-        SC.SCBigInt n -> Right n
-        SC.SCBigUInt n -> Right n
-        SC.SCFixed w _ -> Right w
-        SC.SCUFixed w _ -> Right w
-        SC.SCLogic -> Right 1
-        SC.SCBV n -> Right n
-        SC.SCLV n -> Right n
-        SC.SCFxnumBitref -> Right 1
-        SC.SCFxnumSubref{} -> Left [i|#{call}.length()|]
-        SC.SCIntSubref{} -> Left [i|#{call}.length()|]
-        SC.SCUIntSubref{} -> Left [i|#{call}.length()|]
-        SC.SCSignedSubref{} -> Left [i|#{call}.length()|]
-        SC.SCUnsignedSubref{} -> Left [i|#{call}.length()|]
-        SC.SCIntBitref -> Right 1
-        SC.SCUIntBitref -> Right 1
-        SC.SCSignedBitref -> Right 1
-        SC.SCUnsignedBitref -> Right 1
-        SC.CUInt -> Right 32
-        SC.CInt -> Right 32
-        SC.CDouble -> Right 64
-        SC.CBool -> Right 1
+          widthExpr :: String = case returnType of
+            SC.SCInt n -> show n
+            SC.SCUInt n -> show n
+            SC.SCBigInt n -> show n
+            SC.SCBigUInt n -> show n
+            SC.SCFixed w _ -> show w
+            SC.SCUFixed w _ -> show w
+            SC.SCLogic -> "1"
+            SC.SCBV n -> show n
+            SC.SCLV n -> show n
+            SC.SCFxnumBitref -> "1"
+            SC.SCFxnumSubref{} -> [i|#{call}.length()|]
+            SC.SCIntSubref{} -> [i|#{call}.length()|]
+            SC.SCUIntSubref{} -> [i|#{call}.length()|]
+            SC.SCSignedSubref{} -> [i|#{call}.length()|]
+            SC.SCUnsignedSubref{} -> [i|#{call}.length()|]
+            SC.SCIntBitref -> "1"
+            SC.SCUIntBitref -> "1"
+            SC.SCSignedBitref -> "1"
+            SC.SCUnsignedBitref -> "1"
+            SC.CUInt -> "32"
+            SC.CInt -> "32"
+            SC.CDouble -> "64"
+            SC.CBool -> "1"
 
-  let showWidth :: Text = case widthExprOrWidth of
-        Left e -> [i|std::cout << #{e} << std::endl;|]
-        Right _ -> "std::cout << 0 << std::endl;"
+          scToString :: Text = [i|std::cout << #{call}.to_string(sc_dt::SC_BIN, false) << std::endl;|]
+          scPrintToString :: Text = [i|#{call}.print(); std::cout << std::endl;|]
+          boolToString :: Text = [i| std::cout << (#{call} ? "1" : "0") << std::endl;|]
+          bitsetToString :: Text = [i| std::cout << std::bitset<32>(#{call}) << std::endl;|]
+          doubleToString :: Text =
+            [i|
+            auto value = #{call};
+            std::cout << std::bitset<64>(*reinterpret_cast<unsigned long*>(&value)) << std::endl;
+            |]
 
-  let scToString :: Text = [i|std::cout << #{call}.to_string(sc_dt::SC_BIN, false) << std::endl;|]
-  let scPrintToString :: Text = [i|#{call}.print(); std::cout << std::endl;|]
-  let boolToString :: Text = [i| std::cout << (#{call} ? "1" : "0") << std::endl;|]
-  let bitsetToString :: Text = [i| std::cout << std::bitset<32>(#{call}) << std::endl;|]
-  let doubleToString :: Text =
-        [i|
-         auto value = #{call};
-         std::cout << std::bitset<64>(*reinterpret_cast<unsigned long*>(&value)) << std::endl;
-         |]
+          showValue :: Text = case returnType of
+            SC.SCInt{} -> scToString
+            SC.SCUInt{} -> scToString
+            SC.SCBigInt{} -> scToString
+            SC.SCBigUInt{} -> scToString
+            SC.SCFixed{} -> scToString
+            SC.SCUFixed{} -> scToString
+            SC.SCFxnumSubref{} -> scToString
+            SC.SCIntSubref{} -> scToString
+            SC.SCUIntSubref{} -> scToString
+            SC.SCSignedSubref{} -> scToString
+            SC.SCUnsignedSubref{} -> scToString
+            SC.SCFxnumBitref{} -> boolToString
+            SC.SCIntBitref -> boolToString
+            SC.SCUIntBitref -> boolToString
+            SC.SCSignedBitref -> boolToString
+            SC.SCUnsignedBitref -> boolToString
+            SC.SCLogic -> scPrintToString
+            SC.SCBV{} -> scToString
+            SC.SCLV{} -> scToString
+            SC.CUInt -> bitsetToString
+            SC.CInt -> bitsetToString
+            SC.CDouble -> doubleToString
+            SC.CBool -> boolToString
+         in
+          [__i|
+              {
+                std::cout << #{widthExpr} << std::endl;
+                #{showValue}
+                std::cout << "---" << std::endl;
+              }
+              |]
 
-  let showValue :: Text = case returnType of
-        SC.SCInt{} -> scToString
-        SC.SCUInt{} -> scToString
-        SC.SCBigInt{} -> scToString
-        SC.SCBigUInt{} -> scToString
-        SC.SCFixed{} -> scToString
-        SC.SCUFixed{} -> scToString
-        SC.SCFxnumSubref{} -> scToString
-        SC.SCIntSubref{} -> scToString
-        SC.SCUIntSubref{} -> scToString
-        SC.SCSignedSubref{} -> scToString
-        SC.SCUnsignedSubref{} -> scToString
-        SC.SCFxnumBitref{} -> boolToString
-        SC.SCIntBitref -> boolToString
-        SC.SCUIntBitref -> boolToString
-        SC.SCSignedBitref -> boolToString
-        SC.SCUnsignedBitref -> boolToString
-        SC.SCLogic -> scPrintToString
-        SC.SCBV{} -> scToString
-        SC.SCLV{} -> scToString
-        SC.CUInt -> bitsetToString
-        SC.CInt -> bitsetToString
-        SC.CDouble -> doubleToString
-        SC.CBool -> boolToString
+  let evaluations = T.unlines (map simulateAtValues inputss)
 
   let fullSource =
         [__i|
@@ -358,8 +365,7 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputs = d
             #{SC.genSource decl}
 
             int sc_main(int argc, char **argv) {
-                #{showWidth}
-                #{showValue}
+                #{evaluations}
                 return 0;
             }
             |]
@@ -384,30 +390,31 @@ simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputs = d
   let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStderr
   void $ runBash ("rm -r " <> tmpDir)
 
-  let (reportedWidth, reportedValue) =
-        case T.lines programOut of
-          [line1, line2] -> (line1, line2)
-          ls -> error ("Unexpected output line count from SystemC program: " ++ show (length ls))
+  forM (chunksOf 3 (T.lines programOut)) $ \segment -> do
+    let (reportedWidth, reportedValue) =
+          case segment of
+            [line1, line2] -> (line1, line2)
+            _ -> error ("Unexpected output line count from SystemC program: " ++ show (length (T.lines programOut)))
 
-  let width = fromRight (read . T.unpack $ reportedWidth) widthExprOrWidth
-  let value = T.replace "." "" reportedValue
+    let width = readNote "Parse width of SystemC value" . T.unpack $ reportedWidth
+    let value = T.replace "." "" reportedValue
 
-  return
-    SystemCSimulationResult
-      { result = mkComparisonValueWithWidth width value
-      , hasUndefinedBehaviour
-      , extraInfos =
-          [ ("Clang exit code", T.pack . show $ clangExitCode)
-          , ("Clang stdout", T.pack clangStdOut)
-          , ("Clang stderr", T.pack clangStdErr)
-          , ("Program exit code", T.pack . show $ programExitCode)
-          , ("Program stdout", programOut)
-          , ("Program stderr", programStderr)
-          , ("SystemC Home", T.pack systemcHome)
-          , ("Clang Path", T.pack clangPath)
-          , ("Simulation Source", T.pack fullSource)
-          ]
-      }
+    return
+      SystemCSimulationResult
+        { result = mkComparisonValueWithWidth width value
+        , hasUndefinedBehaviour
+        , extraInfos =
+            [ ("Clang exit code", T.pack . show $ clangExitCode)
+            , ("Clang stdout", T.pack clangStdOut)
+            , ("Clang stderr", T.pack clangStdErr)
+            , ("Program exit code", T.pack . show $ programExitCode)
+            , ("Program stdout", programOut)
+            , ("Program stderr", programStderr)
+            , ("SystemC Home", T.pack systemcHome)
+            , ("Clang Path", T.pack clangPath)
+            , ("Simulation Source", T.pack fullSource)
+            ]
+        }
 
 verilogImplForEvals :: SC.FunctionDeclaration -> [Evaluation] -> Text
 verilogImplForEvals scFun evals =
