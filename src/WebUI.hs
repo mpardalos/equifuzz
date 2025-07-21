@@ -10,7 +10,7 @@
 {-# HLINT ignore "Redundant <$>" #-}
 {-# HLINT ignore "Use ?~" #-}
 
-module WebUI (runWebUI, ExperimentProgress(..)) where
+module WebUI (runWebUI, ExperimentProgress (..)) where
 
 import Control.Applicative (asum)
 import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar, threadDelay)
@@ -28,7 +28,8 @@ import Data.List (find, sort)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (isJust)
-import Data.String.Interpolate (i)
+import Data.String.Interpolate (i, __i)
+import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
@@ -73,6 +74,7 @@ import Web.Scotty (
   setHeader,
   status,
   stream,
+  text,
  )
 
 data ExperimentProgress
@@ -177,6 +179,22 @@ scottyServer stateVar = scotty 8888 $ do
     raw $
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/sse.js.gz")
 
+  get "/experiments/:sequenceId/:experimentId/report.org" $ do
+    sequenceId <- coerce @UUIDParam @ExperimentSequenceId <$> pathParam "sequenceId"
+    experimentId <- coerce @UUIDParam @ExperimentId <$> pathParam "experimentId"
+    state <- liftIO (readMVar stateVar)
+
+    let mExperimentInfo :: Maybe ExperimentInfo =
+          asum . map (view (at2 sequenceId experimentId)) $
+            [ state.runningExperiments
+            , state.interestingExperiments
+            , state.uninterestingExperiments
+            ]
+
+    case mExperimentInfo of
+      (Just experimentInfo) -> text (LT.fromStrict $ experimentReportOrgMode experimentInfo)
+      _ -> next
+
   get "/experiments/:sequenceId/:experimentId" $ do
     sequenceId <- coerce @UUIDParam @ExperimentSequenceId <$> pathParam "sequenceId"
     experimentId <- coerce @UUIDParam @ExperimentId <$> pathParam "experimentId"
@@ -278,19 +296,23 @@ experimentInfoPage state info =
 
 experimentInfoBlock :: ExperimentInfo -> Html
 experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
-  infoBoxNoTitle . table $
-    [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)]
-    , ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"]
-    , case info.result of
-        Just result ->
-          [ "Actual Result"
-          , case result.proofFound of
-              Just True -> "Equivalent"
-              Just False -> "Non-equivalent"
-              Nothing -> "Inconclusive"
-          ]
-        _ -> []
-    ]
+  infoBoxNoTitle $ do
+    table $
+      [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)]
+      , ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"]
+      , case info.result of
+          Just result ->
+            [ "Actual Result"
+            , case result.proofFound of
+                Just True -> "Equivalent"
+                Just False -> "Non-equivalent"
+                Nothing -> "Inconclusive"
+            ]
+          Nothing -> []
+      ]
+    when (isJust info.result) $
+      H.a H.! A.href [i|./#{info ^. #experiment % #experimentId % #uuid}/report.org|] $
+        "Rendered (org-mode)"
 
   infoBox "SystemC" (H.pre $ H.text ("\n" <> SC.genSource info.experiment.scDesign))
 
@@ -434,6 +456,54 @@ instance Parsable UUIDParam where
   parseParam txt = case UUID.fromText (LT.toStrict txt) of
     Just uuid -> Right (UUIDParam uuid)
     Nothing -> Left ("'" <> txt <> "' is not a valid UUID")
+
+experimentReportOrgMode :: ExperimentInfo -> Text
+experimentReportOrgMode (ExperimentInfo _ Nothing) = "Not yet completed"
+experimentReportOrgMode (ExperimentInfo experiment (Just result)) =
+  [__i|
+    * Bug report
+    - Expected: =#{expectedResult}=
+    - Got:      =#{actualResult}=
+
+    ** Files
+    #{files}
+
+    ** Output
+    \#+begin_example
+    #{fullOutput}
+    \#+end_example
+    |]
+ where
+  props =
+    experiment.extraInfos <> result.extraInfos
+
+  expectedResult :: Text
+  expectedResult = if experiment.expectedResult then "equivalent" else "non-equivalent"
+
+  actualResult :: Text
+  actualResult = case result.proofFound of
+    Just True -> "equivalent"
+    Just False -> "non-equivalent"
+    Nothing -> "failed"
+
+  files =
+    [("cpp", "spec.cpp"), ("verilog", "impl.sv"), ("tcl", "compare.tcl")]
+      & map (uncurry formatFile)
+      & T.intercalate "\n\n"
+
+  formatFile :: Text -> Text -> Text
+  formatFile orgOpts name = case props Map.!? name of
+    Nothing -> ""
+    Just txt ->
+      [__i|
+          =#{name}=
+          \#+begin_src #{orgOpts}
+          #{txt}
+          \#+end_src
+          |]
+
+  fullOutput :: Text
+  fullOutput = result.fullOutput
 
 --------------------------- Event Streams -----------------------------------------
 
