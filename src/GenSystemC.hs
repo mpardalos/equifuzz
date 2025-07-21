@@ -19,7 +19,7 @@ module GenSystemC (
 where
 
 import Control.Monad (guard, join, replicateM, replicateM_, when)
-import Control.Monad.Random.Strict (MonadRandom, evalRandIO, getRandomR, uniform, uniformMay)
+import Control.Monad.Random (MonadRandom, StdGen, getRandomR, uniform, uniformMay)
 import Control.Monad.State.Strict (MonadState (get), evalStateT, execState, modify')
 import Control.Monad.Writer.Strict (MonadWriter (tell), execWriterT)
 import Data.List (nub)
@@ -42,6 +42,7 @@ import Data.Set qualified as Set
 import Debug.Trace (traceM)
 import Text.Show.Functions ()
 import Util (is)
+import Control.Monad.Random.Lazy (newStdGen)
 
 type GenMods = SC.Expr -> Transformation -> Bool
 
@@ -348,7 +349,7 @@ seedExpr = do
   return (SC.Constant SC.CInt value)
 
 genSystemCProcess :: GenConfig -> IO GenerateProcess
-genSystemCProcess cfg = evalRandIO $ do
+genSystemCProcess cfg = do
   seed <- seedExpr
   transformations <- execWriterT . flip evalStateT (initBuildOutState seed, []) $
     replicateM_ cfg.growSteps $ do
@@ -357,7 +358,15 @@ genSystemCProcess cfg = evalRandIO $ do
       tell [transformation]
       zoom _1 (applyTransformation cfg transformation)
 
-  return $ GenerateProcess cfg seed transformations
+  inputValuesSeed <- newStdGen
+
+  return $
+    GenerateProcess
+      { cfg
+      , seed
+      , inputValuesSeed
+      , transformations
+      }
 
 generateProcessToSystemC :: GenConfig -> Text -> GenerateProcess -> SC.FunctionDeclaration
 generateProcessToSystemC cfg name GenerateProcess{seed, transformations} =
@@ -407,6 +416,7 @@ generateProcessToSystemC cfg name GenerateProcess{seed, transformations} =
 data GenerateProcess = GenerateProcess
   { cfg :: GenConfig
   , seed :: SC.Expr
+  , inputValuesSeed :: StdGen
   , transformations :: [Transformation]
   }
   deriving (Generic, Show)

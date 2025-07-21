@@ -63,7 +63,7 @@ instance HasReductions Transformation where
   mkReductions (ApplyUnaryOp _) = []
 
 instance HasReductions GenerateProcess where
-  mkReductions (GenerateProcess cfg seed transformations) =
+  mkReductions process@(GenerateProcess{transformations}) =
     let
       removingTransformations =
         [ reduced
@@ -73,7 +73,7 @@ instance HasReductions GenerateProcess where
       reducingTransformations =
         [map (\t -> headDef t (mkReductions t)) transformations] -- Reduce all transformations
      in
-      map (GenerateProcess cfg seed) (removingTransformations ++ reducingTransformations)
+      map (\ts -> process{transformations = ts}) (removingTransformations ++ reducingTransformations)
 
 instance HasReductions Experiment where
   type Reduced Experiment = IO Experiment

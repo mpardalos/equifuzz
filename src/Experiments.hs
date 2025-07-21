@@ -29,7 +29,7 @@ module Experiments (
 ) where
 
 import Control.Monad (forM, replicateM, when)
-import Control.Monad.Random.Strict (MonadRandom (getRandom))
+import Control.Monad.Random (MonadRandom (getRandom), evalRand)
 import Data.Char (intToDigit)
 import Data.Data (Data)
 import Data.Functor
@@ -178,12 +178,15 @@ limitToEvaluations evals decl =
     decl{SC.body = earlyReturn : decl.body}
 
 generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
-generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, transformations} = do
+generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, inputValuesSeed, transformations} = do
   let rawDesign = generateProcessToSystemC cfg "dut" generateProcess
 
-  inputss <-
-    replicateM cfg.evaluations $
-      mapM (comparisonValueOfType . fst) rawDesign.args
+  -- We use the value given from generate process so that we get exactly the
+  -- same experiment for reductions of the same process
+  let inputss =
+        evalRand
+          (replicateM cfg.evaluations $ mapM (comparisonValueOfType . fst) rawDesign.args)
+          inputValuesSeed
 
   simulationResult <- simulateSystemCAt rawDesign inputss
 
