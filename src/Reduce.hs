@@ -8,8 +8,8 @@ module Reduce where
 import Data.Function ((&))
 import Experiments (Experiment (..), generateProcessToExperiment)
 import GenSystemC (GenerateProcess (..), Transformation (..))
-import SystemC qualified as SC
 import Safe (headDef)
+import SystemC qualified as SC
 
 class HasReductions a where
   type Reduced a
@@ -41,12 +41,12 @@ instance HasReductions SC.SCType where
   mkReductions (SC.SCUInt n) = SC.SCUInt <$> mkReductions n
   mkReductions (SC.SCBigInt n) = SC.SCBigInt <$> mkReductions n
   mkReductions (SC.SCBigUInt n) = SC.SCBigUInt <$> mkReductions n
-  mkReductions (SC.SCBV {width}) = SC.SCBV <$> mkReductions width
-  mkReductions (SC.SCLV {width}) = SC.SCLV <$> mkReductions width
+  mkReductions (SC.SCBV{width}) = SC.SCBV <$> mkReductions width
+  mkReductions (SC.SCLV{width}) = SC.SCLV <$> mkReductions width
   mkReductions _ = []
 
 instance HasReductions SC.Expr where
-   -- TODO: Reduce variables to constants
+  -- TODO: Reduce variables to constants
   mkReductions (SC.Variable t n) = []
   mkReductions _ = []
 
