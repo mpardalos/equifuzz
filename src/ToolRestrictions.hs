@@ -28,10 +28,18 @@ oldVcfMods e t =
 jasperMods :: GenMods
 jasperMods e t =
   case (e.annotation, t) of
+    -- These types are not supported
+    (_, FunctionalCast SC.SCBV{}) -> False
+    (_, CastWithAssignment SC.SCBV{}) -> False
+    (_, FunctionalCast SC.SCLV{}) -> False
+    (_, CastWithAssignment SC.SCLV{}) -> False
+    (_, FunctionalCast SC.SCLogic{}) -> False
+    (_, CastWithAssignment SC.SCLogic{}) -> False
     (_, FunctionalCast SC.SCFixed{}) -> False
     (_, CastWithAssignment SC.SCFixed{}) -> False
     (_, FunctionalCast SC.SCUFixed{}) -> False
     (_, CastWithAssignment SC.SCUFixed{}) -> False
+    -- Missing methods
     (SC.SCBigInt{}, ApplyMethod SC.ReduceXor) -> False
     (SC.SCBigInt{}, ApplyMethod SC.ReduceXNor) -> False
     (SC.SCBigUInt{}, ApplyMethod SC.ReduceXor) -> False
@@ -46,6 +54,17 @@ jasperMods e t =
     (SC.SCUIntSubref{}, CastWithAssignment SC.SCInt{}) -> False
     (SC.SCIntBitref{}, CastWithAssignment SC.SCUInt{}) -> False
     (SC.SCUIntBitref{}, CastWithAssignment SC.SCUInt{}) -> False
+    (SC.SCSignedBitref{}, ApplyMethod SC.ToBool{}) -> False
+    (SC.SCUnsignedBitref{}, ApplyMethod SC.ToBool{}) -> False
+    -- Undetected undefined behaviour in large double-to-(u)int casts
+    (SC.CDouble, CastWithAssignment SC.CInt) -> False
+    (SC.CDouble, FunctionalCast SC.CInt) -> False
+    (SC.CDouble, CastWithAssignment SC.SCInt{}) -> False
+    (SC.CDouble, FunctionalCast SC.SCInt{}) -> False
+    (SC.CDouble, CastWithAssignment SC.CUInt) -> False
+    (SC.CDouble, FunctionalCast SC.CUInt) -> False
+    (SC.CDouble, CastWithAssignment SC.SCUInt{}) -> False
+    (SC.CDouble, FunctionalCast SC.SCUInt{}) -> False
     -- Trying to prevent undefined behaviour in programs like this:
     --     sc_dt::sc_uint<18>(sc_dt::sc_int<1>(-1)[0]);
     -- FIXME: We should detect when the experiment has undefined behaviour and
