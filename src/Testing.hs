@@ -6,21 +6,20 @@ module Testing (
   writeExperimentFor,
   module ToolRestrictions,
   module Runners,
+  module Reduce,
+  module GenSystemC,
   Experiment (..),
 )
 where
 
 import Data.Text qualified as T
 import Experiments
-import GenSystemC (
-  GenConfig (..),
-  genSystemCProcess,
-  generateProcessToSystemC,
- )
+import GenSystemC
 import Runners
 import SystemC qualified as SC
 import Text.Printf (printf)
 import ToolRestrictions
+import Reduce
 
 defConfig :: GenConfig
 defConfig =
