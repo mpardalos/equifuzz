@@ -1,13 +1,11 @@
 module Main where
 
-import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.Async (forConcurrently_, replicateConcurrently_)
 import Control.Concurrent.MVar (MVar, modifyMVar_, newMVar, putMVar, readMVar, takeMVar)
 import Control.Concurrent.STM.TSem
 import Control.Exception (bracket_, evaluate)
-import Control.Monad (forM_, forever, replicateM_)
+import Control.Monad (forever, replicateM_)
 import Control.Monad.Random (evalRandIO, join, uniform, void)
-import Data.Map qualified as Map
 import Experiments (Experiment (..), genSystemCConstantExperiment)
 import GHC.Conc (atomically)
 import GenSystemC (GenConfig (..))
@@ -28,15 +26,12 @@ genConfig =
 totalExperiments :: Int
 totalExperiments = 10
 
-reductionSizes :: [Int]
-reductionSizes = [2, 5, 10]
-
 -- | How many reductions to try at each reduction size
 reductionCount :: Int
-reductionCount = 2
+reductionCount = 5
 
 totalRuns :: Int
-totalRuns = totalExperiments * (1 + reductionCount * length reductionSizes)
+totalRuns = totalExperiments * (1 + reductionCount)
 
 ioLock :: MVar ()
 {-# NOINLINE ioLock #-}
@@ -76,36 +71,33 @@ runCompletedUnbounded = do
     hPutStr stderr "\r"
     hPutStr stderr (printf "%d Runs completed" runsComplete)
 
+concurrency :: Int
+concurrency = 3
+
 runForever :: IO ()
 runForever = do
-  capabilities <- getNumCapabilities
-  replicateConcurrently_ capabilities $ forever $ do
+  replicateConcurrently_ concurrency $ forever $ do
     experiment <- genSystemCConstantExperiment genConfig
     void $ evaluate experiment.verilogDesign
     runCompletedUnbounded
     let reductions = mkReductions experiment
-    forM_ reductionSizes $ \reductionSize -> do
-      let reducedCandidates = reductions Map.! reductionSize
-      replicateM_ reductionCount $ do
-        reducedExperiment <- join $ evalRandIO (uniform reducedCandidates)
-        void $ evaluate reducedExperiment.verilogDesign
-        runCompletedUnbounded
+    replicateM_ reductionCount $ do
+      reducedExperiment <- join $ evalRandIO (uniform reductions)
+      void $ evaluate reducedExperiment.verilogDesign
+      runCompletedUnbounded
 
 runLimited :: IO ()
 runLimited = do
-  capabilities <- getNumCapabilities
-  count <- atomically $ newTSem (fromIntegral capabilities)
+  count <- atomically $ newTSem (fromIntegral concurrency)
   forConcurrently_ [1 :: Int .. totalExperiments] $ \_experimentIdx -> do
     atomically $ waitTSem count
     experiment <- genSystemCConstantExperiment genConfig
     runCompletedProgress
     let reductions = mkReductions experiment
-    forM_ reductionSizes $ \reductionSize -> do
-      let reducedCandidates = reductions Map.! reductionSize
-      replicateM_ reductionCount $ do
-        reducedExperiment <- join $ evalRandIO (uniform reducedCandidates)
-        void $ evaluate reducedExperiment
-        runCompletedProgress
+    replicateM_ reductionCount $ do
+      reducedExperiment <- join $ evalRandIO (uniform reductions)
+      void $ evaluate reducedExperiment
+      runCompletedProgress
     atomically $ signalTSem count
   hPutStrLn stderr ""
 

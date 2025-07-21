@@ -6,41 +6,40 @@
 
 module Reduce where
 
-import Data.Map (Map)
-import Data.Map qualified as Map
-import Data.Set qualified as Set
 import Experiments (Experiment (..), generateProcessToExperiment)
 import GenSystemC (GenerateProcess (..))
 
 class HasReductions a where
   type Reduced a
   type Reduced a = a
-  mkReductions :: a -> Map Int [Reduced a]
-  getSize :: a -> Int
 
-splitN :: Int -> [a] -> [[a]]
-splitN 0 [] = [[]]
-splitN _ [] = []
-splitN n xs = take n xs : splitN n (drop n xs)
+  -- Get possible reductions for this value, in the order they should be
+  -- evaluated at
+  mkReductions :: a -> [Reduced a]
+
+-- | All possible ways to remove a chunk of N elements from the list
+-- (non-overlapping chunks)
+removingChunk :: Int -> [a] -> [[a]]
+removingChunk 0 xs = [xs]
+removingChunk _ [] = []
+removingChunk n xs
+  | n > length xs = []
+  | otherwise =
+      let thisChunk = take n xs
+          rest = drop n xs
+       in rest : map (thisChunk ++) (removingChunk n rest)
 
 instance HasReductions GenerateProcess where
   mkReductions (GenerateProcess cfg seed transformations) =
-    let
-      removeTransformations =
-        Map.fromSet
-          ( \size ->
-              [ GenerateProcess cfg seed reduced
-              | reduced <- splitN size transformations
-              ]
-          )
-          (Set.fromList [0 .. length transformations - 1])
-     in
-      removeTransformations
-
-  getSize GenerateProcess{transformations} = length transformations
+    map
+      (GenerateProcess cfg seed)
+      ( [ reduced
+        | removeCount <- [length transformations `div` 2, 2, 1]
+        , reduced <- removingChunk removeCount transformations
+        ]
+      )
 
 instance HasReductions Experiment where
   type Reduced Experiment = IO Experiment
-  getSize Experiment{generateProcess} = getSize generateProcess
   mkReductions Experiment{generateProcess} =
-    map (generateProcessToExperiment generateProcess.cfg) <$> mkReductions generateProcess
+    generateProcessToExperiment generateProcess.cfg <$> mkReductions generateProcess

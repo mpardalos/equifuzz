@@ -11,7 +11,6 @@ import Control.Monad (forever, replicateM_, void, when)
 import Control.Monad.State (execStateT, liftIO)
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Experiments (
   Experiment (..),
@@ -99,11 +98,11 @@ startRunReduceThread experimentSem progressChan runner initialExperiment = do
 
         let isInteresting = result.proofFound /= Just experiment.expectedResult
 
-        when (isInteresting && getSize experiment > 1) $
+        when isInteresting $
           void $
             foldMUntil_
               (\genExperiment -> genExperiment >>= runReduceLoop sequenceId)
-              (selectReductions experiment)
+              (mkReductions experiment)
 
         return isInteresting
     )
@@ -130,17 +129,6 @@ startRunReduceThread experimentSem progressChan runner initialExperiment = do
       , fullOutput = "Runner crashed with exception:\n" <> T.pack (show err)
       , extraInfos = Map.empty
       }
-
-selectReductions :: HasReductions a => a -> [Reduced a]
-selectReductions x =
-  let size = getSize x
-   in concat $
-        mapMaybe (mkReductions x Map.!?) $
-          [ size - size `div` 2
-          , size - size `div` 3
-          , size - 2
-          , size - 1
-          ]
 
 startLoggerThread :: ProgressChan -> IO ()
 startLoggerThread progressChan =
