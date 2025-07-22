@@ -12,12 +12,14 @@
 
 module WebUI (runWebUI, ExperimentProgress (..)) where
 
+import Codec.Archive.Zip (Archive (..), Entry, toEntry)
 import Control.Applicative (asum)
 import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar, threadDelay)
 import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTChan, takeTMVar, tryPutTMVar)
 import Control.Monad (forM_, forever, void, when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (execStateT)
+import Data.Binary (encode)
 import Data.Binary.Builder qualified as Binary
 import Data.ByteString.Lazy qualified as LB
 import Data.ByteString.Lazy.Char8 qualified as LB
@@ -27,10 +29,11 @@ import Data.Function ((&))
 import Data.List (find, sort)
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, mapMaybe)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Data.Text.Lazy qualified as LT
 import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
 import Data.UUID (UUID)
@@ -193,6 +196,24 @@ scottyServer stateVar = scotty 8888 $ do
 
     case mExperimentInfo of
       (Just experimentInfo) -> text (LT.fromStrict $ experimentReportOrgMode experimentInfo)
+      _ -> next
+
+  get "/experiments/:sequenceId/:experimentId/report.zip" $ do
+    sequenceId <- coerce @UUIDParam @ExperimentSequenceId <$> pathParam "sequenceId"
+    experimentId <- coerce @UUIDParam @ExperimentId <$> pathParam "experimentId"
+    state <- liftIO (readMVar stateVar)
+
+    let mExperimentInfo :: Maybe ExperimentInfo =
+          asum . map (view (at2 sequenceId experimentId)) $
+            [ state.runningExperiments
+            , state.interestingExperiments
+            , state.uninterestingExperiments
+            ]
+
+    case mExperimentInfo >>= experimentReportZip of
+      (Just archive) -> do
+        setHeader "Content-Type" "application/zip"
+        raw (encode archive)
       _ -> next
 
   get "/experiments/:sequenceId/:experimentId" $ do
@@ -501,6 +522,34 @@ experimentReportOrgMode (ExperimentInfo experiment (Just result)) =
           #{txt}
           \#+end_src
           |]
+
+  fullOutput :: Text
+  fullOutput = result.fullOutput
+
+experimentReportZip :: ExperimentInfo -> Maybe Archive
+experimentReportZip (ExperimentInfo _ Nothing) = Nothing
+experimentReportZip info@(ExperimentInfo experiment (Just result)) =
+  Just
+    ( Archive
+        { zEntries =
+            mapMaybe fileEntry ["spec.cpp", "impl.sv", "compare.tcl"]
+              <> [ toEntry "description.org" 0 (LB.fromStrict . TE.encodeUtf8 $ description)
+                 , toEntry "log.txt" 0 (LB.fromStrict . TE.encodeUtf8 $ fullOutput)
+                 ]
+        , zSignature = Nothing
+        , zComment = ""
+        }
+    )
+ where
+  props :: Map Text Text =
+    experiment.extraInfos <> result.extraInfos
+
+  description = experimentReportOrgMode info
+
+  fileEntry :: Text -> Maybe Entry
+  fileEntry name = do
+    contents <- props Map.!? name
+    return (toEntry (T.unpack name) 0 (LB.fromStrict $ TE.encodeUtf8 contents))
 
   fullOutput :: Text
   fullOutput = result.fullOutput

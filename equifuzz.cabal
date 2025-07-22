@@ -83,7 +83,9 @@ library
         stm,
         time,
         async,
-        process
+        process,
+        zip-archive,
+        binary
 
 executable equifuzz
     import:
