@@ -52,10 +52,15 @@ jasperMods e t =
     (SC.SCIntSubref{}, CastWithAssignment SC.SCInt{}) -> False
     (SC.SCUIntSubref{}, CastWithAssignment SC.SCUInt{}) -> False
     (SC.SCUIntSubref{}, CastWithAssignment SC.SCInt{}) -> False
-    (SC.SCIntBitref{}, CastWithAssignment SC.SCUInt{}) -> False
-    (SC.SCUIntBitref{}, CastWithAssignment SC.SCUInt{}) -> False
     (SC.SCSignedBitref{}, ApplyMethod SC.ToBool{}) -> False
     (SC.SCUnsignedBitref{}, ApplyMethod SC.ToBool{}) -> False
+    --  "/scratch/mp5617/equifuzz_jasper_experiment/2a6b1053-fb00-4cb8-a1ad-5b076ba7e64b/spec.cpp", line 7: error: more than one operator "=" matches these operands:
+    --      function "sc_dt::sc_int<SIZE>::operator=(uint64) [with SIZE=26]" (declared at line 67 of "/mnt/applications/cadence/2024-25/RHELx86/JASPER_2024.06.002/lib/c2rtl/sc_include/sysc/datatypes/int/sc_int.h")
+    --      function "sc_dt::sc_int<SIZE>::operator=(const sc_dt::sc_int<SIZE> &) [with SIZE=26]" (declared at line 69 of "/mnt/applications/cadence/2024-25/RHELx86/JASPER_2024.06.002/lib/c2rtl/sc_include/sysc/datatypes/int/sc_int.h")
+    (SC.SCIntBitref{}, CastWithAssignment SC.SCUInt{}) -> False
+    (SC.SCUIntBitref{}, CastWithAssignment SC.SCUInt{}) -> False
+    (SC.SCIntBitref{}, CastWithAssignment SC.SCInt{}) -> False
+    (SC.SCUIntBitref{}, CastWithAssignment SC.SCInt{}) -> False
     -- Undetected undefined behaviour in large double-to-(u)int casts
     (SC.CDouble, CastWithAssignment SC.CInt) -> False
     (SC.CDouble, FunctionalCast SC.CInt) -> False
