@@ -31,7 +31,7 @@ jasper =
     , parseOutput
     }
  where
-  makeFiles Experiment{scDesign, verilogDesign} =
+  makeFiles Experiment{scSignature, scDesign, verilogDesign} =
     [ (specFilename, wrappedProgram)
     , (implFilename, verilogDesign)
     , ("compare.tcl", compareScript)
@@ -45,14 +45,14 @@ jasper =
       [__i'L|\#include <systemc.h>
              \#include <jasperc.h>
 
-             #{SC.genSource scDesign}
+             #{scDesign}
 
              int main() {
                  #{declareInputs}
 
                  #{registerInputs}
 
-                 #{outType} out = #{scDesign ^. #name}(#{inputNames});
+                 #{outType} out = #{scSignature ^. #name}(#{inputNames});
 
                  JASPER_OUTPUT(out);
 
@@ -60,24 +60,24 @@ jasper =
              }|] <> "\n" -- Jasper warns if there is no trailing newline
 
     outType :: Text
-    outType = SC.genSource scDesign.returnType
+    outType = SC.genSource scSignature.returnType
 
     declareInputs :: Text
     declareInputs =
       T.unlines
         [ SC.genSource t <> " " <> name <> ";"
-        | (t, name) <- scDesign.args
+        | (t, name) <- scSignature.args
         ]
 
     registerInputs :: Text
     registerInputs =
       T.unlines
         [ "JASPER_INPUT(" <> name <> ");"
-        | (_, name) <- scDesign.args
+        | (_, name) <- scSignature.args
         ]
 
     inputNames :: Text
-    inputNames = T.intercalate ", " [name | (_, name) <- scDesign.args]
+    inputNames = T.intercalate ", " [name | (_, name) <- scSignature.args]
 
     compareScript :: Text
     compareScript =

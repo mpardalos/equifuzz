@@ -26,7 +26,7 @@ slec =
     , parseOutput
     }
  where
-  makeFiles Experiment{scDesign, verilogDesign} =
+  makeFiles Experiment{scSignature, scDesign, verilogDesign} =
     [ (specFilename, wrappedProgram)
     , (implFilename, verilogDesign)
     , ("compare.tcl", compareScript)
@@ -41,7 +41,7 @@ slec =
             \#define SC_INCLUDE_FX
             \#include <systemc.h>
 
-            #{SC.genSource scDesign}
+            #{scDesign}
 
             SC_MODULE(spec) {
               sc_out<#{outType}> out;
@@ -51,16 +51,16 @@ slec =
               }
 
               void update() {
-                out = #{scDesign ^. #name}(#{inputNames});
+                out = #{scSignature ^. #name}(#{inputNames});
               }
             };
             |]
 
     outType :: Text
-    outType = SC.genSource scDesign.returnType
+    outType = SC.genSource scSignature.returnType
 
     inputNames :: Text
-    inputNames = T.intercalate ", " [name | (_, name) <- scDesign.args]
+    inputNames = T.intercalate ", " [name | (_, name) <- scSignature.args]
 
     compareScript :: Text
     compareScript =

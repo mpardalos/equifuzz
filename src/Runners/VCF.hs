@@ -40,8 +40,8 @@ vcFormal =
     systemCProgram =
       [__i|
         #{SC.includeHeader}
-        #{SC.genSource scDesign}
-        #{systemCHectorWrapper scTopName scDesign}
+        #{scDesign}
+        #{systemCHectorWrapper scTopName scSignature}
         |]
 
     verilogFilename :: Text = "impl.sv"
@@ -96,8 +96,8 @@ vcFormal =
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper
-systemCHectorWrapper :: Text -> SC.FunctionDeclaration -> Text
-systemCHectorWrapper wrapperName SC.FunctionDeclaration{returnType, args, name} =
+systemCHectorWrapper :: Text -> SC.Signature -> Text
+systemCHectorWrapper wrapperName SC.Signature {returnType, args, name} =
   [__i|
       \#include<Hector.h>
 

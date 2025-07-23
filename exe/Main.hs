@@ -39,9 +39,9 @@ main = do
       runWebUI progressChan
     Generate genOpts -> do
       replicateM_ genOpts.count $ do
-        Experiment{scDesign, verilogDesign, knownEvaluations} <-
+        Experiment{scSignature, scDesign, verilogDesign, knownEvaluations} <-
           genSystemCConstantExperiment (generateOptionsToGenConfig genOpts)
-        T.putStrLn (SC.genSource scDesign)
+        T.putStrLn scDesign
         putStrLn "---------"
         T.putStrLn verilogDesign
         putStrLn "---------"
@@ -50,7 +50,7 @@ main = do
           T.putStr $
             T.intercalate "\n\t" $
               [ name <> "=" <> comparisonValueRaw value
-              | ((_, name), value) <- zip scDesign.args inputs
+              | ((_, name), value) <- zip scSignature.args inputs
               ]
           T.putStrLn ""
           T.putStr "\t-> "

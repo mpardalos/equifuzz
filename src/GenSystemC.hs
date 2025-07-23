@@ -379,9 +379,12 @@ generateProcessToSystemC cfg name GenerateProcess{seed, transformations} =
       body = finalState.statements ++ [SC.Return finalState.headExpr]
       args = nub [(t, v) | (t, v) <- SC.freeVars body, T.length v == 5]
    in SC.FunctionDeclaration
-        { returnType = finalState.headExpr.annotation
-        , name
-        , args
+        { sig =
+            SC.Signature
+              { returnType = finalState.headExpr.annotation
+              , name
+              , args
+              }
         , body
         }
  where

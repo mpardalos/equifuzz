@@ -632,10 +632,16 @@ knownWidth CUInt = Nothing
 knownWidth CDouble = Nothing
 knownWidth CBool = Nothing
 
-data FunctionDeclaration = FunctionDeclaration
+data Signature = Signature
   { returnType :: SCType
   , name :: Text
   , args :: [(SCType, Text)]
+  }
+  deriving (Generic, Eq, Ord, Show, Data)
+
+
+data FunctionDeclaration = FunctionDeclaration
+  { sig :: Signature
   , body :: [Statement]
   }
   deriving (Generic, Eq, Ord, Show, Data)
@@ -775,15 +781,15 @@ instance Source SCType
 
 instance Pretty FunctionDeclaration where
   pretty FunctionDeclaration{..} =
-    pretty returnType
-      <+> pretty name
+    pretty sig.returnType
+      <+> pretty sig.name
       <> prettyArgs
       <+> prettyBlock body
    where
     prettyArgs =
       parens . sep . punctuate comma $
         [ pretty argType <+> pretty argName
-        | (argType, argName) <- args
+        | (argType, argName) <- sig.args
         ]
 
 instance Source FunctionDeclaration

@@ -116,7 +116,8 @@ data Experiment = Experiment
   { experimentId :: ExperimentId
   , expectedResult :: Bool
   -- ^ True if we expect the modules to be equivalent, False if we expect them not to be
-  , scDesign :: SC.FunctionDeclaration
+  , scSignature :: SC.Signature
+  , scDesign :: Text
   , verilogDesign :: Text
   , size :: Int
   , generateProcess :: GenerateProcess
@@ -157,7 +158,7 @@ limitToEvaluations :: [Evaluation] -> SC.FunctionDeclaration -> SC.FunctionDecla
 limitToEvaluations evals decl =
   let
     goodInputs = map (view #inputs) evals
-    goodInputsLabelled = map (zip decl.args) goodInputs
+    goodInputsLabelled = map (zip decl.sig.args) goodInputs
     inputChecks = map (map (\((t, name), value) -> SC.BinOp SC.CBool (SC.Variable t name) SC.Equals (SC.Literal t (comparisonValueAsSC t value)))) goodInputsLabelled
     evaluationConditions =
       map
@@ -172,7 +173,7 @@ limitToEvaluations evals decl =
     earlyReturn :: SC.Statement =
       SC.If
         (SC.UnaryOp SC.CBool SC.LogicalNot inputValidCondition)
-        (SC.Return (defaultValueSC decl.returnType))
+        (SC.Return (defaultValueSC decl.sig.returnType))
         Nothing
    in
     decl{SC.body = earlyReturn : decl.body}
@@ -185,7 +186,7 @@ generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, inputValue
   -- same experiment for reductions of the same process
   let inputss =
         evalRand
-          (replicateM cfg.evaluations $ mapM (comparisonValueOfType . fst) rawDesign.args)
+          (replicateM cfg.evaluations $ mapM (comparisonValueOfType . fst) rawDesign.sig.args)
           inputValuesSeed
 
   simulationResult <- simulateSystemCAt rawDesign inputss
@@ -215,7 +216,8 @@ generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, inputValue
       { experimentId
       , -- Expect a negative result for programs with UB
         expectedResult = not simulationResult.hasUndefinedBehaviour
-      , scDesign
+      , scSignature = scDesign.sig
+      , scDesign = SC.genSource scDesign
       , generateProcess
       , verilogDesign
       , size = length transformations
@@ -258,7 +260,7 @@ comparisonValueAsSC t val =
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
 simulateSystemCAt :: SC.FunctionDeclaration -> [[ComparisonValue]] -> IO SystemCSimulationResult
-simulateSystemCAt decl@SC.FunctionDeclaration{returnType, name, args} inputss = do
+simulateSystemCAt decl@SC.FunctionDeclaration{sig = SC.Signature {returnType, name, args}} inputss = do
   let simulateAtValues values =
         let
           call =
@@ -424,7 +426,7 @@ verilogImplForEvals scFun evals =
     | not (null inputDecls) =
         [__i|
         always_comb begin
-          out = #{defaultValueVerilog (scFun ^. #returnType)};
+          out = #{defaultValueVerilog (scFun ^. #sig % #returnType)};
           case (#{concatInputs})
             #{cases}
           endcase
@@ -437,14 +439,14 @@ verilogImplForEvals scFun evals =
 
   inputDecls :: [Text] =
     [ [i|input wire [#{typeWidth t - 1}:0] #{name}|]
-    | (t, name) <- scFun.args
+    | (t, name) <- scFun.sig.args
     ]
 
-  outputWidth = typeWidth scFun.returnType
+  outputWidth = typeWidth scFun.sig.returnType
   outputDecl :: Text = [i|output reg [#{outputWidth - 1}:0] out|]
 
   concatInputs :: Text =
-    "{" <> T.intercalate ", " [name | (_, name) <- scFun.args] <> "}"
+    "{" <> T.intercalate ", " [name | (_, name) <- scFun.sig.args] <> "}"
 
   cases :: Text =
     T.intercalate
@@ -494,7 +496,7 @@ saveExperiment experiment result = do
   let localExperimentDir = "experiments/" <> UUID.toText experiment.experimentId.uuid
 
   mkdir_p localExperimentDir
-  TIO.writeFile (localExperimentDir </> ("spec.cpp" :: Text)) (SC.genSource experiment.scDesign)
+  TIO.writeFile (localExperimentDir </> ("spec.cpp" :: Text)) (experiment.scDesign)
   TIO.writeFile (localExperimentDir </> ("impl.sv" :: Text)) experiment.verilogDesign
 
   TIO.writeFile

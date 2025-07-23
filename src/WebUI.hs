@@ -52,7 +52,6 @@ import Network.Wai.Middleware.Gzip (def, gzip)
 import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (.~), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Safe (headMay, tailSafe)
-import SystemC qualified as SC
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
@@ -335,7 +334,7 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
       H.a H.! A.href [i|./#{info ^. #experiment % #experimentId % #uuid}/report.org|] $
         "Rendered (org-mode)"
 
-  infoBox "SystemC" (H.pre $ H.text ("\n" <> SC.genSource info.experiment.scDesign))
+  infoBox "SystemC" (H.pre $ H.text ("\n" <> info.experiment.scDesign))
 
   infoBox "Verilog" (H.pre $ H.text ("\n" <> info.experiment.verilogDesign))
 
