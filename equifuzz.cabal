@@ -92,6 +92,8 @@ executable equifuzz
         common
     ghc-options:
         -Wall -fdefer-typed-holes -Wno-unrecognised-pragmas -threaded -rtsopts "-with-rtsopts=-N"
+    other-modules:
+        CLI
     main-is:
         Main.hs
     hs-source-dirs:
