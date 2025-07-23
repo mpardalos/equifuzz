@@ -18,7 +18,6 @@ import Data.Text qualified as T
 import Experiments
 import Optics ((^.))
 import Runners.Common (EquivalenceCheckerConfig (..))
-import SystemC qualified as SC
 
 default (T.Text)
 
@@ -60,12 +59,12 @@ jasper =
              }|] <> "\n" -- Jasper warns if there is no trailing newline
 
     outType :: Text
-    outType = SC.genSource scSignature.returnType
+    outType = scSignature.returnType
 
     declareInputs :: Text
     declareInputs =
       T.unlines
-        [ SC.genSource t <> " " <> name <> ";"
+        [ t <> " " <> name <> ";"
         | (t, name) <- scSignature.args
         ]
 

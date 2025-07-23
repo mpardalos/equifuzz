@@ -23,9 +23,14 @@ module Experiments (
   newExperimentSequenceId,
   ComparisonValue (..),
   comparisonValueRaw,
+  mkComparisonValueWithWidth,
   DesignSource (..),
   ExperimentResult (..),
   Evaluation (..),
+  TextSignature,
+  SC.SignatureF (..),
+  RunSystemCProgramResult (..),
+  runSystemCProgram,
 ) where
 
 import Control.Monad (forM, replicateM, when)
@@ -112,11 +117,13 @@ instance Pretty Evaluation where
   pretty Evaluation{inputs, output} =
     pretty inputs <+> " -> " <+> pretty output
 
+type TextSignature = SC.SignatureF Text
+
 data Experiment = Experiment
   { experimentId :: ExperimentId
   , expectedResult :: Bool
   -- ^ True if we expect the modules to be equivalent, False if we expect them not to be
-  , scSignature :: SC.Signature
+  , scSignature :: TextSignature
   , scDesign :: Text
   , verilogDesign :: Text
   , size :: Int
@@ -216,7 +223,7 @@ generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, inputValue
       { experimentId
       , -- Expect a negative result for programs with UB
         expectedResult = not simulationResult.hasUndefinedBehaviour
-      , scSignature = scDesign.sig
+      , scSignature = fmap SC.genSource scDesign.sig
       , scDesign = SC.genSource scDesign
       , generateProcess
       , verilogDesign
@@ -260,7 +267,7 @@ comparisonValueAsSC t val =
 -- With the default SystemC output, we would get "-1" in both cases, but here we
 -- (correctly) get "8'b11111111" and "10'b1110000000"
 simulateSystemCAt :: SC.FunctionDeclaration -> [[ComparisonValue]] -> IO SystemCSimulationResult
-simulateSystemCAt decl@SC.FunctionDeclaration{sig = SC.Signature {returnType, name, args}} inputss = do
+simulateSystemCAt decl@SC.FunctionDeclaration{sig = SC.Signature{returnType, name, args}} inputss = do
   let simulateAtValues values =
         let
           call =
@@ -363,31 +370,15 @@ simulateSystemCAt decl@SC.FunctionDeclaration{sig = SC.Signature {returnType, na
             }
             |]
 
-  tmpDir <- T.strip <$> runBash "mktemp -d"
-  let cppPath = tmpDir <> "/main.cpp"
-  let binPath = tmpDir <> "/main"
+  RunSystemCProgramResult{..} <- runSystemCProgram fullSource
 
-  writeFile (T.unpack cppPath) fullSource
-  systemcHome <- getEnvDefault "SYSTEMC_HOME" "/usr"
-  let systemcIncludePath = systemcHome <> "/include"
-  let systemcLibraryPath = systemcHome <> "/lib"
-  clangPath <- getEnvDefault "EQUIFUZZ_CLANG" "clang++"
-  (clangExitCode, clangStdOut, clangStdErr) <-
-    readProcessWithExitCode clangPath ["-fsanitize=undefined", "-I", systemcIncludePath, "-L", systemcLibraryPath, "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
+  let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStdErr
 
-  when (clangExitCode /= ExitSuccess) $ do
-    error ("Failed compiling experiment. Clang output:\n" ++ clangStdOut ++ "\n" ++ clangStdErr ++ "\n-----\nProgram:\n" ++ fullSource ++ "\n---\n")
-
-  (programExitCode, T.pack -> programOut, T.pack -> programStderr) <-
-    readProcessWithExitCode (T.unpack binPath) [] ""
-  let hasUndefinedBehaviour = "undefined-behavior" `T.isInfixOf` programStderr
-  void $ runBash ("rm -r " <> tmpDir)
-
-  results <- forM (chunksOf 3 (T.lines programOut)) $ \segment -> do
+  results <- forM (chunksOf 3 (T.lines programStdOut)) $ \segment -> do
     let (reportedWidth, reportedValue) =
           case segment of
             [line1, line2, _separator] -> (line1, line2)
-            _ -> error ("Unexpected output line count from SystemC program: " ++ show (length (T.lines programOut)))
+            _ -> error ("Unexpected output line count from SystemC program: " ++ show (length (T.lines programStdOut)))
 
     let width = readNote "Parse width of SystemC value" . T.unpack $ reportedWidth
     let value = T.replace "." "" reportedValue
@@ -400,15 +391,55 @@ simulateSystemCAt decl@SC.FunctionDeclaration{sig = SC.Signature {returnType, na
       , hasUndefinedBehaviour
       , extraInfos =
           [ ("Clang exit code", T.pack . show $ clangExitCode)
-          , ("Clang stdout", T.pack clangStdOut)
-          , ("Clang stderr", T.pack clangStdErr)
-          , ("Simulation exit code", T.pack . show $ programExitCode)
-          , ("Simulation stdout", programOut)
-          , ("Simulation stderr", programStderr)
-          , ("SystemC Home", T.pack systemcHome)
-          , ("Clang Path", T.pack clangPath)
-          , ("Simulation Source", T.pack fullSource)
+          , ("Clang stdout", clangStdOut)
+          , ("Clang stderr", clangStdErr)
+          , ("Program exit code", T.pack . show $ programExitCode)
+          , ("Program stdout", programStdOut)
+          , ("Program stderr", programStdErr)
+          , -- TODO: Removed to extract runSystemCProgram below, try to add them back in
+            -- , ("SystemC Home", T.pack systemcHome)
+            -- , ("Clang Path", T.pack clangPath)
+            ("Simulation Source", fullSource)
           ]
+      }
+
+data RunSystemCProgramResult = RunSystemCProgramResult
+  { clangExitCode :: ExitCode
+  , clangStdOut :: Text
+  , clangStdErr :: Text
+  , programExitCode :: ExitCode
+  , programStdOut :: Text
+  , programStdErr :: Text
+  }
+
+runSystemCProgram :: Text -> IO RunSystemCProgramResult
+runSystemCProgram fullSource = do
+  tmpDir <- T.strip <$> runBash "mktemp -d"
+  let cppPath = tmpDir <> "/main.cpp"
+  let binPath = tmpDir <> "/main"
+
+  TIO.writeFile (T.unpack cppPath) fullSource
+  systemcHome <- getEnvDefault "SYSTEMC_HOME" "/usr"
+  let systemcIncludePath = systemcHome <> "/include"
+  let systemcLibraryPath = systemcHome <> "/lib"
+  clangPath <- getEnvDefault "EQUIFUZZ_CLANG" "clang++"
+  (clangExitCode, clangStdOut, clangStdErr) <-
+    readProcessWithExitCode clangPath ["-fsanitize=undefined", "-I", systemcIncludePath, "-L", systemcLibraryPath, "-lsystemc", T.unpack cppPath, "-o", T.unpack binPath] ""
+
+  when (clangExitCode /= ExitSuccess) $ do
+    error ("Failed compiling experiment. Clang output:\n" ++ clangStdOut ++ "\n" ++ clangStdErr ++ "\n-----\nProgram:\n" ++ T.unpack fullSource ++ "\n---\n")
+
+  (programExitCode, programStdOut, programStdErr) <- readProcessWithExitCode (T.unpack binPath) [] ""
+  void $ runBash ("rm -r " <> tmpDir)
+
+  return
+    RunSystemCProgramResult
+      { clangExitCode
+      , clangStdOut = T.pack clangStdOut
+      , clangStdErr = T.pack clangStdErr
+      , programExitCode
+      , programStdOut = T.pack programStdOut
+      , programStdErr = T.pack programStdErr
       }
 
 verilogImplForEvals :: SC.FunctionDeclaration -> [Evaluation] -> Text

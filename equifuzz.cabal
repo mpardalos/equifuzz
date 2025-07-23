@@ -100,7 +100,11 @@ executable equifuzz
         exe
     build-depends:
         equifuzz,
-        optparse-applicative
+        optparse-applicative,
+        containers,
+        uuid,
+        string-interpolate,
+        safe
 
 Test-Suite fuzzfuzz
     import:

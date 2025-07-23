@@ -15,7 +15,6 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments
 import Runners.Common (EquivalenceCheckerConfig (..))
-import SystemC qualified as SC
 
 -- | Run an experiment using VC Formal on a remote host
 vcFormal :: EquivalenceCheckerConfig
@@ -39,7 +38,8 @@ vcFormal =
     systemCProgram :: Text
     systemCProgram =
       [__i|
-        #{SC.includeHeader}
+        \#define SC_INCLUDE_FX
+        \#include <systemc>"
         #{scDesign}
         #{systemCHectorWrapper scTopName scSignature}
         |]
@@ -96,14 +96,14 @@ vcFormal =
 
 -- | When doing equivalence checking with Hector (VC Formal) the code under test
 -- needs to be presented to hector using a wrapper
-systemCHectorWrapper :: Text -> SC.Signature -> Text
-systemCHectorWrapper wrapperName SC.Signature {returnType, args, name} =
+systemCHectorWrapper :: Text -> TextSignature -> Text
+systemCHectorWrapper wrapperName Signature {returnType, args, name} =
   [__i|
       \#include<Hector.h>
 
       void #{wrapperName}() {
           #{inputDeclarations}
-          #{outType} out;
+          #{returnType} out;
 
           #{hectorRegisterInputs}
           Hector::registerOutput("out", out);
@@ -119,12 +119,9 @@ systemCHectorWrapper wrapperName SC.Signature {returnType, args, name} =
   inputDeclarations =
     T.intercalate
       "\n    "
-      [ SC.genSource argType <> " " <> argName <> ";"
+      [ argType <> " " <> argName <> ";"
       | (argType, argName) <- args
       ]
-
-  outType :: Text
-  outType = SC.genSource returnType
 
   hectorRegisterInputs :: Text
   hectorRegisterInputs =

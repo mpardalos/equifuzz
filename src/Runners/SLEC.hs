@@ -15,7 +15,6 @@ import Data.Text qualified as T
 import Experiments
 import Optics ((^.))
 import Runners.Common (EquivalenceCheckerConfig (..))
-import SystemC qualified as SC
 
 slec :: EquivalenceCheckerConfig
 slec =
@@ -57,7 +56,7 @@ slec =
             |]
 
     outType :: Text
-    outType = SC.genSource scSignature.returnType
+    outType = scSignature.returnType
 
     inputNames :: Text
     inputNames = T.intercalate ", " [name | (_, name) <- scSignature.args]

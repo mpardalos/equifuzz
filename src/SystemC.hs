@@ -632,13 +632,15 @@ knownWidth CUInt = Nothing
 knownWidth CDouble = Nothing
 knownWidth CBool = Nothing
 
-data Signature = Signature
-  { returnType :: SCType
+-- | Type parameter stands for SCType
+data SignatureF t = Signature
+  { returnType :: t
   , name :: Text
-  , args :: [(SCType, Text)]
+  , args :: [(t, Text)]
   }
-  deriving (Generic, Eq, Ord, Show, Data)
+  deriving (Functor, Generic, Eq, Ord, Show, Data)
 
+type Signature = SignatureF SCType
 
 data FunctionDeclaration = FunctionDeclaration
   { sig :: Signature
