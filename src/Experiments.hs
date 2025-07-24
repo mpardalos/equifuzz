@@ -191,10 +191,12 @@ generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, inputValue
 
   -- We use the value given from generate process so that we get exactly the
   -- same experiment for reductions of the same process
-  let inputss =
-        evalRand
-          (replicateM cfg.evaluations $ mapM (comparisonValueOfType . fst) rawDesign.sig.args)
-          inputValuesSeed
+  let inputss
+        | null rawDesign.sig.args = [[]]
+        | otherwise =
+            evalRand
+              (replicateM cfg.evaluations $ mapM (comparisonValueOfType . fst) rawDesign.sig.args)
+              inputValuesSeed
 
   simulationResult <- simulateSystemCAt rawDesign inputss
 
