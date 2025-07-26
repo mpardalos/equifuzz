@@ -110,6 +110,8 @@ main > * {
     border-bottom: var(--border);
     display: flex;
     justify-content: space-between;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 .info-box-content {
