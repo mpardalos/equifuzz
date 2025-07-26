@@ -296,7 +296,6 @@ htmlBase content = H.docTypeHtml $ do
     H.script H.! A.src "/resources/htmx.min.js.gz" $ ""
     H.script H.! A.src "/resources/sse.js.gz" $ ""
   H.body H.! hxExt "sse" H.! sseConnect "/events" $ do
-    H.header "Equifuzz"
     H.main content
     H.footer $ do
       H.span ("Version " <> H.string versionName)
