@@ -3,10 +3,10 @@
 
 module Orchestration (OrchestrationConfig (..), startRunners) where
 
-import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar, threadDelay)
+import Control.Concurrent (MVar, QSem, forkFinally, modifyMVar_, newMVar, newQSem, signalQSem, threadDelay, waitQSem)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
 import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
-import Control.Exception (SomeException, catch)
+import Control.Exception (SomeException, bracket_, catch)
 import Control.Monad (forever, replicateM_, void, when)
 import Control.Monad.State (execStateT, liftIO)
 import Data.Map (Map)
@@ -56,8 +56,12 @@ startRunners config = do
   return progressChan
 
 startOrchestratorThread :: OrchestrationConfig -> ExperimentRunner -> ProgressChan -> IO ()
-startOrchestratorThread config runner progressChan = do
-  experimentSem <- atomically (newTSem . toInteger $ config.maxConcurrentExperiments)
+startOrchestratorThread config rawRunner progressChan = do
+  experimentSem <- newQSem (2 * config.maxConcurrentExperiments)
+  runnerSem <- newQSem config.maxConcurrentExperiments
+
+  let runner = bracket_ (waitQSem runnerSem) (signalQSem runnerSem) . rawRunner
+
   case config.experimentCount of
     Nothing -> foreverThread "Orchestrator" $ do
       experimentReducible <- genSystemCConstantExperiment config.genConfig
@@ -69,22 +73,24 @@ startOrchestratorThread config runner progressChan = do
       when config.verbose (putStrLn "All required experiments started")
       forever (threadDelay maxBound)
 
-startRunReduceThread :: TSem -> ProgressChan -> ExperimentRunner -> Experiment -> IO ()
+startRunReduceThread :: QSem -> ProgressChan -> ExperimentRunner -> Experiment -> IO ()
 startRunReduceThread experimentSem progressChan runner initialExperiment = do
   sequenceId <- newExperimentSequenceId
 
-  atomically (waitTSem experimentSem)
+  waitQSem experimentSem
   void $
     forkFinally
       (runReduceLoop sequenceId initialExperiment)
-      ( \case
-          Right _ -> endExperimentSequence sequenceId
-          Left err -> do
-            printf "Experiment sequence aborted %s\n" (show sequenceId)
-            printf "==============================\n"
-            printf "%s\n" (show err)
-            printf "==============================\n\n"
-            endExperimentSequence sequenceId
+      ( \result -> do
+          signalQSem experimentSem
+          progress (ExperimentSequenceCompleted sequenceId)
+          case result of
+            Right _ -> pure ()
+            Left err -> do
+              printf "Experiment sequence aborted %s\n" (show sequenceId)
+              printf "==============================\n"
+              printf "%s\n" (show err)
+              printf "==============================\n\n"
       )
  where
   runReduceLoop :: ExperimentSequenceId -> Experiment -> IO Bool
@@ -113,11 +119,6 @@ startRunReduceThread experimentSem progressChan runner initialExperiment = do
                   printf "==============================\n\n"
                   return False
               )
-
-  endExperimentSequence :: ExperimentSequenceId -> IO ()
-  endExperimentSequence sequenceId = do
-    atomically (signalTSem experimentSem)
-    progress (ExperimentSequenceCompleted sequenceId)
 
   progress = atomically . writeTChan progressChan
 
