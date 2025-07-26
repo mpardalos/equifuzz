@@ -298,4 +298,5 @@ testRunner inconclusiveResults experiment = do
       , proofFound
       , counterExample
       , fullOutput
+      , extraInfos = Map.empty
       }
