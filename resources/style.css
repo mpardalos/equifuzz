@@ -59,6 +59,7 @@ main > * {
     flex-direction: column;
     padding: 10px;
     box-sizing: border-box;
+    justify-content: space-between;
 }
 #run-info { flex-grow: 1; }
 
@@ -148,4 +149,12 @@ table td:not(:first-child) {
 .flex-spread {
     display: flex;
     justify-content: space-between;
+}
+
+.flex-max-available {
+    flex: 1 1 auto;
+}
+
+.overflow-scroll {
+    overflow: scroll;
 }

@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -26,7 +27,7 @@ import Data.ByteString.Lazy.Char8 qualified as LB
 import Data.Coerce (coerce)
 import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Function ((&))
-import Data.List (find, sort)
+import Data.List (find)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (isJust, mapMaybe)
@@ -51,7 +52,6 @@ import Network.Wai (StreamingBody)
 import Network.Wai.Middleware.Gzip (def, gzip)
 import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (.~), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
-import Safe (headMay, tailSafe)
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
@@ -101,9 +101,8 @@ data ExperimentInfo = ExperimentInfo
   deriving (Generic, Show)
 
 data WebUIState = WebUIState
-  { runningExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo
-  , interestingExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo
-  , uninterestingExperiments :: Map ExperimentSequenceId ExperimentSequenceInfo
+  { runningSequences :: Map ExperimentSequenceId ExperimentSequenceInfo
+  , finishedSequences :: Map ExperimentSequenceId ExperimentSequenceInfo
   , experimentsSem :: Semaphore
   , totalRunCount :: Int
   , totalRunCountSem :: Semaphore
@@ -118,9 +117,8 @@ newWebUIState = do
   totalRunCountSem <- atomically newSemaphore
   return
     WebUIState
-      { interestingExperiments = Map.empty
-      , runningExperiments = Map.empty
-      , uninterestingExperiments = Map.empty
+      { runningSequences = Map.empty
+      , finishedSequences = Map.empty
       , experimentsSem
       , totalRunCount = 0
       , totalRunCountSem
@@ -138,26 +136,25 @@ handleProgress stateVar progress = do
 
   modifyMVar_ stateVar . execStateT $ case progress of
     ExperimentStarted sequenceId experiment -> do
-      #runningExperiments % at2 sequenceId experiment.experimentId .= Just (ExperimentInfo experiment Nothing)
+      #runningSequences % at2 sequenceId experiment.experimentId .= Just (ExperimentInfo experiment Nothing)
       liftIO . atomically $ signalSemaphore state.experimentsSem
     ExperimentCompleted sequenceId result -> do
       -- FIXME: Report error if experiment does not exist
       -- FIXME: Report error if experiment still has active runs
-      mExperiment <- use (#runningExperiments % at2 sequenceId result.experimentId)
+      mExperiment <- use (#runningSequences % at2 sequenceId result.experimentId)
       whenJust mExperiment $ \runningExperiment -> do
         let completedExperiment =
               runningExperiment
                 & #result .~ Just result
                 & #experiment % #extraInfos %~ Map.union result.extraInfos
-        if isInteresting completedExperiment
-          then #interestingExperiments % at2 sequenceId result.experimentId .= Just completedExperiment
-          else #uninterestingExperiments % at2 sequenceId result.experimentId .= Just completedExperiment
-        #runningExperiments % at2 sequenceId result.experimentId .= Nothing
+        #runningSequences % at2 sequenceId result.experimentId .= Just completedExperiment
         liftIO . atomically $ signalSemaphore state.experimentsSem
         liftIO . atomically $ signalSemaphore state.totalRunCountSem
         #totalRunCount %= (+ 1)
     ExperimentSequenceCompleted sequenceId -> do
-      #runningExperiments % at sequenceId .= Nothing
+      sequenceData <- use (#runningSequences % at sequenceId)
+      #finishedSequences % at sequenceId .= sequenceData
+      #runningSequences % at sequenceId .= Nothing
       liftIO . atomically $ signalSemaphore state.experimentsSem
 
 scottyServer :: MVar WebUIState -> IO ()
@@ -188,9 +185,8 @@ scottyServer stateVar = scotty 8888 $ do
 
     let mExperimentInfo :: Maybe ExperimentInfo =
           asum . map (view (at2 sequenceId experimentId)) $
-            [ state.runningExperiments
-            , state.interestingExperiments
-            , state.uninterestingExperiments
+            [ state.runningSequences
+            , state.finishedSequences
             ]
 
     case mExperimentInfo of
@@ -204,9 +200,8 @@ scottyServer stateVar = scotty 8888 $ do
 
     let mExperimentInfo :: Maybe ExperimentInfo =
           asum . map (view (at2 sequenceId experimentId)) $
-            [ state.runningExperiments
-            , state.interestingExperiments
-            , state.uninterestingExperiments
+            [ state.runningSequences
+            , state.finishedSequences
             ]
 
     case mExperimentInfo >>= experimentReportZip of
@@ -223,9 +218,8 @@ scottyServer stateVar = scotty 8888 $ do
 
     let mExperimentInfo :: Maybe ExperimentInfo =
           asum . map (view (at2 sequenceId experimentId)) $
-            [ state.runningExperiments
-            , state.interestingExperiments
-            , state.uninterestingExperiments
+            [ state.runningSequences
+            , state.finishedSequences
             ]
 
     case mExperimentInfo of
@@ -262,12 +256,11 @@ toggleLiveUpdates = #liveUpdates %~ not
 pruneUninterestingSequences :: WebUIState -> WebUIState
 pruneUninterestingSequences state =
   state
-    & #uninterestingExperiments
-      %~ Map.filter
-        ( \sequenceInfo ->
-            sequenceInfo.sequenceId `Map.member` state.runningExperiments
-              || sequenceInfo.sequenceId `Map.member` state.interestingExperiments
-        )
+    & #finishedSequences %~ filterWholeSequences
+    & #runningSequences %~ filterIndividualExperiments
+ where
+  filterWholeSequences = Map.filter (\ExperimentSequenceInfo{experiments} -> any isInteresting experiments)
+  filterIndividualExperiments = Map.map (#experiments %~ Map.filter isInteresting)
 
 queryParamExists :: T.Text -> ActionM Bool
 queryParamExists p = isJust . find ((== p) . fst) <$> queryParams
@@ -357,21 +350,31 @@ experimentList state = H.div
     state.liveUpdates
     (hxTrigger "sse:experiment-list" <> hxGet "/experiments" <> hxSwap "outerHTML")
   $ do
-    H.div H.! A.id "experiment-list" $ do
-      experimentSubList "Running" state.runningExperiments
-      experimentSubList "Interesting" state.interestingExperiments
-      experimentSubList "Uninteresting" state.uninterestingExperiments
-    table
-      [ ["Total runs", H.toHtml (show state.totalRunCount)]
-      , ["Running time", H.toHtml (diffTimeHMSFormat state.runTime)]
-      ,
-        [ "Amortised experiment time"
-        , H.toHtml @String (printf "%.1fs" amortisedExperimentTime)
+    H.div H.! A.class_ "flex-max-available overflow-scroll" $ do
+      mapM_ sequenceBox state.runningSequences
+      H.hr
+      mapM_ sequenceBox state.finishedSequences
+
+    H.div $ do
+      table
+        [ ["Total runs", H.toHtml (show state.totalRunCount)]
+        , ["Running time", H.toHtml (diffTimeHMSFormat state.runTime)]
+        ,
+          [ "Amortised experiment time"
+          , H.toHtml @String (printf "%.1fs" amortisedExperimentTime)
+          ]
+        , ["Live Updates", toggleUpdatesButton]
         ]
-      , ["Live Updates", toggleUpdatesButton]
-      ]
-    pruneUninterestingButton
+        H.! A.class_ "flex-constant"
+      pruneUninterestingButton
  where
+  sequenceBox ExperimentSequenceInfo{..} =
+    infoBox (H.text (UUID.toText sequenceId.uuid)) . H.ul $ do
+      forM_ experiments $ \ExperimentInfo{..} ->
+        H.li $
+          experimentLink sequenceId experiment.experimentId $
+            H.text ("Size " <> T.pack (show experiment.size))
+
   amortisedExperimentTime :: Float
   amortisedExperimentTime
     | state.totalRunCount == 0 = 0
@@ -395,46 +398,15 @@ experimentList state = H.div
       H.! hxSwap "outerHTML"
       $ "Prune uninteresting"
 
-  experimentSubList title experiments =
-    infoBoxWithSideTitle
-      title
-      (H.toHtml (length experiments))
-      (mapM_ experimentSequenceList experiments)
-
-  experimentSequenceList :: ExperimentSequenceInfo -> Html
-  experimentSequenceList sequenceInfo =
-    let items =
-          sort
-            [ (size, experimentId)
-            | ExperimentInfo{experiment = Experiment{size, experimentId}} <-
-                Map.elems sequenceInfo.experiments
-            ]
-     in H.div H.! A.class_ "experiment-list-item" $ do
-          H.span H.! A.class_ "experiment-list-uuid" $ do
-            H.toHtml (show sequenceInfo.sequenceId.uuid)
-
-            whenJust (headMay items) $ \(size, experimentId) ->
-              H.div $
-                experimentLink sequenceInfo.sequenceId experimentId size
-
-            when (length items > 1) $
-              H.details $ do
-                H.summary "Other runs"
-                H.ul H.! A.class_ "experiment-list-run-list" $ do
-                  sequence_
-                    [ H.li (experimentLink sequenceInfo.sequenceId experimentId size)
-                    | (size, experimentId) <- tailSafe items
-                    ]
-
-  experimentLink :: ExperimentSequenceId -> ExperimentId -> Int -> Html
-  experimentLink sequenceId experimentId size =
+  experimentLink :: ExperimentSequenceId -> ExperimentId -> Html -> Html
+  experimentLink sequenceId experimentId inner =
     H.a
       H.! hxTarget "#run-info"
       H.! hxSwap "outerHTML"
       H.! hxPushUrl "true"
       H.! hxGet [i|/experiments/#{sequenceId ^. #uuid}/#{experimentId ^. #uuid}|]
       H.! A.href [i|/experiments/#{sequenceId ^. #uuid}/#{experimentId ^. #uuid}|]
-      $ H.toHtml ("Size " <> show size)
+      $ H.toHtml inner
 
 table :: [[Html]] -> Html
 table rows = H.table $
@@ -598,7 +570,7 @@ signalSemaphore (Semaphore mvar) = void $ tryPutTMVar mvar ()
 isInteresting :: ExperimentInfo -> Bool
 isInteresting info = case info.result of
   Just result -> result.proofFound /= Just info.experiment.expectedResult
-  Nothing -> False
+  Nothing -> True -- Still running, so interesting by default
 
 makeFieldLabelsNoPrefix ''WebUIState
 makeFieldLabelsNoPrefix ''ExperimentSequenceInfo
