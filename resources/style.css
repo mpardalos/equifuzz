@@ -63,20 +63,6 @@ main > * {
 }
 #run-info { flex-grow: 1; }
 
-#experiment-list {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: fit-content;
-    height: 100%;
-}
-
-#experiment-list > * {
-    overflow: scroll;
-    /* Make all children the same size */
-    flex: 1 1 0;
-}
-
 .experiment-list-item:not(:last-child) {
     border-bottom: 1px solid black;
 }
