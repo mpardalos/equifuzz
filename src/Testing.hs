@@ -8,6 +8,7 @@ module Testing (
   module Runners,
   module Reduce,
   module GenSystemC,
+  module Prettyprinter,
   Experiment (..),
 )
 where
@@ -15,11 +16,12 @@ where
 import Data.Text qualified as T
 import Experiments
 import GenSystemC
+import Prettyprinter
+import Reduce
 import Runners
 import SystemC qualified as SC
 import Text.Printf (printf)
 import ToolRestrictions
-import Reduce
 
 defConfig :: GenConfig
 defConfig =

@@ -35,14 +35,15 @@ import SystemC qualified as SC
 -- sure to run its result through GenConfig.modOperations, and never use it
 -- directly
 
+import Control.Monad.Random.Lazy (newStdGen)
 import Data.Data (Data)
 import Data.Map qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Debug.Trace (traceM)
+import Prettyprinter (Pretty (pretty), viaShow, vsep)
 import Text.Show.Functions ()
 import Util (is)
-import Control.Monad.Random.Lazy (newStdGen)
 
 type GenMods = SC.Expr -> Transformation -> Bool
 
@@ -423,3 +424,10 @@ data GenerateProcess = GenerateProcess
   , transformations :: [Transformation]
   }
   deriving (Generic, Show)
+
+instance Pretty Transformation where
+  pretty = viaShow
+
+instance Pretty GenerateProcess where
+  pretty GenerateProcess{seed, transformations} =
+    vsep (("Seed: " <> pretty seed) : map pretty transformations)
