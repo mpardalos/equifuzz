@@ -72,6 +72,7 @@ import Web.Scotty (
   pathParam,
   queryParams,
   raw,
+  redirect,
   scotty,
   setHeader,
   status,
@@ -226,7 +227,10 @@ scottyServer stateVar = scotty 8888 $ do
       (Just experimentInfo)
         | isHtmxRequest -> blazeHtml (experimentInfoBlock experimentInfo)
         | otherwise -> blazeHtml (experimentInfoPage state experimentInfo)
-      _ -> next
+      -- This lets you just hit F5 on the browser that was looking at the
+      -- application before restarting and get the new instance that has just
+      -- started
+      _ -> redirect "/"
 
   get "/events" $ do
     state <- liftIO (readMVar stateVar)
