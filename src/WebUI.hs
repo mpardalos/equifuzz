@@ -19,7 +19,7 @@ import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar, threadDelay)
 import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTChan, takeTMVar, tryPutTMVar)
 import Control.Monad (forM_, forever, void, when)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State (execStateT)
+import Control.Monad.State (execStateT, modify)
 import Data.Binary (encode)
 import Data.Binary.Builder qualified as Binary
 import Data.ByteString.Lazy qualified as LB
@@ -108,6 +108,7 @@ data WebUIState = WebUIState
   , totalRunCount :: Int
   , totalRunCountSem :: Semaphore
   , liveUpdates :: Bool
+  , autoPrune :: Bool
   , runTime :: NominalDiffTime
   }
   deriving (Generic)
@@ -124,6 +125,7 @@ newWebUIState = do
       , totalRunCount = 0
       , totalRunCountSem
       , liveUpdates = True
+      , autoPrune = False
       , runTime = 0
       }
 
@@ -135,28 +137,31 @@ handleProgress :: MVar WebUIState -> ExperimentProgress -> IO ()
 handleProgress stateVar progress = do
   state <- readMVar stateVar
 
-  modifyMVar_ stateVar . execStateT $ case progress of
-    ExperimentStarted sequenceId experiment -> do
-      #runningSequences % at2 sequenceId experiment.experimentId .= Just (ExperimentInfo experiment Nothing)
-      liftIO . atomically $ signalSemaphore state.experimentsSem
-    ExperimentCompleted sequenceId result -> do
-      -- FIXME: Report error if experiment does not exist
-      -- FIXME: Report error if experiment still has active runs
-      mExperiment <- use (#runningSequences % at2 sequenceId result.experimentId)
-      whenJust mExperiment $ \runningExperiment -> do
-        let completedExperiment =
-              runningExperiment
-                & #result .~ Just result
-                & #experiment % #extraInfos %~ Map.union result.extraInfos
-        #runningSequences % at2 sequenceId result.experimentId .= Just completedExperiment
+  modifyMVar_ stateVar . execStateT $ do
+    case progress of
+      ExperimentStarted sequenceId experiment -> do
+        #runningSequences % at2 sequenceId experiment.experimentId .= Just (ExperimentInfo experiment Nothing)
         liftIO . atomically $ signalSemaphore state.experimentsSem
-        liftIO . atomically $ signalSemaphore state.totalRunCountSem
-        #totalRunCount %= (+ 1)
-    ExperimentSequenceCompleted sequenceId -> do
-      sequenceData <- use (#runningSequences % at sequenceId)
-      #finishedSequences % at sequenceId .= sequenceData
-      #runningSequences % at sequenceId .= Nothing
-      liftIO . atomically $ signalSemaphore state.experimentsSem
+      ExperimentCompleted sequenceId result -> do
+        -- FIXME: Report error if experiment does not exist
+        -- FIXME: Report error if experiment still has active runs
+        mExperiment <- use (#runningSequences % at2 sequenceId result.experimentId)
+        whenJust mExperiment $ \runningExperiment -> do
+          let completedExperiment =
+                runningExperiment
+                  & #result .~ Just result
+                  & #experiment % #extraInfos %~ Map.union result.extraInfos
+          #runningSequences % at2 sequenceId result.experimentId .= Just completedExperiment
+          liftIO . atomically $ signalSemaphore state.experimentsSem
+          liftIO . atomically $ signalSemaphore state.totalRunCountSem
+          #totalRunCount %= (+ 1)
+      ExperimentSequenceCompleted sequenceId -> do
+        sequenceData <- use (#runningSequences % at sequenceId)
+        #finishedSequences % at sequenceId .= sequenceData
+        #runningSequences % at sequenceId .= Nothing
+        liftIO . atomically $ signalSemaphore state.experimentsSem
+    when state.autoPrune $
+      modify pruneUninterestingSequences
 
 scottyServer :: MVar WebUIState -> IO ()
 scottyServer stateVar = scotty 8888 $ do
@@ -242,10 +247,16 @@ scottyServer stateVar = scotty 8888 $ do
 
   get "/experiments" $ do
     whenM (queryParamExists "toggle-updates") $
-      liftIO (modifyMVarPure_ stateVar toggleLiveUpdates)
+      liftIO (modifyMVarPure_ stateVar (toggle #liveUpdates))
 
     whenM (queryParamExists "prune-uninteresting") $
       liftIO (modifyMVarPure_ stateVar pruneUninterestingSequences)
+
+    whenM (queryParamExists "toggle-auto-prune") $ do
+      -- Trigger a prune as well, otherwise the user has to wait for the next
+      -- update
+      liftIO (modifyMVarPure_ stateVar pruneUninterestingSequences)
+      liftIO (modifyMVarPure_ stateVar (toggle #autoPrune))
 
     state <- liftIO (readMVar stateVar)
     blazeHtml (experimentList state)
@@ -254,8 +265,8 @@ scottyServer stateVar = scotty 8888 $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (indexPage state)
 
-toggleLiveUpdates :: WebUIState -> WebUIState
-toggleLiveUpdates = #liveUpdates %~ not
+toggle :: Lens' s Bool -> s -> s
+toggle = (%~ not)
 
 pruneUninterestingSequences :: WebUIState -> WebUIState
 pruneUninterestingSequences state =
@@ -368,6 +379,7 @@ experimentList state = H.div
           , H.toHtml @String (printf "%.1fs" amortisedExperimentTime)
           ]
         , ["Live Updates", toggleUpdatesButton]
+        , ["Auto prune", autoPruneButton]
         ]
         H.! A.class_ "flex-constant"
       pruneUninterestingButton
@@ -392,6 +404,15 @@ experimentList state = H.div
       H.! hxTarget "closest #experiment-list-area"
       H.! hxSwap "outerHTML"
       $ if state.liveUpdates
+        then "ON"
+        else "OFF"
+
+  autoPruneButton =
+    H.button
+      H.! hxGet "/experiments?toggle-auto-prune=1"
+      H.! hxTarget "closest #experiment-list-area"
+      H.! hxSwap "outerHTML"
+      $ if state.autoPrune
         then "ON"
         else "OFF"
 
@@ -430,15 +451,6 @@ infoBox title body = do
 infoBoxNoTitle :: Html -> Html
 infoBoxNoTitle body = do
   H.div H.! A.class_ "info-box" $ do
-    H.div H.! A.class_ "info-box-content" $
-      body
-
-infoBoxWithSideTitle :: Html -> Html -> Html -> Html
-infoBoxWithSideTitle title count body =
-  H.div H.! A.class_ "info-box" $ do
-    H.h2 H.! A.class_ "info-box-title" $ do
-      H.span title
-      H.span count
     H.div H.! A.class_ "info-box-content" $
       body
 
