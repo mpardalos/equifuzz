@@ -89,6 +89,7 @@ data ExperimentProgress
 data ExperimentSequenceInfo = ExperimentSequenceInfo
   { sequenceId :: ExperimentSequenceId
   , experiments :: Map ExperimentId ExperimentInfo
+  , isRunning :: Bool
   }
   deriving (Generic, Show)
 
@@ -102,8 +103,7 @@ data ExperimentInfo = ExperimentInfo
   deriving (Generic, Show)
 
 data WebUIState = WebUIState
-  { runningSequences :: Map ExperimentSequenceId ExperimentSequenceInfo
-  , finishedSequences :: Map ExperimentSequenceId ExperimentSequenceInfo
+  { sequences :: Map ExperimentSequenceId ExperimentSequenceInfo
   , experimentsSem :: Semaphore
   , totalRunCount :: Int
   , totalRunCountSem :: Semaphore
@@ -119,8 +119,7 @@ newWebUIState = do
   totalRunCountSem <- atomically newSemaphore
   return
     WebUIState
-      { runningSequences = Map.empty
-      , finishedSequences = Map.empty
+      { sequences = Map.empty
       , experimentsSem
       , totalRunCount = 0
       , totalRunCountSem
@@ -131,7 +130,16 @@ newWebUIState = do
 
 at2 :: ExperimentSequenceId -> ExperimentId -> Lens' (Map ExperimentSequenceId ExperimentSequenceInfo) (Maybe ExperimentInfo)
 at2 sequenceId experimentId =
-  at sequenceId % non (ExperimentSequenceInfo sequenceId Map.empty) % #experiments % at experimentId
+  at sequenceId
+    % non
+      ( ExperimentSequenceInfo
+          { sequenceId
+          , experiments = Map.empty
+          , isRunning = True
+          }
+      )
+    % #experiments
+    % at experimentId
 
 handleProgress :: MVar WebUIState -> ExperimentProgress -> IO ()
 handleProgress stateVar progress = do
@@ -140,25 +148,23 @@ handleProgress stateVar progress = do
   modifyMVar_ stateVar . execStateT $ do
     case progress of
       ExperimentStarted sequenceId experiment -> do
-        #runningSequences % at2 sequenceId experiment.experimentId .= Just (ExperimentInfo experiment Nothing)
+        #sequences % at2 sequenceId experiment.experimentId .= Just (ExperimentInfo experiment Nothing)
         liftIO . atomically $ signalSemaphore state.experimentsSem
       ExperimentCompleted sequenceId result -> do
         -- FIXME: Report error if experiment does not exist
         -- FIXME: Report error if experiment still has active runs
-        mExperiment <- use (#runningSequences % at2 sequenceId result.experimentId)
+        mExperiment <- use (#sequences % at2 sequenceId result.experimentId)
         whenJust mExperiment $ \runningExperiment -> do
           let completedExperiment =
                 runningExperiment
                   & #result .~ Just result
                   & #experiment % #extraInfos %~ Map.union result.extraInfos
-          #runningSequences % at2 sequenceId result.experimentId .= Just completedExperiment
+          #sequences % at2 sequenceId result.experimentId .= Just completedExperiment
           liftIO . atomically $ signalSemaphore state.experimentsSem
           liftIO . atomically $ signalSemaphore state.totalRunCountSem
           #totalRunCount %= (+ 1)
       ExperimentSequenceCompleted sequenceId -> do
-        sequenceData <- use (#runningSequences % at sequenceId)
-        #finishedSequences % at sequenceId .= sequenceData
-        #runningSequences % at sequenceId .= Nothing
+        #sequences % at sequenceId % _Just % #isRunning .= False
         liftIO . atomically $ signalSemaphore state.experimentsSem
     when state.autoPrune $
       modify pruneUninterestingSequences
@@ -189,13 +195,7 @@ scottyServer stateVar = scotty 8888 $ do
     experimentId <- coerce @UUIDParam @ExperimentId <$> pathParam "experimentId"
     state <- liftIO (readMVar stateVar)
 
-    let mExperimentInfo :: Maybe ExperimentInfo =
-          asum . map (view (at2 sequenceId experimentId)) $
-            [ state.runningSequences
-            , state.finishedSequences
-            ]
-
-    case mExperimentInfo of
+    case state.sequences ^. at2 sequenceId experimentId of
       (Just experimentInfo) -> text (LT.fromStrict $ experimentReportOrgMode experimentInfo)
       _ -> next
 
@@ -204,14 +204,8 @@ scottyServer stateVar = scotty 8888 $ do
     experimentId <- coerce @UUIDParam @ExperimentId <$> pathParam "experimentId"
     state <- liftIO (readMVar stateVar)
 
-    let mExperimentInfo :: Maybe ExperimentInfo =
-          asum . map (view (at2 sequenceId experimentId)) $
-            [ state.runningSequences
-            , state.finishedSequences
-            ]
-
-    case mExperimentInfo >>= experimentReportZip of
-      (Just archive) -> do
+    case experimentReportZip =<< state.sequences ^. at2 sequenceId experimentId of
+      Just archive -> do
         setHeader "Content-Type" "application/zip"
         raw (encode archive)
       _ -> next
@@ -222,13 +216,7 @@ scottyServer stateVar = scotty 8888 $ do
     state <- liftIO (readMVar stateVar)
     isHtmxRequest <- (Just "true" ==) <$> header "HX-Request"
 
-    let mExperimentInfo :: Maybe ExperimentInfo =
-          asum . map (view (at2 sequenceId experimentId)) $
-            [ state.runningSequences
-            , state.finishedSequences
-            ]
-
-    case mExperimentInfo of
+    case state.sequences ^. at2 sequenceId experimentId of
       (Just experimentInfo)
         | isHtmxRequest -> blazeHtml (experimentInfoBlock experimentInfo)
         | otherwise -> blazeHtml (experimentInfoPage state experimentInfo)
@@ -269,13 +257,13 @@ toggle :: Lens' s Bool -> s -> s
 toggle = (%~ not)
 
 pruneUninterestingSequences :: WebUIState -> WebUIState
-pruneUninterestingSequences state =
-  state
-    & #finishedSequences %~ filterWholeSequences
-    & #runningSequences %~ filterIndividualExperiments
- where
-  filterWholeSequences = Map.filter (\ExperimentSequenceInfo{experiments} -> any isInteresting experiments)
-  filterIndividualExperiments = Map.map (#experiments %~ Map.filter isInteresting)
+pruneUninterestingSequences =
+  #sequences
+    %~ Map.filter
+      ( \ExperimentSequenceInfo{isRunning, experiments} ->
+          isRunning || any isInteresting experiments
+      )
+    . Map.map (#experiments %~ Map.filter isInteresting)
 
 queryParamExists :: T.Text -> ActionM Bool
 queryParamExists p = isJust . find ((== p) . fst) <$> queryParams
@@ -324,7 +312,7 @@ experimentInfoPage state info =
 experimentInfoBlock :: ExperimentInfo -> Html
 experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
   infoBoxNoTitle $ do
-    table $
+    table
       [ ["UUID", H.toHtml (show info.experiment.experimentId.uuid)]
       , ["Expected Result", if info.experiment.expectedResult then "Equivalent" else "Non-equivalent"]
       , case info.result of
@@ -366,9 +354,10 @@ experimentList state = H.div
     (hxTrigger "sse:experiment-list" <> hxGet "/experiments" <> hxSwap "outerHTML")
   $ do
     H.div H.! A.class_ "flex-max-available overflow-scroll" $ do
-      mapM_ sequenceBox state.runningSequences
+      let (running, notRunning) = Map.partition (view #isRunning) state.sequences
+      mapM_ sequenceBox running
       H.hr
-      mapM_ sequenceBox state.finishedSequences
+      mapM_ sequenceBox notRunning
 
     H.div $ do
       table
