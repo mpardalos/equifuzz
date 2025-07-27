@@ -28,7 +28,7 @@ import Data.Function ((&))
 import Data.List (find)
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (isJust, isNothing, mapMaybe)
+import Data.Maybe (isJust, mapMaybe)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -48,7 +48,7 @@ import Meta
 import Network.HTTP.Types (status200)
 import Network.Wai (StreamingBody)
 import Network.Wai.Middleware.Gzip (def, gzip)
-import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, over, use, view, (%), (%?), (%~), (.~), (^.), (^?), _Just)
+import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (.~), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
@@ -246,7 +246,11 @@ scottyServer stateVar = scotty 8888 $ do
       liftIO (modifyMVarPure_ stateVar (toggle #autoPrune))
 
     whenJustM (queryParamMaybe "delete-sequence") $ \(ExperimentSequenceIdParam sequenceId) -> do
-      liftIO (modifyMVarPure_ stateVar (over #sequences (Map.delete sequenceId)))
+      liftIO (modifyMVarPure_ stateVar (deleteSequence sequenceId))
+
+    whenJustM (queryParamMaybe "delete-experiment-sequence") $ \(ExperimentSequenceIdParam sequenceId) ->
+      whenJustM (queryParamMaybe "delete-experiment") $ \(ExperimentIdParam experimentId) ->
+        liftIO (modifyMVarPure_ stateVar (deleteExperiment sequenceId experimentId))
 
     state <- liftIO (readMVar stateVar)
     blazeHtml (experimentList state)
@@ -254,6 +258,14 @@ scottyServer stateVar = scotty 8888 $ do
   get "/" $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (indexPage state)
+
+deleteExperiment :: ExperimentSequenceId -> ExperimentId -> WebUIState -> WebUIState
+deleteExperiment sequenceId experimentId =
+  #sequences % at2 sequenceId experimentId .~ Nothing
+
+deleteSequence :: ExperimentSequenceId -> WebUIState -> WebUIState
+deleteSequence sequenceId =
+  #sequences %~ Map.delete sequenceId
 
 toggle :: Lens' s Bool -> s -> s
 toggle = (%~ not)
@@ -383,6 +395,12 @@ experimentList state = H.div
           H.! hxTarget "closest #experiment-list-area"
           H.! hxSwap "outerHTML"
           $ "❌"
+      experimentDeleteButton experimentId =
+        H.button
+          H.! hxGet [i|/experiments?delete-experiment=#{experimentId ^. #uuid}&delete-experiment-sequence=#{sequenceId ^. #uuid}|]
+          H.! hxTarget "closest #experiment-list-area"
+          H.! hxSwap "outerHTML"
+          $ "❌"
       title = do
         unless isRunning deleteButton
         H.text (UUID.toText sequenceId.uuid)
@@ -390,7 +408,9 @@ experimentList state = H.div
       infoBox title . H.ul $ do
         forM_ experiments $ \ExperimentInfo{..} ->
           H.li $ do
-            when (isNothing result) $ H.text "(Running)"
+            case result of
+              Just _ -> experimentDeleteButton experiment.experimentId
+              Nothing -> H.text "(Running)"
             experimentLink sequenceId experiment.experimentId $ do
               H.text ("Size " <> T.pack (show experiment.size))
 
