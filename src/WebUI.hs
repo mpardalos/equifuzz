@@ -30,7 +30,7 @@ import Data.Function ((&))
 import Data.List (find)
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (isJust, mapMaybe)
+import Data.Maybe (isJust, isNothing, mapMaybe)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -387,8 +387,9 @@ experimentList state = H.div
   sequenceBox ExperimentSequenceInfo{..} =
     infoBox (H.text (UUID.toText sequenceId.uuid)) . H.ul $ do
       forM_ experiments $ \ExperimentInfo{..} ->
-        H.li $
-          experimentLink sequenceId experiment.experimentId $
+        H.li $ do
+          when (isNothing result) $ H.text "(Running)"
+          experimentLink sequenceId experiment.experimentId $ do
             H.text ("Size " <> T.pack (show experiment.size))
 
   amortisedExperimentTime :: Float
