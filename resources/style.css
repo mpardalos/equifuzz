@@ -32,11 +32,11 @@ body {
 }
 
 footer {
-  text-align: right;
-  border-top: 1px solid var(--accent-color);
-  font-size: small;
-  display: flex;
-  justify-content: space-between;
+    text-align: right;
+    border-top: 1px solid var(--accent-color);
+    font-size: small;
+    display: flex;
+    justify-content: space-between;
 }
 
 main {
@@ -46,10 +46,10 @@ main {
     overflow: hidden;
     gap: 10px;
     height: 100%;
-}
 
-main > * {
-    height: 100%;
+    > * {
+        height: 100%;
+    }
 }
 
 #experiment-list-area {
@@ -63,19 +63,21 @@ main > * {
 }
 #run-info { flex-grow: 1; }
 
-.experiment-list-item:not(:last-child) {
-    border-bottom: 1px solid black;
-}
+.experiment-list-item {
+    &:not(:last-child) {
+        border-bottom: 1px solid black;
+    }
 
-.experiment-list-item .experiment-list-uuid {
-    font-size: 1.1em;
-    display: block;
-}
+    .experiment-list-uuid {
+        font-size: 1.1em;
+        display: block;
+    }
 
-.experiment-list-item .experiment-list-run-list {
-    margin: 10px 0;
-    padding-left: 10px;
-    list-style: '— ' inside;
+    .experiment-list-run-list {
+        margin: 10px 0;
+        padding-left: 10px;
+        list-style: '— ' inside;
+    }
 }
 
 #run-info {
@@ -86,11 +88,11 @@ main > * {
 .side-by-side {
     display: flex;
     flex-direction: row;
+    > * {
+        flex: 1 1 50%;
+    }
 }
 
-.side-by-side > * {
-    flex: 1 1 50%;
-}
 
 .info-box {
     border: var(--border);
@@ -99,39 +101,41 @@ main > * {
     flex-direction: column;
     margin: 10px;
     overflow: scroll;
-}
 
-.info-box-title {
-    background: var(--accent-color);
-    color: var(--bg-color);
-    margin: 0;
-    padding-left: 10px;
-    padding-right: 10px;
-    border-bottom: var(--border);
-    display: flex;
-    justify-content: space-between;
-    overflow: hidden;
-    white-space: nowrap;
-}
+    .info-box-title {
+        background: var(--accent-color);
+        color: var(--bg-color);
+        margin: 0;
+        padding-left: 10px;
+        padding-right: 10px;
+        border-bottom: var(--border);
+        display: flex;
+        justify-content: space-between;
+        overflow: hidden;
+        white-space: nowrap;
+    }
 
-.info-box-content {
-    padding: 10px;
-    flex-grow: 1;
-    overflow: scroll;
+    .info-box-content {
+        padding: 10px;
+        flex-grow: 1;
+        overflow: scroll;
+    }
 }
 
 .long {overflow: scroll;}
 
 table {
     border-collapse: collapse;
-}
-table td:not(:last-child) {
-    padding-right: 1ch;
-    border-right: 1px solid var(--accent-color);
-}
-table td:not(:first-child) {
-    padding-left: 1ch;
-    border-left: 1px solid var(--accent-color);
+
+    td:not(:last-child) {
+        padding-right: 1ch;
+        border-right: 1px solid var(--accent-color);
+    }
+
+    td:not(:first-child) {
+        padding-left: 1ch;
+        border-left: 1px solid var(--accent-color);
+    }
 }
 
 .flex-spread {
