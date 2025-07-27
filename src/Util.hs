@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Util where
 
 import Control.Concurrent (MVar, forkFinally, modifyMVar_)
@@ -5,15 +7,15 @@ import Control.Monad (when)
 import Control.Monad.Random (foldM_, forever)
 import Data.Maybe (isJust)
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Time (NominalDiffTime, defaultTimeLocale, getZonedTime, zonedTimeToLocalTime)
 import Data.Time.Format (formatTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import GHC.Conc (labelThread)
 import Optics (Prism', preview, view, _2)
 import System.IO (hPutStrLn, stderr)
-import Text.Printf (printf)
 import System.Process (callProcess, readProcessWithExitCode)
-import qualified Data.Text as T
+import Text.Printf (printf)
 
 iterateM :: Monad m => Int -> (a -> m a) -> a -> m a
 iterateM 0 _ x = pure x
@@ -74,6 +76,12 @@ whenM :: Monad m => m Bool -> m () -> m ()
 whenM cond action = do
   v <- cond
   when v action
+
+whenJustM :: Monad m => m (Maybe a) -> (a -> m ()) -> m ()
+whenJustM cond action =
+  cond >>= \case
+    Just x -> action x
+    Nothing -> pure ()
 
 modifyMVarPure_ :: MVar a -> (a -> a) -> IO ()
 modifyMVarPure_ var f = modifyMVar_ var (pure . f)

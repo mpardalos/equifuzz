@@ -1,4 +1,7 @@
 {-# LANGUAGE DataKinds #-}
+{-# HLINT ignore "Redundant <$>" #-}
+{-# HLINT ignore "Use ?~" #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
@@ -8,23 +11,18 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-{-# HLINT ignore "Redundant <$>" #-}
-{-# HLINT ignore "Use ?~" #-}
-
 module WebUI (runWebUI, ExperimentProgress (..)) where
 
 import Codec.Archive.Zip (Archive (..), Entry, toEntry)
-import Control.Applicative (asum)
 import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar, threadDelay)
 import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTChan, takeTMVar, tryPutTMVar)
-import Control.Monad (forM_, forever, void, when)
+import Control.Monad (forM_, forever, unless, void, when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (execStateT, modify)
 import Data.Binary (encode)
 import Data.Binary.Builder qualified as Binary
 import Data.ByteString.Lazy qualified as LB
 import Data.ByteString.Lazy.Char8 qualified as LB
-import Data.Coerce (coerce)
 import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Function ((&))
 import Data.List (find)
@@ -50,7 +48,7 @@ import Meta
 import Network.HTTP.Types (status200)
 import Network.Wai (StreamingBody)
 import Network.Wai.Middleware.Gzip (def, gzip)
-import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, use, view, (%), (%?), (%~), (.~), (^.), (^?), _Just)
+import Optics (At (at), Lens', makeFieldLabelsNoPrefix, non, over, use, view, (%), (%?), (%~), (.~), (^.), (^?), _Just)
 import Optics.State.Operators ((%=), (.=))
 import Text.Blaze.Html.Renderer.Pretty qualified as H
 import Text.Blaze.Html5 (Html)
@@ -59,7 +57,7 @@ import Text.Blaze.Html5.Attributes qualified as A
 import Text.Blaze.Htmx (hxExt, hxGet, hxPushUrl, hxSwap, hxTarget, hxTrigger)
 import Text.Blaze.Htmx.ServerSentEvents (sseConnect)
 import Text.Printf (printf)
-import Util (diffTimeHMSFormat, foreverThread, modifyMVarPure_, mwhen, whenJust, whenM)
+import Util (diffTimeHMSFormat, foreverThread, modifyMVarPure_, mwhen, whenJust, whenJustM, whenM)
 import Web.Scotty (
   ActionM,
   Parsable (..),
@@ -70,6 +68,7 @@ import Web.Scotty (
   middleware,
   next,
   pathParam,
+  queryParamMaybe,
   queryParams,
   raw,
   redirect,
@@ -191,8 +190,8 @@ scottyServer stateVar = scotty 8888 $ do
       LB.fromStrict $(embedFile =<< makeRelativeToProject "resources/sse.js.gz")
 
   get "/experiments/:sequenceId/:experimentId/report.org" $ do
-    sequenceId <- coerce @UUIDParam @ExperimentSequenceId <$> pathParam "sequenceId"
-    experimentId <- coerce @UUIDParam @ExperimentId <$> pathParam "experimentId"
+    ExperimentSequenceIdParam sequenceId <- pathParam "sequenceId"
+    ExperimentIdParam experimentId <- pathParam "experimentId"
     state <- liftIO (readMVar stateVar)
 
     case state.sequences ^. at2 sequenceId experimentId of
@@ -200,8 +199,8 @@ scottyServer stateVar = scotty 8888 $ do
       _ -> next
 
   get "/experiments/:sequenceId/:experimentId/report.zip" $ do
-    sequenceId <- coerce @UUIDParam @ExperimentSequenceId <$> pathParam "sequenceId"
-    experimentId <- coerce @UUIDParam @ExperimentId <$> pathParam "experimentId"
+    ExperimentSequenceIdParam sequenceId <- pathParam "sequenceId"
+    ExperimentIdParam experimentId <- pathParam "experimentId"
     state <- liftIO (readMVar stateVar)
 
     case experimentReportZip =<< state.sequences ^. at2 sequenceId experimentId of
@@ -211,8 +210,8 @@ scottyServer stateVar = scotty 8888 $ do
       _ -> next
 
   get "/experiments/:sequenceId/:experimentId" $ do
-    sequenceId <- coerce @UUIDParam @ExperimentSequenceId <$> pathParam "sequenceId"
-    experimentId <- coerce @UUIDParam @ExperimentId <$> pathParam "experimentId"
+    ExperimentSequenceIdParam sequenceId <- pathParam "sequenceId"
+    ExperimentIdParam experimentId <- pathParam "experimentId"
     state <- liftIO (readMVar stateVar)
     isHtmxRequest <- (Just "true" ==) <$> header "HX-Request"
 
@@ -245,6 +244,9 @@ scottyServer stateVar = scotty 8888 $ do
       -- update
       liftIO (modifyMVarPure_ stateVar pruneUninterestingSequences)
       liftIO (modifyMVarPure_ stateVar (toggle #autoPrune))
+
+    whenJustM (queryParamMaybe "delete-sequence") $ \(ExperimentSequenceIdParam sequenceId) -> do
+      liftIO (modifyMVarPure_ stateVar (over #sequences (Map.delete sequenceId)))
 
     state <- liftIO (readMVar stateVar)
     blazeHtml (experimentList state)
@@ -374,12 +376,23 @@ experimentList state = H.div
       pruneUninterestingButton
  where
   sequenceBox ExperimentSequenceInfo{..} =
-    infoBox (H.text (UUID.toText sequenceId.uuid)) . H.ul $ do
-      forM_ experiments $ \ExperimentInfo{..} ->
-        H.li $ do
-          when (isNothing result) $ H.text "(Running)"
-          experimentLink sequenceId experiment.experimentId $ do
-            H.text ("Size " <> T.pack (show experiment.size))
+    let
+      deleteButton =
+        H.button
+          H.! hxGet [i|/experiments?delete-sequence=#{sequenceId ^. #uuid}|]
+          H.! hxTarget "closest #experiment-list-area"
+          H.! hxSwap "outerHTML"
+          $ "❌"
+      title = do
+        unless isRunning deleteButton
+        H.text (UUID.toText sequenceId.uuid)
+     in
+      infoBox title . H.ul $ do
+        forM_ experiments $ \ExperimentInfo{..} ->
+          H.li $ do
+            when (isNothing result) $ H.text "(Running)"
+            experimentLink sequenceId experiment.experimentId $ do
+              H.text ("Size " <> T.pack (show experiment.size))
 
   amortisedExperimentTime :: Float
   amortisedExperimentTime
@@ -448,6 +461,10 @@ blazeHtml :: Html -> ActionM ()
 blazeHtml = html . LT.pack . H.renderHtml
 
 newtype UUIDParam = UUIDParam UUID
+newtype ExperimentSequenceIdParam = ExperimentSequenceIdParam ExperimentSequenceId
+  deriving (Parsable) via UUIDParam
+newtype ExperimentIdParam = ExperimentIdParam ExperimentId
+  deriving (Parsable) via UUIDParam
 
 instance Parsable UUIDParam where
   parseParam txt = case UUID.fromText (LT.toStrict txt) of
