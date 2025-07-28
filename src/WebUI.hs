@@ -28,7 +28,7 @@ import Data.Function ((&))
 import Data.List (find)
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (isJust, mapMaybe)
+import Data.Maybe (isJust, isNothing, mapMaybe)
 import Data.String.Interpolate (i, __i)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -369,7 +369,9 @@ experimentList state = H.div
   $ do
     H.div H.! A.class_ "flex-max-available overflow-scroll" $ do
       let (running, notRunning) = Map.partition (view #isRunning) state.sequences
-      mapM_ sequenceBox running
+      let (interesting, justRunning) = Map.partition (any (\e -> isInteresting e && not (isRunning e)) . view #experiments) running
+      mapM_ sequenceBox interesting
+      mapM_ sequenceBox justRunning
       H.hr
       mapM_ sequenceBox notRunning
 
@@ -614,6 +616,9 @@ isInteresting :: ExperimentInfo -> Bool
 isInteresting info = case info.result of
   Just result -> result.proofFound /= Just info.experiment.expectedResult
   Nothing -> True -- Still running, so interesting by default
+
+isRunning :: ExperimentInfo -> Bool
+isRunning info = isNothing info.result
 
 makeFieldLabelsNoPrefix ''WebUIState
 makeFieldLabelsNoPrefix ''ExperimentSequenceInfo
