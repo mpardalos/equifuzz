@@ -3,9 +3,9 @@
 
 module Orchestration (OrchestrationConfig (..), startRunners) where
 
-import Control.Concurrent (MVar, QSem, forkFinally, modifyMVar_, newMVar, newQSem, signalQSem, threadDelay, waitQSem)
+import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar, newQSem, signalQSem, threadDelay, waitQSem)
+import Control.Concurrent.Async (forConcurrently_)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
-import Control.Concurrent.STM.TSem (TSem, newTSem, signalTSem, waitTSem)
 import Control.Exception (SomeException, bracket_, catch)
 import Control.Monad (forever, replicateM_, void, when)
 import Control.Monad.State (execStateT, liftIO)
@@ -57,32 +57,30 @@ startRunners config = do
 
 startOrchestratorThread :: OrchestrationConfig -> ExperimentRunner -> ProgressChan -> IO ()
 startOrchestratorThread config rawRunner progressChan = do
-  experimentSem <- newQSem (2 * config.maxConcurrentExperiments)
   runnerSem <- newQSem config.maxConcurrentExperiments
 
   let runner = bracket_ (waitQSem runnerSem) (signalQSem runnerSem) . rawRunner
 
   case config.experimentCount of
-    Nothing -> foreverThread "Orchestrator" $ do
-      experimentReducible <- genSystemCConstantExperiment config.genConfig
-      startRunReduceThread experimentSem progressChan runner experimentReducible
+    Nothing -> forConcurrently_ [1 .. config.maxConcurrentExperiments] $ \idx ->
+      foreverThread ("Orchestrator " <> show idx) . forever $ do
+        experimentReducible <- genSystemCConstantExperiment config.genConfig
+        startRunReduceThread progressChan runner experimentReducible
     Just n -> foreverThread "Orchestrator" $ do
       replicateM_ n $ do
         experimentReducible <- genSystemCConstantExperiment config.genConfig
-        startRunReduceThread experimentSem progressChan runner experimentReducible
+        startRunReduceThread progressChan runner experimentReducible
       when config.verbose (putStrLn "All required experiments started")
       forever (threadDelay maxBound)
 
-startRunReduceThread :: QSem -> ProgressChan -> ExperimentRunner -> Experiment -> IO ()
-startRunReduceThread experimentSem progressChan runner initialExperiment = do
+startRunReduceThread :: ProgressChan -> ExperimentRunner -> Experiment -> IO ()
+startRunReduceThread progressChan runner initialExperiment = do
   sequenceId <- newExperimentSequenceId
 
-  waitQSem experimentSem
   void $
     forkFinally
       (runReduceLoop sequenceId initialExperiment)
       ( \result -> do
-          signalQSem experimentSem
           progress (ExperimentSequenceCompleted sequenceId)
           case result of
             Right _ -> pure ()
