@@ -3,10 +3,10 @@
 
 module Orchestration (OrchestrationConfig (..), startRunners) where
 
-import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar, newQSem, signalQSem, threadDelay, waitQSem)
-import Control.Concurrent.Async (forConcurrently_)
+import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar, newQSem, signalQSem, threadDelay, waitQSem, putMVar, newEmptyMVar, takeMVar)
+import Control.Concurrent.Async (forConcurrently_, replicateConcurrently_)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
-import Control.Exception (SomeException, bracket_, catch)
+import Control.Exception (SomeException, bracket, bracket_, catch)
 import Control.Monad (forever, replicateM_, void, when)
 import Control.Monad.State (execStateT, liftIO)
 import Data.Map (Map)
@@ -62,34 +62,28 @@ startOrchestratorThread config rawRunner progressChan = do
   let runner = bracket_ (waitQSem runnerSem) (signalQSem runnerSem) . rawRunner
 
   case config.experimentCount of
-    Nothing -> forConcurrently_ [1 .. config.maxConcurrentExperiments] $ \idx ->
-      foreverThread ("Orchestrator " <> show idx) . forever $ do
-        experimentReducible <- genSystemCConstantExperiment config.genConfig
-        startRunReduceThread progressChan runner experimentReducible
-    Just n -> foreverThread "Orchestrator" $ do
-      replicateM_ n $ do
-        experimentReducible <- genSystemCConstantExperiment config.genConfig
-        startRunReduceThread progressChan runner experimentReducible
-      when config.verbose (putStrLn "All required experiments started")
-      forever (threadDelay maxBound)
+    Nothing -> forConcurrently_ [1 .. config.maxConcurrentExperiments] $ \idx -> do
+      foreverThread (printf "Runner %d" idx) $ do
+        experiment <- genSystemCConstantExperiment config.genConfig
+        startRunReduceThread progressChan runner experiment
+
+    Just n -> forConcurrently_ [1 .. n] $ \idx -> do
+      when config.verbose (printf "Runner %d started" idx)
+      experimentReducible <- genSystemCConstantExperiment config.genConfig
+      startRunReduceThread progressChan runner experimentReducible
 
 startRunReduceThread :: ProgressChan -> ExperimentRunner -> Experiment -> IO ()
 startRunReduceThread progressChan runner initialExperiment = do
   sequenceId <- newExperimentSequenceId
 
-  void $
-    forkFinally
-      (runReduceLoop sequenceId initialExperiment)
-      ( \result -> do
-          progress (ExperimentSequenceCompleted sequenceId)
-          case result of
-            Right _ -> pure ()
-            Left err -> do
-              printf "Experiment sequence aborted %s\n" (show sequenceId)
-              printf "==============================\n"
-              printf "%s\n" (show err)
-              printf "==============================\n\n"
-      )
+  void (runReduceLoop sequenceId initialExperiment)
+    `catch` ( \(err :: SomeException) -> do
+                printf "Experiment sequence aborted %s\n" (show sequenceId)
+                printf "==============================\n"
+                printf "%s\n" (show err)
+                printf "==============================\n\n"
+            )
+  progress (ExperimentSequenceCompleted sequenceId)
  where
   runReduceLoop :: ExperimentSequenceId -> Experiment -> IO Bool
   runReduceLoop sequenceId experiment =

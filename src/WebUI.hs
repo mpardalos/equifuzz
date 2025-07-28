@@ -367,9 +367,9 @@ experimentList state = H.div
     state.liveUpdates
     (hxTrigger "sse:experiment-list" <> hxGet "/experiments" <> hxSwap "outerHTML")
   $ do
+    let (running, notRunning) = Map.partition (view #isRunning) state.sequences
+    let (interesting, justRunning) = Map.partition (any (\e -> isInteresting e && not (isRunning e)) . view #experiments) running
     H.div H.! A.class_ "flex-max-available overflow-scroll" $ do
-      let (running, notRunning) = Map.partition (view #isRunning) state.sequences
-      let (interesting, justRunning) = Map.partition (any (\e -> isInteresting e && not (isRunning e)) . view #experiments) running
       mapM_ sequenceBox interesting
       mapM_ sequenceBox justRunning
       H.hr
@@ -377,7 +377,8 @@ experimentList state = H.div
 
     H.div $ do
       table
-        [ ["Total runs", H.toHtml (show state.totalRunCount)]
+        [ ["Currently running", H.toHtml (show (length running))]
+        , ["Total runs", H.toHtml (show state.totalRunCount)]
         , ["Running time", H.toHtml (diffTimeHMSFormat state.runTime)]
         ,
           [ "Amortised experiment time"
