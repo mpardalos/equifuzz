@@ -123,7 +123,7 @@ newWebUIState = do
       , totalRunCount = 0
       , totalRunCountSem
       , liveUpdates = True
-      , autoPrune = False
+      , autoPrune = True
       , runTime = 0
       }
 
