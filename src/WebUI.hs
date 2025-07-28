@@ -62,11 +62,13 @@ import Web.Scotty (
   ActionM,
   Parsable (..),
   addHeader,
+  finish,
   get,
   header,
   html,
   middleware,
   next,
+  notFound,
   pathParam,
   queryParamMaybe,
   queryParams,
@@ -139,6 +141,9 @@ at2 sequenceId experimentId =
       )
     % #experiments
     % at experimentId
+
+isHtmxRequest :: ActionM Bool
+isHtmxRequest = (Just "true" ==) <$> header "HX-Request"
 
 handleProgress :: MVar WebUIState -> ExperimentProgress -> IO ()
 handleProgress stateVar progress = do
@@ -213,16 +218,13 @@ scottyServer stateVar = scotty 8888 $ do
     ExperimentSequenceIdParam sequenceId <- pathParam "sequenceId"
     ExperimentIdParam experimentId <- pathParam "experimentId"
     state <- liftIO (readMVar stateVar)
-    isHtmxRequest <- (Just "true" ==) <$> header "HX-Request"
+    htmx <- isHtmxRequest
 
     case state.sequences ^. at2 sequenceId experimentId of
-      (Just experimentInfo)
-        | isHtmxRequest -> blazeHtml (experimentInfoBlock experimentInfo)
+      Just experimentInfo
+        | htmx -> blazeHtml (experimentInfoBlock experimentInfo)
         | otherwise -> blazeHtml (experimentInfoPage state experimentInfo)
-      -- This lets you just hit F5 on the browser that was looking at the
-      -- application before restarting and get the new instance that has just
-      -- started
-      _ -> redirect "/"
+      Nothing -> next
 
   get "/events" $ do
     state <- liftIO (readMVar stateVar)
@@ -258,6 +260,14 @@ scottyServer stateVar = scotty 8888 $ do
   get "/" $ do
     state <- liftIO (readMVar stateVar)
     blazeHtml (indexPage state)
+
+  -- This lets you just hit F5 on the browser that was looking at the
+  -- application before restarting and get the new instance that has just
+  -- started
+  notFound $
+    isHtmxRequest >>= \case
+      False -> redirect "/"
+      True -> finish
 
 deleteExperiment :: ExperimentSequenceId -> ExperimentId -> WebUIState -> WebUIState
 deleteExperiment sequenceId experimentId =
