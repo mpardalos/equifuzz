@@ -63,9 +63,11 @@ startOrchestratorThread config rawRunner progressChan = do
 
   case config.experimentCount of
     Nothing -> forConcurrently_ [1 .. config.maxConcurrentExperiments] $ \idx -> do
+      experimentVar <- newEmptyMVar
+      foreverThread (printf "Producer %d" idx) $ do
+        putMVar experimentVar =<< genSystemCConstantExperiment config.genConfig
       foreverThread (printf "Runner %d" idx) $ do
-        experiment <- genSystemCConstantExperiment config.genConfig
-        startRunReduceThread progressChan runner experiment
+        takeMVar experimentVar >>= startRunReduceThread progressChan runner
 
     Just n -> forConcurrently_ [1 .. n] $ \idx -> do
       when config.verbose (printf "Runner %d started" idx)
