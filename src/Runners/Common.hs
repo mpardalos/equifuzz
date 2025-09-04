@@ -16,6 +16,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Experiments
+import GenSystemC (GenMods)
 import Optics (makeFieldLabelsNoPrefix)
 import Shelly ((</>))
 import Util (mkdir_p, runBash)
@@ -29,6 +30,7 @@ data EquivalenceCheckerConfig = EquivalenceCheckerConfig
   , makeFiles :: Experiment -> [(Text, Text)]
   , runScript :: Text
   , parseOutput :: Experiment -> Text -> ExperimentResult
+  , mods :: GenMods
   }
 
 data SSHConnectionTarget = SSHConnectionTarget

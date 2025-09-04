@@ -15,6 +15,7 @@ import Data.Text qualified as T
 import Experiments
 import Optics ((^.))
 import Runners.Common (EquivalenceCheckerConfig (..))
+import ToolRestrictions (slecMods)
 
 slec :: EquivalenceCheckerConfig
 slec =
@@ -23,6 +24,7 @@ slec =
     , runScript = "slec compare.tcl; echo '-- slec.log --'; cat calypto/slec.log; echo 'Done'"
     , makeFiles
     , parseOutput
+    , mods = slecMods
     }
  where
   makeFiles Experiment{scSignature, scDesign, verilogDesign} =

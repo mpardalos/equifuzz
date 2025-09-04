@@ -18,6 +18,7 @@ import Data.Text qualified as T
 import Experiments
 import Optics ((^.))
 import Runners.Common (EquivalenceCheckerConfig (..))
+import ToolRestrictions (jasperMods)
 
 default (T.Text)
 
@@ -28,6 +29,7 @@ jasper =
     , runScript = "jg -c2rtl -allow_unsupported_OS -batch -tcl compare.tcl"
     , makeFiles
     , parseOutput
+    , mods = jasperMods
     }
  where
   makeFiles Experiment{scSignature, scDesign, verilogDesign} =
@@ -56,8 +58,8 @@ jasper =
                  JASPER_OUTPUT(out);
 
                  return 0;
-             }|] <> "\n" -- Jasper warns if there is no trailing newline
-
+             }|]
+        <> "\n" -- Jasper warns if there is no trailing newline
     outType :: Text
     outType = scSignature.returnType
 

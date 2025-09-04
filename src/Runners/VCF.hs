@@ -15,6 +15,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Experiments
 import Runners.Common (EquivalenceCheckerConfig (..))
+import ToolRestrictions (vcfMods)
 
 -- | Run an experiment using VC Formal on a remote host
 vcFormal :: EquivalenceCheckerConfig
@@ -24,6 +25,7 @@ vcFormal =
     , runScript = "vcf -fmode DPV -f compare.tcl; (cat counter_example.txt || echo __NO_CEX__)"
     , makeFiles
     , parseOutput
+    , mods = vcfMods
     }
  where
   makeFiles Experiment{..} =

@@ -1,22 +1,25 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RecordWildCards #-}
-
 {-# HLINT ignore "Use unless" #-}
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module CLI where
 
 import Control.Applicative (Alternative ((<|>)), optional, (<**>))
+import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Text.IO qualified as T
+import Experiments
 import Options.Applicative qualified as Opt
+import Runners
 import System.IO (hFlush, hSetEcho, stdin, stdout)
 import Text.Printf (printf)
+import ToolRestrictions (noMods)
 
 data Command
   = Web WebOptions
-  | Generate GenerateOptions
   | Diy FilePath RunnerOptions
   | PrintVersion
 
@@ -26,12 +29,6 @@ data WebOptions = WebOptions
   , maxConcurrentExperiments :: Int
   , experimentCount :: Maybe Int
   , runnerOptions :: RunnerOptions
-  , genSteps :: Int
-  , evaluations :: Int
-  }
-
-data GenerateOptions = GenerateOptions
-  { count :: Int
   , genSteps :: Int
   , evaluations :: Int
   }
@@ -47,12 +44,10 @@ data SSHOptions = SSHOptions
   , activatePath :: Maybe Text
   }
 
-data RunnerOptions
-  = TestRunner {includeInconclusive :: Bool}
-  | Runner
-      { sshOptions :: Maybe SSHOptions
-      , fecType :: FECType
-      }
+data RunnerOptions = RunnerOptions
+  { sshOptions :: Maybe SSHOptions
+  , ecConfig :: EquivalenceCheckerConfig
+  }
 
 askPassword :: IO Text
 askPassword = do
@@ -71,10 +66,6 @@ commandParser =
         Opt.info
           (Web <$> webOpts)
           (Opt.progDesc "Run the equifuzz Web UI, connected to a remote host")
-    , Opt.command "generate" $
-        Opt.info
-          (Generate <$> generateOpts)
-          (Opt.progDesc "Generate a sample of a generator")
     , Opt.command "diy" $
         Opt.info
           (Diy <$> scFilePath <*> runnerConfigOpts)
@@ -115,7 +106,7 @@ commandParser =
             )
     evaluations <- evaluationsFlag
     genSteps <- genStepsFlag
-    runnerOptions <- runnerConfigOpts <|> testFlag
+    runnerOptions <- runnerConfigOpts
     return
       WebOptions
         { verbose
@@ -126,36 +117,6 @@ commandParser =
         , genSteps
         , evaluations
         }
-
-  testFlag :: Opt.Parser RunnerOptions
-  testFlag = do
-    Opt.flag' () . mconcat $
-      [ Opt.long "test"
-      , Opt.help "Use a 'test' runner, that just gives random results (for testing)"
-      ]
-
-    includeInconclusive <-
-      Opt.switch . mconcat $
-        [ Opt.long "inconclusive"
-        , Opt.help "Include inconclusive results in the test results"
-        ]
-
-    return TestRunner{includeInconclusive}
-
-  generateOpts :: Opt.Parser GenerateOptions
-  generateOpts = do
-    count <-
-      Opt.option Opt.auto . mconcat $
-        [ Opt.long "count"
-        , Opt.metavar "COUNT"
-        , Opt.help "How many examples to generate"
-        , Opt.value 1
-        , Opt.showDefault
-        ]
-
-    evaluations <- evaluationsFlag
-    genSteps <- genStepsFlag
-    return GenerateOptions{count, genSteps, evaluations}
 
   evaluationsFlag :: Opt.Parser Int
   evaluationsFlag =
@@ -201,14 +162,14 @@ commandParser =
 
   runnerConfigOpts = do
     sshOptions <- sshOpts
-    fecType <-
+    ecConfig <-
       Opt.option readFecType . mconcat $
         [ Opt.long "fec-type"
         , Opt.metavar "TYPE"
         , Opt.help "What FEC type we are running against (vcf|catapult|jasper)"
         ]
 
-    return Runner{sshOptions, fecType}
+    return RunnerOptions{sshOptions, ecConfig}
 
   askPasswordFlag :: Opt.Parser PasswordSource
   askPasswordFlag =
@@ -227,9 +188,10 @@ commandParser =
           )
 
   readFecType = Opt.eitherReader $ \case
-    "vcf" -> Right VCF
-    "jasper" -> Right Jasper
-    "slec" -> Right SLEC
+    "vcf" -> Right vcFormal
+    "jasper" -> Right jasper
+    "slec" -> Right slec
+    "test" -> Right testRunner
     other -> Left ("FEC '" ++ other ++ "' is unknown")
 
   scFilePath =
@@ -247,3 +209,47 @@ parseArgs =
           , Opt.progDesc "Fuzzer for formal equivalence checkers"
           ]
       )
+
+--------------------------- Testing --------------------------------------------
+
+testRunner :: EquivalenceCheckerConfig
+testRunner =
+  EquivalenceCheckerConfig
+    { name = "test-runner"
+    , runScript = "sleep 5; echo Test"
+    , makeFiles = const []
+    , parseOutput = \Experiment{experimentId} fullOutput ->
+        ExperimentResult
+          { proofFound = Just False
+          , counterExample = Nothing
+          , fullOutput
+          , experimentId
+          , extraInfos = Map.empty
+          }
+    , mods = noMods
+    }
+
+-- testRunner inconclusiveResults experiment = do
+--   getStdRandom (uniformR (1_000_000, 5_000_000)) >>= threadDelay
+
+--   proofFound <-
+--     getStdRandom (uniformR (1 :: Int, 100)) <&> \x ->
+--       if
+--         | x < 10 && inconclusiveResults -> Nothing
+--         | x < 20 -> Just (not experiment.expectedResult)
+--         | otherwise -> Just experiment.expectedResult
+
+--   let counterExample =
+--         if proofFound == Just False
+--           then Nothing
+--           else Just "Counter-example goes here"
+--   let fullOutput = "blah\nblah\nblah"
+
+--   return
+--     ExperimentResult
+--       { experimentId = experiment.experimentId
+--       , proofFound
+--       , counterExample
+--       , fullOutput
+--       , extraInfos = Map.empty
+--       }

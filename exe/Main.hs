@@ -9,30 +9,23 @@
 
 module Main where
 
-import Control.Concurrent (threadDelay)
 import Control.Exception (SomeException, throwIO, try)
-import Control.Monad (forM_, replicateM_, when)
-import Control.Monad.Random (getStdRandom)
-import Data.Functor ((<&>))
+import Control.Monad (when)
 import Data.Map qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.UUID qualified as UUID
 import Experiments
-import GenSystemC (GenConfig (..), GenMods)
+import GenSystemC (GenConfig (..))
 import Meta (versionName)
 import Optics (isn't, only, (%), (&), _Right)
 import Orchestration
 import Runners
-import System.Random (uniformR)
 import SystemC qualified as SC
-import ToolRestrictions (jasperMods, noMods, slecMods, vcfMods)
 import WebUI (runWebUI)
 
 import CLI (
   Command (..),
-  FECType (..),
-  GenerateOptions (..),
   PasswordSource (..),
   RunnerOptions (..),
   SSHOptions (..),
@@ -58,17 +51,6 @@ main = do
       config <- webOptionsToOrchestrationConfig webOpts
       progressChan <- startRunners config
       runWebUI progressChan
-    Generate genOpts -> do
-      replicateM_ genOpts.count $ do
-        Experiment{scSignature, scDesign, verilogDesign, knownEvaluations} <-
-          genSystemCConstantExperiment (generateOptionsToGenConfig genOpts)
-        T.putStrLn scDesign
-        putStrLn "---------"
-        T.putStrLn verilogDesign
-        putStrLn "---------"
-        mapM_
-          (T.putStrLn . showEvaluation scSignature)
-          knownEvaluations
     PrintVersion -> putStrLn versionName
 
 reportExperiment :: Experiment -> ExperimentResult -> IO ()
@@ -185,14 +167,6 @@ tryReadExperimentFromCPP source = do
       , extraInfos = Map.empty
       }
 
-generateOptionsToGenConfig :: GenerateOptions -> GenConfig
-generateOptionsToGenConfig GenerateOptions{genSteps, evaluations} =
-  GenConfig
-    { growSteps = genSteps
-    , transformationAllowed = noMods
-    , evaluations
-    }
-
 webOptionsToOrchestrationConfig :: WebOptions -> IO OrchestrationConfig
 webOptionsToOrchestrationConfig
   WebOptions
@@ -208,7 +182,7 @@ webOptionsToOrchestrationConfig
     let genConfig =
           GenConfig
             { growSteps = genSteps
-            , transformationAllowed = runnerOptionsToGenMods runnerOptions
+            , transformationAllowed = runnerOptions.ecConfig.mods
             , evaluations
             }
     return
@@ -221,30 +195,18 @@ webOptionsToOrchestrationConfig
         , runner
         }
 
-runnerOptionsToGenMods :: RunnerOptions -> GenMods
-runnerOptionsToGenMods Runner{fecType = VCF} = vcfMods
-runnerOptionsToGenMods Runner{fecType = Jasper} = jasperMods
-runnerOptionsToGenMods Runner{fecType = SLEC} = slecMods
-runnerOptionsToGenMods TestRunner{} = noMods
-
 runnerOptionsToRunner :: RunnerOptions -> IO ExperimentRunner
-runnerOptionsToRunner TestRunner{includeInconclusive} =
-  return (testRunner includeInconclusive)
 runnerOptionsToRunner
-  Runner
+  RunnerOptions
     { sshOptions
-    , fecType
+    , ecConfig
     } = do
     -- host,
     -- username,
     -- passwordSource,
     -- activatePath,
-    let ec = case fecType of
-          VCF -> vcFormal
-          Jasper -> jasper
-          SLEC -> slec
     case sshOptions of
-      Nothing -> return (runECLocal ec)
+      Nothing -> return (runECLocal ecConfig)
       Just SSHOptions{..} -> do
         password <- case passwordSource of
           NoPassword -> pure Nothing
@@ -256,7 +218,7 @@ runnerOptionsToRunner
         when (isn't (_Right % only True) sshValid) $
           throwIO (userError "Could not connect to ssh host. Please check the options you provided")
         putStrLn "SSH connection OK"
-        return $ runECRemote SSHConnectionTarget{..} activatePath ec
+        return $ runECRemote SSHConnectionTarget{..} activatePath ecConfig
 
 showEvaluation :: TextSignature -> Evaluation -> Text
 showEvaluation sig Evaluation{inputs, output} =
@@ -273,30 +235,3 @@ showEvaluation sig Evaluation{inputs, output} =
         <> " -> \n  "
         <> comparisonValueRaw output
 
---------------------------- Testing --------------------------------------------
-
-testRunner :: Bool -> ExperimentRunner
-testRunner inconclusiveResults experiment = do
-  getStdRandom (uniformR (1_000_000, 5_000_000)) >>= threadDelay
-
-  proofFound <-
-    getStdRandom (uniformR (1 :: Int, 100)) <&> \x ->
-      if
-        | x < 10 && inconclusiveResults -> Nothing
-        | x < 20 -> Just (not experiment.expectedResult)
-        | otherwise -> Just experiment.expectedResult
-
-  let counterExample =
-        if proofFound == Just False
-          then Nothing
-          else Just "Counter-example goes here"
-  let fullOutput = "blah\nblah\nblah"
-
-  return
-    ExperimentResult
-      { experimentId = experiment.experimentId
-      , proofFound
-      , counterExample
-      , fullOutput
-      , extraInfos = Map.empty
-      }
