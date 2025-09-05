@@ -5,7 +5,6 @@
 
 module Reduce where
 
-import Data.Function ((&))
 import Experiments (Experiment (..), generateProcessToExperiment)
 import GenSystemC (GenerateProcess (..), Transformation (..))
 import Safe (headDef)
@@ -21,15 +20,15 @@ class HasReductions a where
 
 -- | All possible ways to remove a chunk of N elements from the list
 -- (non-overlapping chunks)
-removingChunk :: Int -> [a] -> [[a]]
-removingChunk 0 xs = [xs]
-removingChunk _ [] = []
-removingChunk n xs
+removingChunk :: [a] -> Int -> [[a]]
+removingChunk xs 0 = [xs]
+removingChunk [] _ = []
+removingChunk xs n
   | n > length xs = []
   | otherwise =
       let thisChunk = take n xs
           rest = drop n xs
-       in rest : map (thisChunk ++) (removingChunk n rest)
+       in rest : map (thisChunk ++) (rest `removingChunk` n)
 
 instance HasReductions Int where
   mkReductions 0 = []
@@ -47,7 +46,7 @@ instance HasReductions SC.SCType where
 
 instance HasReductions SC.Expr where
   -- TODO: Reduce variables to constants
-  mkReductions (SC.Variable t n) = []
+  mkReductions (SC.Variable _ _) = []
   mkReductions _ = []
 
 instance HasReductions Transformation where
@@ -68,7 +67,7 @@ instance HasReductions GenerateProcess where
       removingTransformations =
         [ reduced
         | removeCount <- [length transformations `div` 2, 2, 1]
-        , reduced <- removingChunk removeCount transformations
+        , reduced <- transformations `removingChunk` removeCount
         ]
       reducingTransformations =
         [map (\t -> headDef t (mkReductions t)) transformations] -- Reduce all transformations
