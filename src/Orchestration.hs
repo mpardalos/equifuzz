@@ -3,11 +3,28 @@
 
 module Orchestration (OrchestrationConfig (..), startRunners, startRunReduceThread) where
 
-import Control.Concurrent (MVar, modifyMVar_, newEmptyMVar, newMVar, newQSem, putMVar, signalQSem, takeMVar, waitQSem)
+import Control.Concurrent (
+  MVar,
+  modifyMVar_,
+  newEmptyMVar,
+  newMVar,
+  newQSem,
+  putMVar,
+  signalQSem,
+  takeMVar,
+  waitQSem,
+ )
 import Control.Concurrent.Async (forConcurrently_)
-import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
+import Control.Concurrent.STM (
+  TChan,
+  atomically,
+  cloneTChan,
+  newTChanIO,
+  readTChan,
+  writeTChan,
+ )
 import Control.Exception (SomeException, bracket_, catch)
-import Control.Monad (void, when)
+import Control.Monad (unless, void, when)
 import Control.Monad.State (execStateT, liftIO)
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -29,7 +46,7 @@ import Reduce (HasReductions (..))
 import Runners (ExperimentRunner)
 import Shelly ((</>))
 import Text.Printf (printf)
-import Util (foldMUntil_, foreverThread, whenJust)
+import Util (foreverThread, whenJust)
 import WebUI (ExperimentProgress (..))
 
 type ProgressChan = TChan ExperimentProgress
@@ -75,47 +92,28 @@ startOrchestratorThread config rawRunner progressChan = do
       experimentReducible <- genSystemCConstantExperiment config.genConfig
       startRunReduceThread progressChan runner experimentReducible
 
-startRunReduceThread :: ProgressChan -> ExperimentRunner -> Experiment -> IO ()
-startRunReduceThread progressChan runner initialExperiment = do
-  sequenceId <- newExperimentSequenceId
-
-  void (runReduceLoop sequenceId initialExperiment)
-    `catch` ( \(err :: SomeException) -> do
-                printf "Experiment sequence aborted %s\n" (show sequenceId)
-                printf "==============================\n"
-                printf "%s\n" (show err)
-                printf "==============================\n\n"
-            )
-  progress (ExperimentSequenceCompleted sequenceId)
+reduceLoop :: (ExperimentProgress -> IO ()) -> ExperimentRunner -> ExperimentSequenceId -> Experiment -> IO ()
+reduceLoop progress runner sequenceId = go >> const (pure ())
  where
-  runReduceLoop :: ExperimentSequenceId -> Experiment -> IO Bool
-  runReduceLoop sequenceId experiment =
-    ( do
-        progress (ExperimentStarted sequenceId experiment)
-        result <-
-          runner experiment
-            `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
-        progress (ExperimentCompleted sequenceId result)
+  go experiment = do
+    progress (ExperimentStarted sequenceId experiment)
+    result <-
+      runner experiment
+        `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
+    progress (ExperimentCompleted sequenceId result)
+    -- is interesting?
+    if result.proofFound /= Just experiment.expectedResult
+      then reduceDepthFirst (mkReductions experiment) >> return True
+      else return False
 
-        let isInteresting = result.proofFound /= Just experiment.expectedResult
-
-        when isInteresting $
-          void $
-            foldMUntil_
-              (\genExperiment -> genExperiment >>= runReduceLoop sequenceId)
-              (mkReductions experiment)
-
-        return isInteresting
-    )
-      `catch` ( \(err :: SomeException) -> do
-                  printf "Experiment failed in sequence %s\n" (show sequenceId)
-                  printf "==============================\n"
-                  printf "%s\n" (show err)
-                  printf "==============================\n\n"
-                  return False
-              )
-
-  progress = atomically . writeTChan progressChan
+  reduceDepthFirst :: [IO Experiment] -> IO ()
+  reduceDepthFirst [] = pure ()
+  reduceDepthFirst (r : rs) = do
+    experiment <- r
+    isInteresting <- go experiment
+    -- If this reduction is interesting, we're done. Dont' even try the next
+    -- ones.
+    unless isInteresting $ reduceDepthFirst rs
 
   errorResult experimentId err =
     ExperimentResult
@@ -125,6 +123,21 @@ startRunReduceThread progressChan runner initialExperiment = do
       , fullOutput = "Runner crashed with exception:\n" <> T.pack (show err)
       , extraInfos = Map.empty
       }
+
+startRunReduceThread :: ProgressChan -> ExperimentRunner -> Experiment -> IO ()
+startRunReduceThread progressChan runner initialExperiment = do
+  sequenceId <- newExperimentSequenceId
+
+  void (reduceLoop progress runner sequenceId initialExperiment)
+    `catch` ( \(err :: SomeException) -> do
+                printf "Experiment sequence aborted %s\n" (show sequenceId)
+                printf "==============================\n"
+                printf "%s\n" (show err)
+                printf "==============================\n\n"
+            )
+  progress (ExperimentSequenceCompleted sequenceId)
+ where
+  progress = atomically . writeTChan progressChan
 
 startLoggerThread :: ProgressChan -> IO ()
 startLoggerThread progressChan =
