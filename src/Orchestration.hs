@@ -12,6 +12,7 @@ import Control.Monad.State (execStateT, liftIO)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text qualified as T
+import Data.UUID qualified as UUID
 import Experiments (
   Experiment (..),
   ExperimentId (uuid),
@@ -19,13 +20,14 @@ import Experiments (
   ExperimentSequenceId (uuid),
   genSystemCConstantExperiment,
   newExperimentSequenceId,
-  saveExperiment,
+  saveExperimentWithResult,
  )
 import GenSystemC (GenConfig)
 import Optics (at, use)
 import Optics.State.Operators ((.=))
 import Reduce (HasReductions (..))
 import Runners (ExperimentRunner)
+import Shelly ((</>))
 import Text.Printf (printf)
 import Util (foldMUntil_, foreverThread, whenJust)
 import WebUI (ExperimentProgress (..))
@@ -148,5 +150,10 @@ startSaverThread progressChan = do
         mExperiment <- use (at result.experimentId)
         whenJust mExperiment $ \experiment -> do
           when (result.proofFound /= Just experiment.expectedResult) $
-            liftIO (saveExperiment experiment result)
+            liftIO
+              ( saveExperimentWithResult
+                  (("experiments" :: String) </> UUID.toString experiment.experimentId.uuid)
+                  experiment
+                  result
+              )
       ExperimentSequenceCompleted _ -> pure ()

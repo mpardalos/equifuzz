@@ -16,7 +16,7 @@ module Experiments (
   Experiment (..),
   genSystemCConstantExperiment,
   generateProcessToExperiment,
-  saveExperiment,
+  saveExperimentWithResult,
   reportExperiment,
   ExperimentId (..),
   newExperimentId,
@@ -569,24 +569,24 @@ reportExperiment experiment result = do
       Nothing -> "Inconclusive"
 
 -- | Save information about the experiment to the experiments/ directory
-saveExperiment :: Experiment -> ExperimentResult -> IO ()
-saveExperiment experiment result = do
-  let localExperimentDir = "experiments/" <> UUID.toText experiment.experimentId.uuid
+saveExperimentWithResult :: FilePath -> Experiment -> ExperimentResult -> IO ()
+saveExperimentWithResult dir experiment result = do
+  -- let localExperimentDir = "experiments/" <> UUID.toText experiment.experimentId.uuid
 
-  mkdir_p localExperimentDir
-  TIO.writeFile (localExperimentDir </> ("spec.cpp" :: Text)) (experiment.scDesign)
-  TIO.writeFile (localExperimentDir </> ("impl.sv" :: Text)) experiment.verilogDesign
+  mkdir_p (T.pack dir)
+  TIO.writeFile (dir </> ("spec.cpp" :: Text)) experiment.scDesign
+  TIO.writeFile (dir </> ("impl.sv" :: Text)) experiment.verilogDesign
 
   TIO.writeFile
-    (localExperimentDir </> ("full_output.txt" :: Text))
+    (dir </> ("full_output.txt" :: Text))
     result.fullOutput
 
   whenJust result.counterExample $
     TIO.writeFile
-      (localExperimentDir </> ("counter_example.txt" :: Text))
+      (dir </> ("counter_example.txt" :: Text))
 
   TIO.writeFile
-    (localExperimentDir </> ("info.txt" :: Text))
+    (dir </> ("info.txt" :: Text))
     [__i|
         Proof Found     : #{result ^. #proofFound}
         Counter Example : #{isJust (result ^. #counterExample)}
