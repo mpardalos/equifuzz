@@ -62,6 +62,8 @@ common common
         NoFieldSelectors
         OverloadedLabels
         ImportQualifiedPost
+        DuplicateRecordFields
+        QuasiQuotes
 
 common executable
     import: common
@@ -79,6 +81,7 @@ library
         Runners.VCF,
         Runners.Jasper,
         Runners.SLEC,
+        Runners.Test,
         SystemC,
         ToolRestrictions,
         GenSystemC,
@@ -87,6 +90,7 @@ library
         WebUI,
         Orchestration,
         Testing,
+        CLI,
         Meta,
         Paths_equifuzz
 
@@ -97,6 +101,10 @@ executable equifuzz
 executable equifuzz-gen
     import: executable
     main-is: equifuzz-gen.hs
+
+executable equifuzz-run
+    import: executable
+    main-is: equifuzz-run.hs
 
 Test-Suite fuzzfuzz
     import: common

@@ -9,6 +9,7 @@ module Runners (
   jasper,
   vcFormal,
   slec,
+  testRunner,
   runECLocal,
   runECRemote,
   createExperimentDir,
@@ -25,6 +26,7 @@ import Optics ((%~), (&))
 import Runners.Common
 import Runners.Jasper
 import Runners.SLEC
+import Runners.Test
 import Runners.VCF
 import Shelly ((</>))
 import Util (runBash)
