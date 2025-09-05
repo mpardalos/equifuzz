@@ -4,23 +4,16 @@
 module Main where
 
 import Control.Monad (replicateM_)
-import Data.Functor ((<&>))
-import Data.Text (Text)
-import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Experiments (
-  Evaluation (..),
   Experiment (..),
-  SignatureF (args),
-  TextSignature,
-  comparisonValueRaw,
   genSystemCConstantExperiment,
+  showEvaluation,
  )
 import GenSystemC (GenConfig (..))
-import Safe (readMay, readNote)
+import Safe (readMay)
 import System.Environment (getArgs)
 import System.Exit (die)
-import System.IO (hPutStrLn, stderr)
 import ToolRestrictions (noMods)
 
 genConfig :: GenConfig
@@ -49,18 +42,3 @@ main = do
     mapM_
       (T.putStrLn . showEvaluation scSignature)
       knownEvaluations
-
-showEvaluation :: TextSignature -> Evaluation -> Text
-showEvaluation sig Evaluation{inputs, output} =
-  case inputs of
-    [] -> "* -> " <> comparisonValueRaw output
-    (_ : _) ->
-      "* "
-        <> T.intercalate
-          "\n  "
-          ( [ name <> "=" <> comparisonValueRaw value
-            | ((_, name), value) <- zip sig.args inputs
-            ]
-          )
-        <> " -> \n  "
-        <> comparisonValueRaw output

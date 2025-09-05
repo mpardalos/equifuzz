@@ -219,19 +219,3 @@ runnerOptionsToRunner
           throwIO (userError "Could not connect to ssh host. Please check the options you provided")
         putStrLn "SSH connection OK"
         return $ runECRemote SSHConnectionTarget{..} activatePath ecConfig
-
-showEvaluation :: TextSignature -> Evaluation -> Text
-showEvaluation sig Evaluation{inputs, output} =
-  case inputs of
-    [] -> "* -> " <> comparisonValueRaw output
-    (_ : _) ->
-      "* "
-        <> T.intercalate
-          "\n  "
-          ( [ name <> "=" <> comparisonValueRaw value
-            | ((_, name), value) <- zip sig.args inputs
-            ]
-          )
-        <> " -> \n  "
-        <> comparisonValueRaw output
-

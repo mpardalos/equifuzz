@@ -29,6 +29,7 @@ module Experiments (
   Evaluation (..),
   TextSignature,
   SC.SignatureF (..),
+  showEvaluation,
   RunSystemCProgramResult (..),
   runSystemCProgram,
 ) where
@@ -118,6 +119,21 @@ instance Pretty Evaluation where
     pretty inputs <+> " -> " <+> pretty output
 
 type TextSignature = SC.SignatureF Text
+
+showEvaluation :: TextSignature -> Evaluation -> Text
+showEvaluation sig Evaluation{inputs, output} =
+  case inputs of
+    [] -> "* -> " <> comparisonValueRaw output
+    (_ : _) ->
+      "* "
+        <> T.intercalate
+          "\n  "
+          ( [ name <> "=" <> comparisonValueRaw value
+            | ((_, name), value) <- zip sig.args inputs
+            ]
+          )
+        <> " -> \n  "
+        <> comparisonValueRaw output
 
 data Experiment = Experiment
   { experimentId :: ExperimentId
