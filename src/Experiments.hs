@@ -17,6 +17,7 @@ module Experiments (
   genSystemCConstantExperiment,
   generateProcessToExperiment,
   saveExperiment,
+  reportExperiment,
   ExperimentId (..),
   newExperimentId,
   ExperimentSequenceId (..),
@@ -538,6 +539,34 @@ typeWidth SC.CUInt = 32
 typeWidth SC.CInt = 32
 typeWidth SC.CDouble = 64
 typeWidth SC.CBool = 1
+
+reportExperiment :: Experiment -> ExperimentResult -> IO ()
+reportExperiment experiment result = do
+  TIO.putStrLn "--- spec.cpp --------------------------------"
+  TIO.putStrLn experiment.scDesign
+  TIO.putStrLn "---"
+  mapM_
+    (TIO.putStrLn . showEvaluation experiment.scSignature)
+    experiment.knownEvaluations
+
+  TIO.putStrLn "--- impl.sv --------------------------------"
+  TIO.putStrLn experiment.verilogDesign
+
+  -- TIO.putStrLn "--- Output --------------------------------"
+  -- TIO.putStrLn result.fullOutput
+  TIO.writeFile "log.txt" result.fullOutput
+
+  whenJust result.counterExample $ \cex -> do
+    TIO.putStrLn "--- Counter-Example -----------------------"
+    TIO.putStrLn cex
+
+  TIO.putStrLn "-------------------------------------------"
+  TIO.putStr "Result: "
+  TIO.putStrLn $
+    case result.proofFound of
+      Just True -> "Equivalent"
+      Just False -> "Non-equivalent"
+      Nothing -> "Inconclusive"
 
 -- | Save information about the experiment to the experiments/ directory
 saveExperiment :: Experiment -> ExperimentResult -> IO ()

@@ -21,18 +21,16 @@ import Experiments (
   Evaluation (..),
   Experiment (..),
   ExperimentId (..),
-  ExperimentResult (..),
   RunSystemCProgramResult (..),
   SignatureF (..),
   mkComparisonValueWithWidth,
+  reportExperiment,
   runSystemCProgram,
-  showEvaluation,
  )
 import Optics ((&))
 import Options.Applicative qualified as Opt
 import Safe (fromJustNote, readMay)
 import SystemC qualified as SC
-import Util (whenJust)
 
 data Args
   = Args
@@ -144,31 +142,3 @@ tryReadExperimentFromCPP source = do
           ]
       , extraInfos = Map.empty
       }
-
-reportExperiment :: Experiment -> ExperimentResult -> IO ()
-reportExperiment experiment result = do
-  T.putStrLn "--- spec.cpp --------------------------------"
-  T.putStrLn experiment.scDesign
-  T.putStrLn "---"
-  mapM_
-    (T.putStrLn . showEvaluation experiment.scSignature)
-    experiment.knownEvaluations
-
-  T.putStrLn "--- impl.sv --------------------------------"
-  T.putStrLn experiment.verilogDesign
-
-  -- T.putStrLn "--- Output --------------------------------"
-  -- T.putStrLn result.fullOutput
-  T.writeFile "log.txt" result.fullOutput
-
-  whenJust result.counterExample $ \cex -> do
-    T.putStrLn "--- Counter-Example -----------------------"
-    T.putStrLn cex
-
-  T.putStrLn "-------------------------------------------"
-  T.putStr "Result: "
-  T.putStrLn $
-    case result.proofFound of
-      Just True -> "Equivalent"
-      Just False -> "Non-equivalent"
-      Nothing -> "Inconclusive"
