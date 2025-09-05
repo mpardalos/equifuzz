@@ -95,7 +95,7 @@ runnerConfigOpts = do
     Opt.option readFecType . mconcat $
       [ Opt.long "fec-type"
       , Opt.metavar "TYPE"
-      , Opt.help "What FEC type we are running against (vcf|catapult|jasper)"
+      , Opt.help "What FEC type we are running against (vcf|catapult|jasper|test)"
       ]
 
   return RunnerOptions{sshOptions, ecConfig}
