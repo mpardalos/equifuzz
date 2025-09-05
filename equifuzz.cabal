@@ -19,16 +19,43 @@ Flag evaluation_version
 common common
     if flag(evaluation_version)
         cpp-options: -DEVALUATION_VERSION
+    ghc-options:
+        -Wall -fdefer-typed-holes -Wno-unrecognised-pragmas
     default-language:
         GHC2021
     build-depends:
         base >=4.16,
-        optics,
-        shelly,
-        text,
+        MonadRandom,
+        async,
+        binary,
+        blaze-html,
+        blaze-htmx,
         bytestring,
+        containers,
+        data-default-class,
+        file-embed,
+        filepath,
+        http-types,
+        mtl,
+        optics,
+        optparse-applicative,
+        prettyprinter,
+        process,
         random,
-        MonadRandom
+        recursion-schemes,
+        safe,
+        scotty,
+        shelly,
+        stm,
+        string-interpolate,
+        text,
+        time,
+        transformers,
+        uniplate,
+        uuid,
+        wai,
+        wai-extra,
+        zip-archive,
     default-extensions:
         OverloadedStrings
         OverloadedRecordDot
@@ -36,13 +63,13 @@ common common
         OverloadedLabels
         ImportQualifiedPost
 
+common executable
+       ghc-options: -threaded -rtsopts "-with-rtsopts=-N"
+       build-depends: equifuzz
+
 library
-    import:
-        common
-    ghc-options:
-        -Wall -fdefer-typed-holes -Wno-unrecognised-pragmas
-    hs-source-dirs:
-        src
+    import: common
+    hs-source-dirs: src
     exposed-modules:
         Experiments,
         Runners,
@@ -60,78 +87,22 @@ library
         Testing,
         Meta,
         Paths_equifuzz
-    build-depends:
-        string-interpolate,
-        uniplate,
-        recursion-schemes,
-        uuid,
-        containers,
-        mtl,
-        transformers,
-        prettyprinter,
-        data-default-class,
-        safe,
-        filepath,
-        scotty,
-        wai,
-        wai-extra,
-        blaze-html,
-        blaze-htmx,
-        http-types,
-        file-embed,
-        binary,
-        stm,
-        time,
-        async,
-        process,
-        zip-archive,
-        binary
 
 executable equifuzz
-    import:
-        common
-    ghc-options:
-        -Wall -fdefer-typed-holes -Wno-unrecognised-pragmas -threaded -rtsopts "-with-rtsopts=-N"
-    other-modules:
-        CLI
-    main-is:
-        Main.hs
-    hs-source-dirs:
-        exe
-    build-depends:
-        equifuzz,
-        optparse-applicative,
-        containers,
-        uuid,
-        string-interpolate,
-        safe
+    import: common, executable
+    other-modules: CLI
+    main-is: Main.hs
+    hs-source-dirs: exe
 
 executable equifuzz-gen
-    import:
-        common
-    ghc-options:
-        -Wall -fdefer-typed-holes -Wno-unrecognised-pragmas -threaded -rtsopts "-with-rtsopts=-N"
-    main-is:
-        Main.hs
-    hs-source-dirs:
-        equifuzz-gen
-    build-depends:
-        equifuzz,
-        optparse-applicative,
-        containers,
-        uuid,
-        string-interpolate,
-        safe
+    import: common, executable
+    main-is: Main.hs
+    hs-source-dirs: equifuzz-gen
 
 Test-Suite fuzzfuzz
-    import:
-        common
-    ghc-options:
-        -Wall -Wno-unrecognised-pragmas -threaded -rtsopts "-with-rtsopts=-N"
-    type:
-        exitcode-stdio-1.0
-    main-is:
-        Main.hs
+    import: common
+    type: exitcode-stdio-1.0
+    main-is: Main.hs
     build-depends:
         equifuzz,
         containers,
