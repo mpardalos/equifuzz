@@ -28,10 +28,13 @@
           (hl.compose.overrideCabal (drv: {
             postInstall = ''
               # Patch equifuzz to know where systemc and clang are here
-              echo 'postInstall: Wrapping binary'
-              wrapProgram $out/bin/equifuzz \
-                --set EQUIFUZZ_CLANG ${pkgs.clang}/bin/clang++ \
-                --set SYSTEMC_HOME ${pkgs.systemc}
+              echo 'postInstall: Wrapping binaries'
+              for prog in $out/bin/*; do
+                echo "Wrapping $prog"
+                wrapProgram $prog \
+                  --set EQUIFUZZ_CLANG ${pkgs.clang}/bin/clang++ \
+                  --set SYSTEMC_HOME ${pkgs.systemc}
+              done
             '';
           }))
 
@@ -62,8 +65,22 @@
             modifier = t.flip t.pipe
               (if returnShellEnv then shellModifiers else packageModifiers);
           };
-      in {
+      in rec {
         defaultPackage = equifuzz { returnShellEnv = false; };
         devShell = equifuzz { returnShellEnv = true; };
+        apps = {
+          equifuzz-web = {
+            type = "app";
+            program = "${defaultPackage}/bin/equifuzz-web";
+          };
+          equifuzz-run = {
+            type = "app";
+            program = "${defaultPackage}/bin/equifuzz-run";
+          };
+          equifuzz-gen = {
+            type = "app";
+            program = "${defaultPackage}/bin/equifuzz-gen";
+          };
+        };
       });
 }
