@@ -92,8 +92,8 @@ startOrchestratorThread config rawRunner progressChan = do
       experimentReducible <- genSystemCConstantExperiment config.genConfig
       startRunReduceThread progressChan runner experimentReducible
 
-reduceLoop :: (ExperimentProgress -> IO ()) -> ExperimentRunner -> ExperimentSequenceId -> Experiment -> IO ()
-reduceLoop progress runner sequenceId = go >> const (pure ())
+reduceLoop :: (ExperimentProgress -> IO ()) -> ExperimentRunner -> ExperimentSequenceId -> Experiment -> IO Bool
+reduceLoop progress runner sequenceId = go
  where
   go experiment = do
     progress (ExperimentStarted sequenceId experiment)
