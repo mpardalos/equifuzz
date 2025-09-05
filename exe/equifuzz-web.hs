@@ -17,10 +17,6 @@ import Orchestration
 import Runners
 import WebUI (runWebUI)
 
-data Command
-  = Web WebOptions
-  | PrintVersion
-
 data WebOptions = WebOptions
   { verbose :: Bool
   , saveResults :: Bool
@@ -29,65 +25,60 @@ data WebOptions = WebOptions
   , runnerOptions :: RunnerOptions
   , genSteps :: Int
   , evaluations :: Int
+  , showVersion :: Bool
   }
 
 data FECType = VCF | Jasper | SLEC
 
-commandParser :: Opt.Parser Command
-commandParser =
-  Opt.hsubparser . mconcat $
-    [ Opt.command "web" $
-        Opt.info
-          (Web <$> webOpts)
-          (Opt.progDesc "Run the equifuzz Web UI, connected to a remote host")
-    , Opt.command "version" $
-        Opt.info
-          (pure PrintVersion)
-          (Opt.progDesc "Print the software version")
-    ]
+commandParser :: Opt.Parser WebOptions
+commandParser = do
+  maxConcurrentExperiments <-
+    Opt.option Opt.auto . mconcat $
+      [ Opt.long "max-concurrent"
+      , Opt.metavar "COUNT"
+      , Opt.help "Maximum number of experiments to allow to run concurrently"
+      , Opt.value 10
+      , Opt.showDefault
+      ]
+  experimentCount <-
+    Opt.optional . Opt.option Opt.auto . mconcat $
+      [ Opt.long "experiment-count"
+      , Opt.metavar "COUNT"
+      , Opt.help "Only run this many experiments"
+      , Opt.showDefault
+      ]
+  verbose <-
+    Opt.switch . mconcat $
+      [ Opt.long "verbose"
+      , Opt.help "Print experiment status to the console"
+      ]
+  showVersion <-
+    Opt.switch . mconcat $
+      [ Opt.long "version"
+      , Opt.help "Print experiment status to the console"
+      ]
+  saveResults <-
+    not
+      <$> ( Opt.switch . mconcat $
+              [ Opt.long "no-save"
+              , Opt.help "Do not save successful experiment results"
+              ]
+          )
+  evaluations <- evaluationsFlag
+  genSteps <- genStepsFlag
+  runnerOptions <- runnerConfigOpts
+  return
+    WebOptions
+      { verbose
+      , saveResults
+      , maxConcurrentExperiments
+      , experimentCount
+      , runnerOptions
+      , genSteps
+      , evaluations
+      , showVersion
+      }
  where
-  webOpts = do
-    maxConcurrentExperiments <-
-      Opt.option Opt.auto . mconcat $
-        [ Opt.long "max-concurrent"
-        , Opt.metavar "COUNT"
-        , Opt.help "Maximum number of experiments to allow to run concurrently"
-        , Opt.value 10
-        , Opt.showDefault
-        ]
-    experimentCount <-
-      Opt.optional . Opt.option Opt.auto . mconcat $
-        [ Opt.long "experiment-count"
-        , Opt.metavar "COUNT"
-        , Opt.help "Only run this many experiments"
-        , Opt.showDefault
-        ]
-    verbose <-
-      Opt.switch . mconcat $
-        [ Opt.long "verbose"
-        , Opt.help "Print experiment status to the console"
-        ]
-    saveResults <-
-      not
-        <$> ( Opt.switch . mconcat $
-                [ Opt.long "no-save"
-                , Opt.help "Do not save successful experiment results"
-                ]
-            )
-    evaluations <- evaluationsFlag
-    genSteps <- genStepsFlag
-    runnerOptions <- runnerConfigOpts
-    return
-      WebOptions
-        { verbose
-        , saveResults
-        , maxConcurrentExperiments
-        , experimentCount
-        , runnerOptions
-        , genSteps
-        , evaluations
-        }
-
   evaluationsFlag :: Opt.Parser Int
   evaluationsFlag =
     Opt.option Opt.auto . mconcat $
@@ -110,12 +101,13 @@ commandParser =
 
 main :: IO ()
 main = do
-  runOptParse "Fuzzer for formal equivalence checkers" commandParser >>= \case
-    Web webOpts -> do
+  webOpts <- runOptParse "Run the equifuzz Web UI" commandParser
+  if webOpts.showVersion
+    then putStrLn versionName
+    else do
       config <- webOptionsToOrchestrationConfig webOpts
       progressChan <- startRunners config
       runWebUI progressChan
-    PrintVersion -> putStrLn versionName
 
 webOptionsToOrchestrationConfig :: WebOptions -> IO OrchestrationConfig
 webOptionsToOrchestrationConfig

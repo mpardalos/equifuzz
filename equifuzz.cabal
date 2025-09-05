@@ -94,9 +94,9 @@ library
         Meta,
         Paths_equifuzz
 
-executable equifuzz
+executable equifuzz-web
     import: executable
-    main-is: equifuzz.hs
+    main-is: equifuzz-web.hs
 
 executable equifuzz-gen
     import: executable
