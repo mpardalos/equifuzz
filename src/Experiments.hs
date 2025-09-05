@@ -171,6 +171,7 @@ data ExperimentResult = ExperimentResult
   , extraInfos :: Map Text Text
   }
   deriving (Show, Generic, Eq)
+  deriving anyclass (FromJSON, ToJSON)
 
 -- | Make an experiment using the SystemC-constant generator. Needs to have
 -- icarus verilog (`iverilog`) available locally

@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# HLINT ignore "Redundant <$>" #-}
 {-# HLINT ignore "Use ?~" #-}
 {-# LANGUAGE DerivingVia #-}
@@ -19,7 +20,8 @@ import Control.Concurrent.STM (STM, TChan, TMVar, atomically, newTMVar, readTCha
 import Control.Monad (forM_, forever, unless, void, when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (execStateT, modify)
-import Data.Binary (encode)
+import Data.Aeson (FromJSON, ToJSON)
+import Data.Binary qualified as Binary
 import Data.Binary.Builder qualified as Binary
 import Data.ByteString.Lazy qualified as LB
 import Data.ByteString.Lazy.Char8 qualified as LB
@@ -66,6 +68,7 @@ import Web.Scotty (
   get,
   header,
   html,
+  json,
   middleware,
   next,
   notFound,
@@ -102,6 +105,7 @@ data ExperimentInfo = ExperimentInfo
   , result :: Maybe ExperimentResult
   }
   deriving (Generic, Show)
+  deriving anyclass (FromJSON, ToJSON)
 
 data WebUIState = WebUIState
   { sequences :: Map ExperimentSequenceId ExperimentSequenceInfo
@@ -211,7 +215,16 @@ scottyServer stateVar = scotty 8888 $ do
     case experimentReportZip =<< state.sequences ^. at2 sequenceId experimentId of
       Just archive -> do
         setHeader "Content-Type" "application/zip"
-        raw (encode archive)
+        raw (Binary.encode archive)
+      _ -> next
+
+  get "/experiments/:sequenceId/:experimentId/experiment.json" $ do
+    ExperimentSequenceIdParam sequenceId <- pathParam "sequenceId"
+    ExperimentIdParam experimentId <- pathParam "experimentId"
+    state <- liftIO (readMVar stateVar)
+
+    case state.sequences ^. at2 sequenceId experimentId of
+      Just info -> json info.experiment
       _ -> next
 
   get "/experiments/:sequenceId/:experimentId" $ do
@@ -349,6 +362,8 @@ experimentInfoBlock info = H.div H.! A.id "run-info" H.! A.class_ "long" $ do
             ]
           Nothing -> []
       ]
+    H.a H.! A.href [i|./#{info ^. #experiment % #experimentId % #uuid}/experiment.json|] $
+      "JSON"
     when (isJust info.result) $
       H.a H.! A.href [i|./#{info ^. #experiment % #experimentId % #uuid}/report.org|] $
         "Rendered (org-mode)"
