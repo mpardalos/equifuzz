@@ -104,9 +104,9 @@ executable equifuzz-gen
     import: executable
     main-is: equifuzz-gen.hs
 
-executable equifuzz-run
+executable equifuzz-run-magic
     import: executable
-    main-is: equifuzz-run.hs
+    main-is: equifuzz-run-magic.hs
 
 Test-Suite fuzzfuzz
     import: common

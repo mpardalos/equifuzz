@@ -73,9 +73,9 @@
             type = "app";
             program = "${defaultPackage}/bin/equifuzz-web";
           };
-          equifuzz-run = {
+          equifuzz-run-magic = {
             type = "app";
-            program = "${defaultPackage}/bin/equifuzz-run";
+            program = "${defaultPackage}/bin/equifuzz-run-magic";
           };
           equifuzz-gen = {
             type = "app";
