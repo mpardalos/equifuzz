@@ -64,8 +64,10 @@ common common
         ImportQualifiedPost
 
 common executable
-       ghc-options: -threaded -rtsopts "-with-rtsopts=-N"
-       build-depends: equifuzz
+    import: common
+    build-depends: equifuzz
+    ghc-options: -threaded -rtsopts "-with-rtsopts=-N"
+    hs-source-dirs: exe
 
 library
     import: common
@@ -89,15 +91,12 @@ library
         Paths_equifuzz
 
 executable equifuzz
-    import: common, executable
-    other-modules: CLI
-    main-is: Main.hs
-    hs-source-dirs: exe
+    import: executable
+    main-is: equifuzz.hs
 
 executable equifuzz-gen
-    import: common, executable
-    main-is: Main.hs
-    hs-source-dirs: equifuzz-gen
+    import: executable
+    main-is: equifuzz-gen.hs
 
 Test-Suite fuzzfuzz
     import: common
