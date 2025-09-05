@@ -24,6 +24,14 @@ vcfMods = GenMods{name = "vcf", transformationAllowed}
       -- Error SYMAPI-001: Requested conversion from 'sc_dt::sc_uint' to non-scalar type 'sc_dt::sc_bigint' is not allowed.
       (SC.SCUInt{}, FunctionalCast SC.SCBigInt{}) -> False
       (SC.SCUInt{}, FunctionalCast SC.SCBigUInt{}) -> False
+      (SC.SCInt{}, FunctionalCast SC.SCBigInt{}) -> False
+      (SC.SCInt{}, FunctionalCast SC.SCBigUInt{}) -> False
+      -- /mnt/applications/synopsys/2024-25/RHELx86/VC-STATIC_2024.09-SP1/hector/local/systemc/datatypes/int/hector_int_base.h:395:53: error: no member named 'toDouble' in 'HectorBV<228, false>'
+      -- (Not on an actual sc_bv)
+      (SC.SCSignedSubref{}, ApplyMethod SC.ToDouble) -> False
+      -- spec.cpp:8:13: error: no member named 'to_uint64' in 'sc_dt::sc_fixed<60, 18, sc_dt::SC_TRN, sc_dt::SC_WRAP, 0>'; did you mean 'to_uint'?
+      (SC.SCFixed{}, ApplyMethod SC.ToUInt64) -> False
+      (SC.SCFixed{}, ApplyMethod SC.ToInt64) -> False
       --
       (_, Arithmetic _ _) -> False
       (_, _) -> True
