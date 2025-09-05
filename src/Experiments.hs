@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds #-}
+{-# HLINT ignore "Use <$>" #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
@@ -9,8 +11,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
-
-{-# HLINT ignore "Use <$>" #-}
 
 module Experiments (
   Experiment (..),
@@ -37,6 +37,7 @@ module Experiments (
 
 import Control.Monad (forM, replicateM, when)
 import Control.Monad.Random (MonadRandom (getRandom), evalRand)
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Char (intToDigit)
 import Data.Data (Data)
 import Data.Functor
@@ -47,7 +48,6 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.UUID (UUID)
-import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as UUID
 import GHC.Generics (Generic)
 import GHC.IO.Exception (ExitCode (ExitSuccess))
@@ -60,25 +60,28 @@ import Shelly ((</>))
 import System.Environment.Blank (getEnvDefault)
 import System.Process (readProcessWithExitCode)
 import SystemC qualified as SC
+import ToolRestrictions ()
 import Util (chunksOf, mkdir_p, runBash, whenJust)
 
 -- | Identifies a sequence of experiments
 newtype ExperimentSequenceId = ExperimentSequenceId {uuid :: UUID}
   deriving (Show, Eq, Ord, Generic, Data)
+  deriving newtype (FromJSON, ToJSON)
 
 newExperimentSequenceId :: IO ExperimentSequenceId
 newExperimentSequenceId = ExperimentSequenceId <$> UUID.nextRandom
 
 -- | Identifies a single experiment within a sequence of experiments
 newtype ExperimentId = ExperimentId {uuid :: UUID}
-  deriving (Show, Eq, Ord, Generic, Data)
+  deriving stock (Show, Eq, Ord, Generic, Data)
+  deriving newtype (FromJSON, ToJSON)
 
 newExperimentId :: IO ExperimentId
 newExperimentId = ExperimentId <$> UUID.nextRandom
 
 -- | literal value represented as (big-endian) string of 0s and 1s
 newtype ComparisonValue = UnsafeComparisonValue Text
-  deriving newtype (Eq, Ord, Show)
+  deriving newtype (Eq, Ord, Show, FromJSON, ToJSON)
 
 mkComparisonValueWord ::
   -- | Width
@@ -111,6 +114,7 @@ data Evaluation = Evaluation
   , output :: ComparisonValue
   }
   deriving (Generic, Show, Eq, Ord)
+  deriving anyclass (FromJSON, ToJSON)
 
 instance Pretty ComparisonValue where
   pretty = pretty . comparisonValueAsVerilog
@@ -145,14 +149,13 @@ data Experiment = Experiment
   , verilogDesign :: Text
   , size :: Int
   , generateProcess :: GenerateProcess
-  -- ^ Used for ordering reductions of the same experiment. Will probably be
-  -- the number of transformations used to generate it
   , knownEvaluations :: [Evaluation]
   -- ^ Input vectors and matching results at which the design will be evaluated
   , extraInfos :: Map Text Text
   -- ^ Extra information to be displayed along with the experiment
   }
-  deriving (Generic, Show)
+  deriving stock (Generic, Show)
+  deriving anyclass (FromJSON, ToJSON)
 
 data DesignSource = DesignSource
   { topName :: Text
@@ -173,7 +176,7 @@ data ExperimentResult = ExperimentResult
 -- icarus verilog (`iverilog`) available locally
 genSystemCConstantExperiment :: GenConfig -> IO Experiment
 genSystemCConstantExperiment cfg =
-  generateProcessToExperiment cfg =<< genSystemCProcess cfg
+  generateProcessToExperiment =<< genSystemCProcess cfg
 
 -- | Modify a function so that it returns zero on inputs not in the provided
 -- list of evaluations.  For inputs within the list of evaluations, it runs the
@@ -202,8 +205,8 @@ limitToEvaluations evals decl =
    in
     decl{SC.body = earlyReturn : decl.body}
 
-generateProcessToExperiment :: GenConfig -> GenerateProcess -> IO Experiment
-generateProcessToExperiment cfg generateProcess@GenerateProcess{seed, inputValuesSeed, transformations} = do
+generateProcessToExperiment :: GenerateProcess -> IO Experiment
+generateProcessToExperiment generateProcess@GenerateProcess{seed, inputValuesSeed, transformations, cfg} = do
   let rawDesign = generateProcessToSystemC cfg "dut" generateProcess
 
   -- We use the value given from generate process so that we get exactly the

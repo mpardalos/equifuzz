@@ -124,7 +124,7 @@ webOptionsToOrchestrationConfig
     let genConfig =
           GenConfig
             { growSteps = genSteps
-            , transformationAllowed = runnerOptions.ecConfig.mods
+            , genMods = runnerOptions.ecConfig.mods
             , evaluations
             }
     return

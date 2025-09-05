@@ -27,14 +27,9 @@ defConfig :: GenConfig
 defConfig =
   GenConfig
     { growSteps = 5
-    , transformationAllowed = \_ _ -> True
+    , genMods = noMods
     , evaluations = 3
     }
-
-jasperConfig, vcfConfig, slecConfig :: GenConfig
-jasperConfig = defConfig{transformationAllowed = jasperMods}
-vcfConfig = defConfig{transformationAllowed = vcfMods}
-slecConfig = defConfig{transformationAllowed = slecMods}
 
 someSystemC :: IO SC.FunctionDeclaration
 someSystemC = do
@@ -55,12 +50,7 @@ writeExperiment ec experiment = do
 
 writeExperimentFor :: EquivalenceCheckerConfig -> IO ()
 writeExperimentFor ec = do
-  let cfg = case ec.name of
-        "jasper" -> jasperConfig
-        "vcf" -> vcfConfig
-        "slec" -> slecConfig
-        _ -> defConfig
-  experiment <- someExperimentWith cfg
+  experiment <- someExperimentWith defConfig{genMods = ec.mods}
   let path = show experiment.experimentId.uuid
   createExperimentDir (T.pack path) (ec.makeFiles experiment)
   printf "Created %s\n" path

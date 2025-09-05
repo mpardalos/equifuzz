@@ -20,7 +20,7 @@ genConfig :: GenConfig
 genConfig =
   GenConfig
     { growSteps = 10
-    , transformationAllowed = noMods
+    , genMods = noMods
     , evaluations = 5
     }
 

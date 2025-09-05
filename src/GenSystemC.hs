@@ -1,9 +1,11 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module GenSystemC (
   -- * Generation
@@ -12,14 +14,14 @@ module GenSystemC (
   GenerateProcess (..),
 
   -- ** Configuration
-  GenMods,
+  GenMods (..),
   Transformation (..),
   GenConfig (..),
 )
 where
 
 import Control.Monad (guard, join, replicateM, replicateM_, when)
-import Control.Monad.Random (MonadRandom, StdGen, getRandomR, uniform, uniformMay)
+import Control.Monad.Random (MonadRandom, getRandomR, uniform, uniformMay)
 import Control.Monad.State.Strict (MonadState (get), evalStateT, execState, modify')
 import Control.Monad.Writer.Strict (MonadWriter (tell), execWriterT)
 import Data.List (nub)
@@ -36,23 +38,33 @@ import SystemC qualified as SC
 -- directly
 
 import Control.Monad.Random.Lazy (newStdGen)
+import Data.Aeson (FromJSON (..), ToJSON (..))
 import Data.Data (Data)
 import Data.Map qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Debug.Trace (traceM)
 import Prettyprinter (Pretty (pretty), viaShow, vsep)
+import System.Random.Internal (StdGen (StdGen, unStdGen))
+import System.Random.SplitMix (seedSMGen', unseedSMGen)
 import Text.Show.Functions ()
 import Util (is)
 
-type GenMods = SC.Expr -> Transformation -> Bool
+data GenMods = GenMods
+  { name :: String
+  , transformationAllowed :: SC.Expr -> Transformation -> Bool
+  }
+  deriving stock (Generic, Show)
 
 data GenConfig = GenConfig
   { growSteps :: Int
-  , transformationAllowed :: GenMods
+  , genMods :: GenMods
   , evaluations :: Int
   }
-  deriving (Show)
+  deriving stock (Generic, Show)
+
+deriving instance ToJSON GenMods => ToJSON GenConfig
+deriving instance FromJSON GenMods => FromJSON GenConfig
 
 data Transformation
   = CastWithAssignment SC.SCType
@@ -64,6 +76,7 @@ data Transformation
   | ApplyMethod SC.SCMethod
   | ApplyUnaryOp SC.UnaryOp
   deriving stock (Show, Generic, Data, Eq, Ord)
+  deriving anyclass (FromJSON, ToJSON)
 
 type MonadBuild m = MonadState BuildOutState m
 
@@ -122,7 +135,7 @@ applyTransformation cfg transformation = do
   e <- use #headExpr
   when
     ( transformationAllowed e transformation
-        && cfg.transformationAllowed e transformation
+        && cfg.genMods.transformationAllowed e transformation
     )
     $ applyTransformationUnchecked transformation
 
@@ -199,7 +212,7 @@ randomTransformationFor cfg e = go 0
     when (n > 1000) $
       error ("Tried " ++ show n ++ " times to generate an allowed transformation. Something is definitely wrong. Bye.")
     t <- join . uniform $ transformationOptions
-    if transformationAllowed e t && cfg.transformationAllowed e t
+    if transformationAllowed e t && cfg.genMods.transformationAllowed e t
       then return t
       else go (n + 1)
 
@@ -424,6 +437,15 @@ data GenerateProcess = GenerateProcess
   , transformations :: [Transformation]
   }
   deriving (Generic, Show)
+
+deriving instance ToJSON GenMods => ToJSON GenerateProcess
+deriving instance FromJSON GenMods => FromJSON GenerateProcess
+
+instance ToJSON StdGen where
+  toJSON = toJSON . unseedSMGen . unStdGen
+
+instance FromJSON StdGen where
+  parseJSON = fmap (StdGen . seedSMGen') . parseJSON
 
 instance Pretty Transformation where
   pretty = viaShow

@@ -46,6 +46,7 @@ common common
         safe,
         scotty,
         shelly,
+        splitmix,
         stm,
         string-interpolate,
         text,
@@ -56,6 +57,7 @@ common common
         wai,
         wai-extra,
         zip-archive,
+        aeson
     default-extensions:
         OverloadedStrings
         OverloadedRecordDot

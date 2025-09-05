@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
@@ -7,9 +8,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module SystemC where
 
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Data (Data)
 import Data.Generics.Uniplate.Data (universeBi)
 import Data.Map (Map)
@@ -65,6 +68,7 @@ data BinOp
   | RightShiftAssign
   | Equals
   deriving (Eq, Show, Generic, Data, Ord, Bounded, Enum)
+  deriving anyclass (FromJSON, ToJSON)
 
 data UnaryOp
   = PreIncrement
@@ -73,6 +77,7 @@ data UnaryOp
   | PostDecrement
   | LogicalNot
   deriving (Eq, Show, Generic, Data, Ord, Bounded, Enum)
+  deriving anyclass (FromJSON, ToJSON)
 
 type ExprAnn = SCType
 
@@ -89,6 +94,7 @@ data Expr
   | MethodCall ExprAnn Expr Text [Expr]
   | FunctionCall ExprAnn Expr [Expr]
   deriving (Generic, Eq, Ord, Show, Data)
+  deriving anyclass (FromJSON, ToJSON)
 
 -- | Extract all variables referenced by the expression
 freeVars :: Data from => from -> [(SCType, Text)]
@@ -119,6 +125,7 @@ data Statement
   | If Expr Statement (Maybe Statement)
   | Block [Statement]
   deriving (Generic, Eq, Ord, Show, Data)
+  deriving anyclass (FromJSON, ToJSON)
 
 -- | SystemC types. Parameters include template parameters as well as extra
 -- information that is useful to track, but will not be present in the source
@@ -147,7 +154,8 @@ data SCType
   | CInt
   | CDouble
   | CBool
-  deriving (Eq, Show, Ord, Generic, Data)
+  deriving stock (Eq, Show, Ord, Generic, Data)
+  deriving anyclass (FromJSON, ToJSON)
 
 -- | Methods on SystemC types (@.and_reduce()@, @.or_reduce()@, etc.)  These are
 -- assumed to have a fixed return type, across different SC types.  If we add
@@ -173,6 +181,7 @@ data SCMethod
   | Reverse
   | Length
   deriving (Eq, Show, Ord, Generic, Data, Enum, Bounded)
+  deriving anyclass (FromJSON, ToJSON)
 
 allReductions :: Map SCMethod SCType
 allReductions =
@@ -639,6 +648,7 @@ data SignatureF t = Signature
   , args :: [(t, Text)]
   }
   deriving (Functor, Generic, Eq, Ord, Show, Data)
+  deriving anyclass (FromJSON, ToJSON)
 
 type Signature = SignatureF SCType
 

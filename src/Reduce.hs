@@ -77,4 +77,4 @@ instance HasReductions GenerateProcess where
 instance HasReductions Experiment where
   type Reduced Experiment = IO Experiment
   mkReductions Experiment{generateProcess} =
-    generateProcessToExperiment generateProcess.cfg <$> mkReductions generateProcess
+    generateProcessToExperiment <$> mkReductions generateProcess
