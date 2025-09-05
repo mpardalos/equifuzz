@@ -85,6 +85,10 @@
             type = "app";
             program = "${defaultPackage}/bin/equifuzz-gen";
           };
+          equifuzz-reduce = {
+            type = "app";
+            program = "${defaultPackage}/bin/equifuzz-reduce";
+          };
         };
       });
 }

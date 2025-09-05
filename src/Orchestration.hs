@@ -1,7 +1,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Orchestration (OrchestrationConfig (..), startRunners) where
+module Orchestration (OrchestrationConfig (..), startRunners, startRunReduceThread) where
 
 import Control.Concurrent (MVar, modifyMVar_, newEmptyMVar, newMVar, newQSem, putMVar, signalQSem, takeMVar, waitQSem)
 import Control.Concurrent.Async (forConcurrently_)

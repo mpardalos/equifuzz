@@ -112,6 +112,10 @@ executable equifuzz-run
     import: executable
     main-is: equifuzz-run.hs
 
+executable equifuzz-reduce
+    import: executable
+    main-is: equifuzz-reduce.hs
+
 Test-Suite fuzzfuzz
     import: common
     type: exitcode-stdio-1.0
