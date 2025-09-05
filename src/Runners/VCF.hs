@@ -41,7 +41,7 @@ vcFormal =
     systemCProgram =
       [__i|
         \#define SC_INCLUDE_FX
-        \#include <systemc>"
+        \#include <systemc>
         #{scDesign}
         #{systemCHectorWrapper scTopName scSignature}
         |]
