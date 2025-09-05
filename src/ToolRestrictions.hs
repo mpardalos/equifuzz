@@ -16,6 +16,15 @@ vcfMods = GenMods{name = "vcf", transformationAllowed}
   transformationAllowed e t =
     case (e.annotation, t) of
       (SC.CDouble, FunctionalCast SC.SCUInt{}) -> False
+      --  /mnt/applications/synopsys/2024-25/RHELx86/VC-STATIC_2024.09-SP1/hector/local/systemc/datatypes/bit/hector_lv_base.h:185:39: error: no member named 'is_01' in 'HectorLV<9>'
+      --    bool is_01() const { return m_val.is_01(); }
+      (SC.SCLV{}, ApplyMethod SC.Is01) -> False
+      -- Error SYMAPI-001: Error: to_double functionality is currently not supported in sc_int.
+      (SC.SCInt{}, ApplyMethod SC.ToDouble) -> False
+      -- Error SYMAPI-001: Requested conversion from 'sc_dt::sc_uint' to non-scalar type 'sc_dt::sc_bigint' is not allowed.
+      (SC.SCUInt{}, FunctionalCast SC.SCBigInt{}) -> False
+      (SC.SCUInt{}, FunctionalCast SC.SCBigUInt{}) -> False
+      --
       (_, Arithmetic _ _) -> False
       (_, _) -> True
 
