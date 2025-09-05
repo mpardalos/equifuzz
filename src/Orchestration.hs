@@ -3,11 +3,11 @@
 
 module Orchestration (OrchestrationConfig (..), startRunners) where
 
-import Control.Concurrent (MVar, forkFinally, modifyMVar_, newMVar, newQSem, signalQSem, threadDelay, waitQSem, putMVar, newEmptyMVar, takeMVar)
-import Control.Concurrent.Async (forConcurrently_, replicateConcurrently_)
+import Control.Concurrent (MVar, modifyMVar_, newEmptyMVar, newMVar, newQSem, putMVar, signalQSem, takeMVar, waitQSem)
+import Control.Concurrent.Async (forConcurrently_)
 import Control.Concurrent.STM (TChan, atomically, cloneTChan, newTChanIO, readTChan, writeTChan)
-import Control.Exception (SomeException, bracket, bracket_, catch)
-import Control.Monad (forever, replicateM_, void, when)
+import Control.Exception (SomeException, bracket_, catch)
+import Control.Monad (void, when)
 import Control.Monad.State (execStateT, liftIO)
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -68,7 +68,6 @@ startOrchestratorThread config rawRunner progressChan = do
         putMVar experimentVar =<< genSystemCConstantExperiment config.genConfig
       foreverThread (printf "Runner %d" idx) $ do
         takeMVar experimentVar >>= startRunReduceThread progressChan runner
-
     Just n -> forConcurrently_ [1 .. n] $ \idx -> do
       when config.verbose (printf "Runner %d started" idx)
       experimentReducible <- genSystemCConstantExperiment config.genConfig
