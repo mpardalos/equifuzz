@@ -68,6 +68,7 @@ instance HasReductions GenerateProcess where
         [ reduced
         | removeCount <- [length transformations `div` 2, 2, 1]
         , reduced <- transformations `removingChunk` removeCount
+        , length reduced < length transformations
         ]
       reducingTransformations =
         [map (\t -> headDef t (mkReductions t)) transformations] -- Reduce all transformations
