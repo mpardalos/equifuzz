@@ -21,6 +21,7 @@ vcfMods = GenMods{name = "vcf", transformationAllowed}
       (SC.SCLV{}, ApplyMethod SC.Is01) -> False
       -- Error SYMAPI-001: Error: to_double functionality is currently not supported in sc_int.
       (SC.SCInt{}, ApplyMethod SC.ToDouble) -> False
+      (SC.SCUInt{}, ApplyMethod SC.ToDouble) -> False
       -- Error SYMAPI-001: Requested conversion from 'sc_dt::sc_uint' to non-scalar type 'sc_dt::sc_bigint' is not allowed.
       (SC.SCUInt{}, FunctionalCast SC.SCBigInt{}) -> False
       (SC.SCUInt{}, FunctionalCast SC.SCBigUInt{}) -> False
