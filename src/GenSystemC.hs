@@ -48,11 +48,13 @@ import Prettyprinter (Pretty (pretty), viaShow, vsep)
 import System.Random.Internal (StdGen (StdGen, unStdGen))
 import System.Random.SplitMix (seedSMGen', unseedSMGen)
 import Text.Show.Functions ()
-import Util (is)
+import Util (is, whenJust)
+import Control.Applicative ((<|>))
 
 data GenMods = GenMods
   { name :: String
   , transformationAllowed :: SC.Expr -> Transformation -> Bool
+  , finalize :: SC.Expr -> Maybe Transformation
   }
   deriving stock (Generic, Show)
 
@@ -402,33 +404,38 @@ generateProcessToSystemC cfg name GenerateProcess{seed, transformations} =
         , body
         }
  where
+  defaultFinalizers :: SC.Expr -> Maybe Transformation
+  defaultFinalizers e = case e.annotation of
+    SC.SCInt{} -> Nothing
+    SC.SCFixed{} -> Nothing
+    SC.SCUInt{} -> Nothing
+    SC.SCUFixed{} -> Nothing
+    SC.SCBigInt _ -> Nothing
+    SC.SCBigUInt _ -> Nothing
+    SC.SCLogic -> Nothing
+    SC.SCBV{} -> Nothing
+    SC.SCLV{} -> Nothing
+    -- Explicitly cast native types
+    SC.CInt -> Just (FunctionalCast SC.CInt)
+    SC.CUInt -> Just (FunctionalCast SC.CUInt)
+    SC.CDouble -> Just (FunctionalCast SC.CDouble)
+    SC.CBool -> Nothing
+    SC.SCFxnumSubref{width} -> Just (FunctionalCast (SC.SCUInt width))
+    SC.SCIntSubref{width} -> Just (FunctionalCast (SC.SCUInt width))
+    SC.SCUIntSubref{width} -> Just (FunctionalCast (SC.SCUInt width))
+    SC.SCSignedSubref{width} -> Just (FunctionalCast (SC.SCBigInt width))
+    SC.SCUnsignedSubref{width} -> Just (FunctionalCast (SC.SCBigUInt width))
+    SC.SCFxnumBitref -> Just (FunctionalCast SC.CBool)
+    SC.SCIntBitref -> Just (FunctionalCast SC.CBool)
+    SC.SCUIntBitref -> Just (FunctionalCast SC.CBool)
+    SC.SCSignedBitref -> Just (FunctionalCast SC.CBool)
+    SC.SCUnsignedBitref -> Just (FunctionalCast SC.CBool)
+
   finalizeIfNeeded :: MonadBuild m => m ()
-  finalizeIfNeeded =
-    use (#headExpr % #annotation) >>= \case
-      SC.SCInt{} -> pure ()
-      SC.SCFixed{} -> pure ()
-      SC.SCUInt{} -> pure ()
-      SC.SCUFixed{} -> pure ()
-      SC.SCBigInt _ -> pure ()
-      SC.SCBigUInt _ -> pure ()
-      SC.SCLogic -> pure ()
-      SC.SCBV{} -> pure ()
-      SC.SCLV{} -> pure ()
-      -- Explicitly cast native types
-      SC.CInt -> applyTransformationUnchecked (FunctionalCast SC.CInt)
-      SC.CUInt -> applyTransformationUnchecked (FunctionalCast SC.CUInt)
-      SC.CDouble -> applyTransformationUnchecked (FunctionalCast SC.CDouble)
-      SC.CBool -> pure ()
-      SC.SCFxnumSubref{width} -> applyTransformationUnchecked (FunctionalCast (SC.SCUInt width))
-      SC.SCIntSubref{width} -> applyTransformationUnchecked (FunctionalCast (SC.SCUInt width))
-      SC.SCUIntSubref{width} -> applyTransformationUnchecked (FunctionalCast (SC.SCUInt width))
-      SC.SCSignedSubref{width} -> applyTransformationUnchecked (FunctionalCast (SC.SCBigInt width))
-      SC.SCUnsignedSubref{width} -> applyTransformationUnchecked (FunctionalCast (SC.SCBigUInt width))
-      SC.SCFxnumBitref -> applyTransformationUnchecked (FunctionalCast SC.CBool)
-      SC.SCIntBitref -> applyTransformationUnchecked (FunctionalCast SC.CBool)
-      SC.SCUIntBitref -> applyTransformationUnchecked (FunctionalCast SC.CBool)
-      SC.SCSignedBitref -> applyTransformationUnchecked (FunctionalCast SC.CBool)
-      SC.SCUnsignedBitref -> applyTransformationUnchecked (FunctionalCast SC.CBool)
+  finalizeIfNeeded = do
+    e <- use #headExpr
+    whenJust (cfg.genMods.finalize e <|> defaultFinalizers e) $ \t ->
+      applyTransformationUnchecked t
 
 data GenerateProcess = GenerateProcess
   { cfg :: GenConfig

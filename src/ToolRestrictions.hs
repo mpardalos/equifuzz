@@ -11,8 +11,12 @@ import GenSystemC (GenMods (..), Transformation (..))
 import SystemC qualified as SC
 
 vcfMods :: GenMods
-vcfMods = GenMods{name = "vcf", transformationAllowed}
+vcfMods = GenMods{name = "vcf", transformationAllowed, finalize}
  where
+  finalize e = case e.annotation of
+    SC.SCLV n -> Just (FunctionalCast (SC.SCUInt n))
+    _ -> Nothing
+
   -- Longshot fix for this error - not exactly sure what is happening
   -- Error SCC-001: Cannot detect if loop terminates because check always came back inconclusive (ran 50 iterations).[[0m
   --  Maximum number of iterations is determined by option '_hector_sym_maxiter_allfail'
@@ -51,7 +55,7 @@ vcfMods = GenMods{name = "vcf", transformationAllowed}
       (_, _) -> True
 
 oldVcfMods :: GenMods
-oldVcfMods = GenMods{name = "oldVcf", transformationAllowed}
+oldVcfMods = GenMods{name = "oldVcf", transformationAllowed, finalize = const Nothing}
  where
   transformationAllowed e t =
     case (e.annotation, t) of
@@ -67,7 +71,7 @@ oldVcfMods = GenMods{name = "oldVcf", transformationAllowed}
       (_, _) -> True
 
 jasperMods :: GenMods
-jasperMods = GenMods{name = "jasper", transformationAllowed}
+jasperMods = GenMods{name = "jasper", transformationAllowed, finalize = const Nothing}
  where
   transformationAllowed e t =
     case (e.annotation, t) of
@@ -135,7 +139,7 @@ jasperMods = GenMods{name = "jasper", transformationAllowed}
       (_, _) -> True
 
 slecMods :: GenMods
-slecMods = GenMods{name = "slec", transformationAllowed}
+slecMods = GenMods{name = "slec", transformationAllowed, finalize = const Nothing}
  where
   transformationAllowed e t =
     case (e.annotation, t) of
@@ -155,7 +159,12 @@ slecMods = GenMods{name = "slec", transformationAllowed}
       (_, _) -> True
 
 noMods :: GenMods
-noMods = GenMods{name = "none", transformationAllowed = \_ _ -> True}
+noMods =
+  GenMods
+    { name = "none"
+    , transformationAllowed = \_ _ -> True
+    , finalize = const Nothing
+    }
 
 modsMap :: Map String GenMods
 modsMap =
