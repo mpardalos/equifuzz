@@ -5,11 +5,11 @@
 
 module Reduce where
 
+import Data.List (transpose)
 import Experiments (Experiment (..), generateProcessToExperiment)
 import GenSystemC (GenerateProcess (..), Transformation (..))
 import Safe (headDef)
 import SystemC qualified as SC
-import Data.List (transpose)
 
 class HasReductions a where
   type Reduced a
@@ -71,7 +71,17 @@ instance HasReductions GenerateProcess where
         , reduced <- transformations `removingChunk` removeCount
         , length reduced < length transformations
         ]
-      reducingTransformations = transpose (map mkReductions transformations)
+      possibleReductions = map mkReductions transformations
+      reducingTransformations
+        -- We need this case because otherwise we get a non-reduced option when
+        -- there are no reducible transformations
+        | all null possibleReductions = []
+        -- Need to keep the original transformation for non-reducible ones
+        | otherwise =
+            transpose
+              [ if null rs then [t] else rs
+              | (t, rs) <- zip transformations possibleReductions
+              ]
      in
       map (\ts -> process{transformations = ts}) (removingTransformations ++ reducingTransformations)
 
