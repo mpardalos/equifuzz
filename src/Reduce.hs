@@ -9,6 +9,7 @@ import Experiments (Experiment (..), generateProcessToExperiment)
 import GenSystemC (GenerateProcess (..), Transformation (..))
 import Safe (headDef)
 import SystemC qualified as SC
+import Data.List (transpose)
 
 class HasReductions a where
   type Reduced a
@@ -70,8 +71,7 @@ instance HasReductions GenerateProcess where
         , reduced <- transformations `removingChunk` removeCount
         , length reduced < length transformations
         ]
-      reducingTransformations =
-        [map (\t -> headDef t (mkReductions t)) transformations] -- Reduce all transformations
+      reducingTransformations = transpose (map mkReductions transformations)
      in
       map (\ts -> process{transformations = ts}) (removingTransformations ++ reducingTransformations)
 
