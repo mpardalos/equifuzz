@@ -38,6 +38,9 @@ vcfMods = GenMods{name = "vcf", transformationAllowed}
       -- /mnt/applications/synopsys/2024-25/RHELx86/VC-STATIC_2024.09-SP1/hector/local/systemc/datatypes/int/hector_int_base.h:395:53: error: no member named 'toDouble' in 'HectorBV<228, false>'
       -- (Not on an actual sc_bv)
       (SC.SCSignedSubref{}, ApplyMethod SC.ToDouble) -> False
+      (SC.SCUnsignedSubref{}, ApplyMethod SC.ToDouble) -> False
+      (SC.SCIntSubref{}, ApplyMethod SC.ToDouble) -> False
+      (SC.SCUIntSubref{}, ApplyMethod SC.ToDouble) -> False
       -- spec.cpp:8:13: error: no member named 'to_uint64' in 'sc_dt::sc_fixed<60, 18, sc_dt::SC_TRN, sc_dt::SC_WRAP, 0>'; did you mean 'to_uint'?
       (SC.SCFixed{}, ApplyMethod SC.ToUInt64) -> False
       (SC.SCFixed{}, ApplyMethod SC.ToInt64) -> False
