@@ -13,6 +13,12 @@ import SystemC qualified as SC
 vcfMods :: GenMods
 vcfMods = GenMods{name = "vcf", transformationAllowed}
  where
+  -- Longshot fix for this error - not exactly sure what is happening
+  -- Error SCC-001: Cannot detect if loop terminates because check always came back inconclusive (ran 50 iterations).[[0m
+  --  Maximum number of iterations is determined by option '_hector_sym_maxiter_allfail'
+  transformationAllowed SC.Conditional{} (FunctionalCast SC.SCFixed{}) = False
+  transformationAllowed SC.Conditional{} (FunctionalCast SC.SCUFixed{}) = False
+  --
   transformationAllowed e t =
     case (e.annotation, t) of
       (SC.CDouble, FunctionalCast SC.SCUInt{}) -> False
