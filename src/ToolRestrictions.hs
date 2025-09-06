@@ -18,6 +18,8 @@ vcfMods = GenMods{name = "vcf", transformationAllowed}
   --  Maximum number of iterations is determined by option '_hector_sym_maxiter_allfail'
   transformationAllowed SC.Conditional{} (FunctionalCast SC.SCFixed{}) = False
   transformationAllowed SC.Conditional{} (FunctionalCast SC.SCUFixed{}) = False
+  transformationAllowed SC.Conditional{} (CastWithAssignment SC.SCFixed{}) = False
+  transformationAllowed SC.Conditional{} (CastWithAssignment SC.SCUFixed{}) = False
   --
   transformationAllowed e t =
     case (e.annotation, t) of
