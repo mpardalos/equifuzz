@@ -5,10 +5,11 @@
 
 module Reduce where
 
-import Data.List (transpose)
+import Data.List (nub, transpose)
 import Experiments (Experiment (..), generateProcessToExperiment)
 import GenSystemC (GenerateProcess (..), Transformation (..))
-import Safe (headDef)
+import Optics (over)
+import Safe (headDef, initSafe)
 import SystemC qualified as SC
 
 class HasReductions a where
@@ -62,28 +63,50 @@ instance HasReductions Transformation where
   mkReductions (ApplyMethod _) = []
   mkReductions (ApplyUnaryOp _) = []
 
-instance HasReductions GenerateProcess where
-  mkReductions process@(GenerateProcess{transformations}) =
+reduceIndividualTransformations :: (Reduced a ~ a, HasReductions a) => [a] -> [[a]]
+reduceIndividualTransformations transformations =
+  let
+    possibleReductions = map mkReductions transformations
+   in
+    if all null possibleReductions
+      -- We need this case because otherwise we get a non-reduced option when
+      -- there are no reducible transformations
+      then []
+      -- Need to keep the original transformation for non-reducible ones
+      else
+      -- The last case here is non-reduced, just skip it
+        initSafe $
+          cartesian
+            [ rs ++ [t]
+            | (t, rs) <- zip transformations possibleReductions
+            ]
+
+cartesian :: [[a]] -> [[a]]
+cartesian [] = [[]]
+cartesian (xs : xss) = do
+  y <- xs
+  ys <- cartesian xss
+  return (y : ys)
+
+instance HasReductions [Transformation] where
+  mkReductions transformations =
     let
       removingTransformations =
         [ reduced
-        | removeCount <- [length transformations `div` 2, 2, 1]
+        | removeCount <- nub [length transformations `div` 2, 2, 1]
         , reduced <- transformations `removingChunk` removeCount
         , length reduced < length transformations
+        , length transformations == 1 || length reduced > 0
         ]
-      possibleReductions = map mkReductions transformations
-      reducingTransformations
-        -- We need this case because otherwise we get a non-reduced option when
-        -- there are no reducible transformations
-        | all null possibleReductions = []
-        -- Need to keep the original transformation for non-reducible ones
-        | otherwise =
-            transpose
-              [ if null rs then [t] else rs
-              | (t, rs) <- zip transformations possibleReductions
-              ]
      in
-      map (\ts -> process{transformations = ts}) (removingTransformations ++ reducingTransformations)
+      removingTransformations ++ reduceIndividualTransformations transformations
+
+instance HasReductions GenerateProcess where
+  mkReductions process =
+    [ process{transformations}
+    | transformations :: [Transformation] <-
+        mkReductions process.transformations
+    ]
 
 instance HasReductions Experiment where
   type Reduced Experiment = IO Experiment
