@@ -25,6 +25,7 @@ data WebOptions = WebOptions
   , runnerOptions :: RunnerOptions
   , genSteps :: Int
   , evaluations :: Int
+  , ignoreInconclusive :: Bool
   , showVersion :: Bool
   }
 
@@ -57,6 +58,11 @@ commandParser = do
       [ Opt.long "version"
       , Opt.help "Print experiment status to the console"
       ]
+  ignoreInconclusive <-
+    Opt.switch . mconcat $
+      [ Opt.long "ignore-inconclusive"
+      , Opt.help "Treat inconclusive results (errors) as uninteresting"
+      ]
   saveResults <-
     not
       <$> ( Opt.switch . mconcat $
@@ -76,6 +82,7 @@ commandParser = do
       , runnerOptions
       , genSteps
       , evaluations
+      , ignoreInconclusive
       , showVersion
       }
  where
@@ -118,6 +125,7 @@ webOptionsToOrchestrationConfig
     , experimentCount
     , genSteps
     , runnerOptions
+    , ignoreInconclusive
     , evaluations
     } = do
     runner <- runnerOptionsToRunner runnerOptions
@@ -134,5 +142,6 @@ webOptionsToOrchestrationConfig
         , maxConcurrentExperiments
         , experimentCount
         , genConfig
+        , ignoreInconclusive
         , runner
         }

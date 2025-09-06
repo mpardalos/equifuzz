@@ -57,8 +57,11 @@ data OrchestrationConfig = OrchestrationConfig
   , saveResults :: Bool
   , maxConcurrentExperiments :: Int
   , experimentCount :: Maybe Int
+  , ignoreInconclusive :: Bool
   , genConfig :: GenConfig
   }
+
+type ResultFilter = Experiment -> ExperimentResult -> Bool
 
 startRunners :: OrchestrationConfig -> IO ProgressChan
 startRunners config = do
@@ -78,6 +81,11 @@ startOrchestratorThread :: OrchestrationConfig -> ExperimentRunner -> ProgressCh
 startOrchestratorThread config rawRunner progressChan = do
   runnerSem <- newQSem config.maxConcurrentExperiments
 
+  let isInteresting experiment result
+        | config.ignoreInconclusive =
+            result.proofFound == Just (not experiment.expectedResult)
+        | otherwise = result.proofFound /= Just experiment.expectedResult
+
   let runner = bracket_ (waitQSem runnerSem) (signalQSem runnerSem) . rawRunner
 
   case config.experimentCount of
@@ -86,14 +94,14 @@ startOrchestratorThread config rawRunner progressChan = do
       foreverThread (printf "Producer %d" idx) $ do
         putMVar experimentVar =<< genSystemCConstantExperiment config.genConfig
       foreverThread (printf "Runner %d" idx) $ do
-        takeMVar experimentVar >>= startRunReduceThread progressChan runner
+        takeMVar experimentVar >>= startRunReduceThread progressChan isInteresting runner
     Just n -> forConcurrently_ [1 .. n] $ \idx -> do
       when config.verbose (printf "Runner %d started" idx)
       experimentReducible <- genSystemCConstantExperiment config.genConfig
-      startRunReduceThread progressChan runner experimentReducible
+      startRunReduceThread progressChan isInteresting runner experimentReducible
 
-reduceLoop :: (ExperimentProgress -> IO ()) -> ExperimentRunner -> ExperimentSequenceId -> Experiment -> IO Bool
-reduceLoop progress runner sequenceId = go
+reduceLoop :: (ExperimentProgress -> IO ()) -> ResultFilter -> ExperimentRunner -> ExperimentSequenceId -> Experiment -> IO Bool
+reduceLoop progress isInteresting runner sequenceId = go
  where
   go experiment = do
     progress (ExperimentStarted sequenceId experiment)
@@ -102,7 +110,7 @@ reduceLoop progress runner sequenceId = go
         `catch` \(err :: SomeException) -> pure (errorResult experiment.experimentId err)
     progress (ExperimentCompleted sequenceId result)
     -- is interesting?
-    if result.proofFound /= Just experiment.expectedResult
+    if isInteresting experiment result
       then reduceDepthFirst (mkReductions experiment) >> return True
       else return False
 
@@ -124,11 +132,11 @@ reduceLoop progress runner sequenceId = go
       , extraInfos = Map.empty
       }
 
-startRunReduceThread :: ProgressChan -> ExperimentRunner -> Experiment -> IO ()
-startRunReduceThread progressChan runner initialExperiment = do
+startRunReduceThread :: ProgressChan -> ResultFilter -> ExperimentRunner -> Experiment -> IO ()
+startRunReduceThread progressChan isInteresting runner initialExperiment = do
   sequenceId <- newExperimentSequenceId
 
-  void (reduceLoop progress runner sequenceId initialExperiment)
+  void (reduceLoop progress isInteresting runner sequenceId initialExperiment)
     `catch` ( \(err :: SomeException) -> do
                 printf "Experiment sequence aborted %s\n" (show sequenceId)
                 printf "==============================\n"

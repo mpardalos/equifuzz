@@ -6,7 +6,7 @@ import CLI (RunnerOptions, runOptParse, runnerConfigOpts, runnerOptionsToRunner)
 import Control.Concurrent.STM (TChan, atomically, newTChanIO, readTChan)
 import Data.Aeson (decodeFileStrict)
 import Data.Text.IO qualified as TIO
-import Experiments (Experiment, ExperimentResult (..), reportExperiment)
+import Experiments (Experiment (..), ExperimentResult (..), reportExperiment)
 import Options.Applicative qualified as Opt
 import Orchestration
 import Safe (fromJustNote)
@@ -42,7 +42,8 @@ main = do
     fromJustNote "Failed to parse experiment"
       <$> decodeFileStrict path
   chan <- newTChanIO
-  startRunReduceThread chan runner experiment
+  let isInteresting e r = r.proofFound /= Just e.expectedResult
+  startRunReduceThread chan isInteresting runner experiment
   handleProgress experiment Nothing chan
  where
   handleProgress :: Experiment -> Maybe ExperimentResult -> TChan ExperimentProgress -> IO ()
