@@ -10,6 +10,7 @@ import Data.Map qualified as Map
 import GenSystemC (GenMods (..), Transformation (..))
 import SystemC qualified as SC
 
+-- For vc_static W-2024.09-SP1
 vcfMods :: GenMods
 vcfMods = GenMods{name = "vcf", transformationAllowed, finalize}
  where
@@ -50,6 +51,11 @@ vcfMods = GenMods{name = "vcf", transformationAllowed, finalize}
       -- spec.cpp:8:13: error: no member named 'to_uint64' in 'sc_dt::sc_fixed<60, 18, sc_dt::SC_TRN, sc_dt::SC_WRAP, 0>'; did you mean 'to_uint'?
       (SC.SCFixed{}, ApplyMethod SC.ToUInt64) -> False
       (SC.SCFixed{}, ApplyMethod SC.ToInt64) -> False
+      -- Casts into sc_lv, sc_bv are broken. Routinely produce false results
+      (_, FunctionalCast SC.SCBV{}) -> False
+      (_, FunctionalCast SC.SCLV{}) -> False
+      (_, CastWithAssignment SC.SCBV{}) -> False
+      (_, CastWithAssignment SC.SCLV{}) -> False
       --
       (_, Arithmetic _ _) -> False
       (_, _) -> True
