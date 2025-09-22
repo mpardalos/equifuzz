@@ -102,6 +102,7 @@ tryReadExperimentFromCPP source = do
 
   let simulationSource =
         [__i|
+            \#define SC_INCLUDE_FX
             \#include <systemc>
             \#include<iostream>
             \#include<bitset>
